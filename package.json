@@ -1,0 +1,36 @@
+{
+  "name": "atomic-chat",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "build:electron": "npm run build",
+    "electron": "node --env-file=.env node_modules/electron/cli.js electron/main.cjs",
+    "test:p0": "node --env-file=.env --test tests/*.test.cjs",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test"
+  },
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "dependencies": {
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@xmpp/client": "^0.14.0",
+    "better-sqlite3": "^13.0.3",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.14",
+    "@angular/cli": "^21.2.14",
+    "@angular/compiler-cli": "^21.2.0",
+    "electron": "^39.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  }
+}
