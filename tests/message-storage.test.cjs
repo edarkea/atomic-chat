@@ -61,6 +61,8 @@ test('history pages use stable composite ordering and recover both directions', 
   for (let index = 0; index < 101; index += 1) store.saveMessage({ id: `message-${String(index).padStart(3, '0')}`, accountId: 'page@example.invalid', conversationId: 'contact@example.invalid', clientMessageId: `client-${index}`, senderJid: 'contact@example.invalid', body: { kind: 'text', text: String(index) }, status: 'sent', createdAt: '2026-01-01T00:00:00.000Z' });
   const recent = store.listMessagesPage('page@example.invalid', 'contact@example.invalid', 50, 'older', null);
   assert.equal(recent.items.length, 50); assert.equal(recent.items[0].id, 'message-051'); assert.equal(recent.items.at(-1).id, 'message-100'); assert.equal(recent.hasMore, true);
+  assert.ok(store.database.prepare('PRAGMA index_list(messages)').all().some((index) => index.name === 'idx_messages_account_conversation_created_id'));
+  assert.match(store.database.prepare('EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = ? AND conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').all('page@example.invalid', 'contact@example.invalid', 51).map((row) => row.detail).join(' '), /idx_messages_account_conversation_created_id|account_conversation/);
   const older = store.listMessagesPage('page@example.invalid', 'contact@example.invalid', 50, 'older', { createdAt: recent.items[0].createdAt, id: recent.items[0].id });
   assert.equal(older.items[0].id, 'message-001'); assert.equal(older.items.at(-1).id, 'message-050');
   const newer = store.listMessagesPage('page@example.invalid', 'contact@example.invalid', 50, 'newer', { createdAt: older.items.at(-1).createdAt, id: older.items.at(-1).id });
