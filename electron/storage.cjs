@@ -108,6 +108,7 @@ class PersistenceStore {
       this.database.exec(`CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created ON messages(account_id, conversation_id, created_at); CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created_id ON messages(account_id, conversation_id, created_at, id);`);
       this.database.prepare('UPDATE schema_meta SET version = 4').run();
     }
+    this.database.exec('CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created_id ON messages(account_id, conversation_id, created_at, id);');
     }); migrate();
   }
 
