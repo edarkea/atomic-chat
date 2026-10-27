@@ -43,6 +43,7 @@ class XmppAdapter {
   async listRoster(accountId) {
     const session = this.require(accountId);
     const result = await session.iqCaller.request(xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' })));
+    await session.send(xml('presence'));
     return result.getChild('query', 'jabber:iq:roster')?.getChildren('item').map((item) => ({ jid: item.attrs.jid, name: item.attrs.name, groups: item.getChildren('group').map((group) => group.getText()) })) || [];
   }
 
@@ -54,6 +55,7 @@ class XmppAdapter {
   }
 
   handleStanza(accountId, stanza) {
+    if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_STANZA]', JSON.stringify({ accountId, from: stanza.attrs?.from || '', to: stanza.attrs?.to || '', type: stanza.name || stanza.attrs?.type || '', id: stanza.attrs?.id || '', hasBody: Boolean(stanza.getChildText?.('body')) }));
     if (stanza.is('presence')) {
       this.emit({ type: 'presence.changed', payload: { jid: this.bareJid(stanza.attrs.from || accountId), availability: stanza.attrs.type === 'unavailable' ? 'unavailable' : 'available', updatedAt: new Date().toISOString() } });
     }
@@ -66,6 +68,7 @@ class XmppAdapter {
       if (!explicitId) this.recentIncoming.set(fingerprint, Date.now());
       const stanzaId = explicitId || `received_${Buffer.from(fingerprint).toString('hex').slice(0, 32)}`;
       this.emit({ type: 'message.received', payload: { id: `msg_${stanzaId}`, accountId, conversationId: senderJid, clientMessageId: `received_${stanzaId}`, senderJid, body: { kind: 'text', text: bodyText }, status: 'sent', createdAt: new Date().toISOString() } });
+      if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_MESSAGE_RECEIVED]', JSON.stringify({ accountId, from: senderJid, id: stanzaId, hasBody: true }));
     }
   }
 
