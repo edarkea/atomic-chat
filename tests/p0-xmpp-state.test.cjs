@@ -35,6 +35,14 @@ test('remote presence remains available while one of two resources disconnects',
   assert.equal(events.at(-1).availability, 'available'); adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/two', type: 'unavailable' })); assert.equal(events.at(-1).availability, 'unavailable');
 });
 
+test('roster refresh preserves authorized resources and publishes initial presence once', async () => {
+  const adapter = new XmppAdapter(); const sent = []; const roster = () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription: 'both' })));
+  adapter.sessions.set('a@example.invalid', { send: async (stanza) => sent.push(stanza), iqCaller: { request: async () => roster() } });
+  await adapter.listRoster('a@example.invalid'); adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/one' }, xml('show', {}, 'away'), xml('status', {}, 'ocupado'))); await adapter.listRoster('a@example.invalid');
+  assert.equal(sent.length, 1); assert.equal(adapter.remoteResources.get('a@example.invalid').size, 1);
+  adapter.sessions.get('a@example.invalid').iqCaller.request = async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' })); await adapter.listRoster('a@example.invalid'); assert.equal(adapter.remoteResources.get('a@example.invalid').size, 0);
+});
+
 test('presence modes use available stanzas with RFC show/status children', async () => {
   const adapter = new XmppAdapter(); const sent = []; adapter.sessions.set('a@example.invalid', { send: async (stanza) => sent.push(stanza) });
   for (const [mode, status] of [['chat', undefined], [undefined, undefined], ['away', undefined], ['away', 'Al teléfono'], ['xa', undefined], ['dnd', undefined]]) await adapter.setPresence('a@example.invalid', { availability: 'available', mode, status });

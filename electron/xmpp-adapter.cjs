@@ -3,7 +3,7 @@ const crypto = require('node:crypto');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 class XmppAdapter {
-  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); }
+  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password) {
@@ -32,7 +32,7 @@ class XmppAdapter {
     session.on('online', () => { this.handleSessionEvent(input.accountId, session, 'online'); });
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
     try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
-    this.sessions.set(input.accountId, session);
+    this.remoteResources.set(input.accountId, new Map()); this.initialPresencePublished.delete(input.accountId); this.sessions.set(input.accountId, session);
     const state = { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() }; this.states.set(input.accountId, state); return state;
   }
 
@@ -41,7 +41,7 @@ class XmppAdapter {
     this.states.set(accountId, { accountId, status: 'disconnecting', retryable: false, since: new Date().toISOString() });
     if (session) await session.stop();
     this.sessions.delete(accountId);
-    this.rosters.delete(accountId); this.remoteResources.delete(accountId);
+    this.rosters.delete(accountId); this.remoteResources.delete(accountId); this.initialPresencePublished.delete(accountId);
     this.states.set(accountId, { accountId, status: 'idle', retryable: false, since: new Date().toISOString() });
   }
 
@@ -56,9 +56,8 @@ class XmppAdapter {
   async listRoster(accountId) {
     const session = this.require(accountId);
     const result = await session.iqCaller.request(xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' })));
-    await session.send(xml('presence'));
     const contacts = result.getChild('query', 'jabber:iq:roster')?.getChildren('item').map((item) => ({ jid: this.bareJid(item.attrs.jid), name: item.attrs.name, groups: item.getChildren('group').map((group) => group.getText()), subscription: ['none', 'to', 'from', 'both'].includes(item.attrs.subscription) ? item.attrs.subscription : 'none', ...(item.attrs.ask === 'subscribe' ? { ask: 'subscribe' } : {}), source: 'roster' })) || [];
-    const normalized = [...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values()]; this.rosters.set(accountId, new Map(normalized.map((contact) => [contact.jid, contact]))); this.remoteResources.set(accountId, new Map()); return normalized;
+    const normalized = [...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values()]; this.rosters.set(accountId, new Map(normalized.map((contact) => [contact.jid, contact]))); const resources = this.remoteResources.get(accountId) || new Map(); for (const key of resources.keys()) if (!this.rosters.get(accountId).has(key.split('/')[0]) || !['to', 'both'].includes(this.rosters.get(accountId).get(key.split('/')[0]).subscription)) resources.delete(key); this.remoteResources.set(accountId, resources); if (!this.initialPresencePublished.has(accountId)) { await session.send(xml('presence')); this.initialPresencePublished.add(accountId); } return normalized;
   }
 
   async sendMessage(accountId, input) {
