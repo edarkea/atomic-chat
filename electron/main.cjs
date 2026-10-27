@@ -14,7 +14,7 @@ let xmpp;
 
 function createWindow() {
   const window = new BrowserWindow({
-    width: 560, height: 400, minWidth: 560, minHeight: 400, resizable: false,
+    width: 1080, height: 720, minWidth: 760, minHeight: 540, resizable: true, maximizable: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
   window.removeMenu();
