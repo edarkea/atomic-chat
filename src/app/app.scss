@@ -84,5 +84,6 @@ html, body { overflow: hidden; }
 }
 .conversation-list::-webkit-scrollbar-thumb:hover,
 .chat-content::-webkit-scrollbar-thumb:hover { background: #42b866; }
-.chat-content { align-content: end; display: flex; flex-direction: column; padding: 18px 16px; }
+  .chat-content { align-content: end; display: flex; flex-direction: column; padding: 18px 16px; }
+  .presence-arrow { margin-left: auto; }
 @media (max-width: 680px) { .app-window { height: calc(100vh - 12px); margin: 6px; } }
