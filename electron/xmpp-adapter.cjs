@@ -1,31 +1,36 @@
 const { client, xml } = require('@xmpp/client');
 
 class XmppAdapter {
-  constructor() { this.sessions = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); }
+  constructor() { this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password) {
     if (!password) throw new Error('secret_unavailable');
+    if (!input.endpoint.tls && process.env.NODE_ENV === 'production') throw new Error('TLS_POLICY');
+    this.states.set(input.accountId, { accountId: input.accountId, status: 'connecting', retryable: true, since: new Date().toISOString() });
     const session = client({
       service: `xmpp://${input.endpoint.host}:${input.endpoint.port}`,
-      domain: input.endpoint.host,
+      domain: process.env.ATOMIC_XMPP_DOMAIN || input.endpoint.host,
       username: input.accountId.split('@')[0],
       password,
       tls: { rejectUnauthorized: input.endpoint.allowInsecureTls !== true },
     });
+    this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
     await session.start();
     session.on('error', (error) => { this.emit({ type: 'connection.stateChanged', payload: { accountId: input.accountId, status: 'failed', reason: error.code || 'TRANSPORT_FAILED', retryable: true, since: new Date().toISOString() } }); });
     session.on('offline', () => this.emit({ type: 'connection.stateChanged', payload: { accountId: input.accountId, status: 'failed', reason: 'offline', retryable: true, since: new Date().toISOString() } }));
     session.on('online', () => this.emit({ type: 'connection.stateChanged', payload: { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() } }));
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
     this.sessions.set(input.accountId, session);
-    return { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() };
+    const state = { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() }; this.states.set(input.accountId, state); return state;
   }
 
   async disconnect(accountId) {
     const session = this.sessions.get(accountId);
+    this.states.set(accountId, { accountId, status: 'disconnecting', retryable: false, since: new Date().toISOString() });
     if (session) await session.stop();
     this.sessions.delete(accountId);
+    this.states.set(accountId, { accountId, status: 'idle', retryable: false, since: new Date().toISOString() });
   }
 
   async setPresence(accountId, presence) {
@@ -58,7 +63,7 @@ class XmppAdapter {
       if (!explicitId && this.recentIncoming.has(fingerprint)) return;
       if (!explicitId) this.recentIncoming.set(fingerprint, Date.now());
       const stanzaId = explicitId || `received_${Buffer.from(fingerprint).toString('hex').slice(0, 32)}`;
-      this.emit({ type: 'message.received', payload: { id: `msg_${stanzaId}`, conversationId: senderJid, clientMessageId: `received_${stanzaId}`, senderJid, body: { kind: 'text', text: bodyText }, status: 'sent', createdAt: new Date().toISOString() } });
+      this.emit({ type: 'message.received', payload: { id: `msg_${stanzaId}`, accountId, conversationId: senderJid, clientMessageId: `received_${stanzaId}`, senderJid, body: { kind: 'text', text: bodyText }, status: 'sent', createdAt: new Date().toISOString() } });
     }
   }
 

@@ -1,13 +1,9 @@
 const { app, BrowserWindow, ipcMain, safeStorage } = require('electron');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { PersistenceStore } = require('./storage.cjs');
 const { SecretStore } = require('./secrets.cjs');
 const { XmppAdapter } = require('./xmpp-adapter.cjs');
-
-if (process.env.ATOMIC_XMPP_ALLOW_INSECURE_TLS === 'true') {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  console.warn('WARNING: insecure TLS is enabled; this build is not production-secure.');
-}
 
 let persistence;
 let secrets;
@@ -23,18 +19,21 @@ function createWindow() {
   else window.loadFile(path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html'));
 }
 
-function requestId(event) { return typeof event.senderFrame?.url === 'string' ? `ipc_${Date.now()}` : 'ipc_unknown'; }
-function assertSender(event) { if (!event.senderFrame) throw new Error('UNAUTHORIZED'); }
+function requestId(event, input) { return input?.requestId || `ipc_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
+function assertSender(event) { const url = event.senderFrame?.url || ''; const allowed = url.startsWith('file://') || (process.env.ATOMIC_CHAT_DEV_SERVER && url.startsWith(process.env.ATOMIC_CHAT_DEV_SERVER)); if (!allowed) throw new Error('UNAUTHORIZED'); }
+function validVersion(input) { return input?.version === 1; }
+function requireText(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 512) throw new Error(`INVALID_${name}`); return value.trim(); }
+function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); requireText(input.endpoint?.host, 'HOST'); if (!Number.isInteger(input.endpoint.port) || input.endpoint.port < 1 || input.endpoint.port > 65535 || typeof input.endpoint.tls !== 'boolean') throw new Error('INVALID_ENDPOINT'); if (input.endpoint.allowInsecureTls === true && process.env.NODE_ENV === 'production') throw new Error('TLS_POLICY'); }
 
 ipcMain.handle('p0.contract.version', (event) => { assertSender(event); return { version: 1 }; });
-ipcMain.handle('account.setSecret', (event, input) => { assertSender(event); if (!input?.credentialRef || typeof input.secret !== 'string') throw new Error('INVALID_INPUT'); secrets.put(input.credentialRef, input.secret); return { ok: true, version: 1, requestId: requestId(event) }; });
-ipcMain.handle('account.connect', async (event, input) => { assertSender(event); try { const password = secrets.get(input.credentialRef); const state = await xmpp.connect(input, password); persistence.upsertAccount({ accountId: input.accountId, host: input.endpoint.host, port: input.endpoint.port, tls: input.endpoint.tls ? 1 : 0, credentialRef: input.credentialRef || null, createdAt: new Date().toISOString() }); const window = BrowserWindow.fromWebContents(event.sender); window?.setResizable(true); window?.setMinimumSize(900, 640); window?.setSize(1280, 820); window?.center(); return { ok: true, value: state, version: 1, requestId: requestId(event) }; } catch (error) { return { ok: false, version: 1, error: { code: error.message === 'secret_unavailable' ? 'STORAGE_FAILED' : 'TRANSPORT_FAILED', retryable: true, requestId: requestId(event), message: 'No fue posible conectar con el servidor XMPP.' } }; } });
+ipcMain.handle('account.setSecret', (event, input) => { assertSender(event); if (!validVersion(input) || typeof input.credentialRef !== 'string' || typeof input.secret !== 'string' || !input.secret || input.secret.length > 4096) throw new Error('INVALID_INPUT'); secrets.put(input.credentialRef, input.secret); return { ok: true, value: { stored: true }, version: 1, requestId: requestId(event, input) }; });
+ipcMain.handle('account.connect', async (event, input) => { assertSender(event); try { validateAccountInput(input); const password = secrets.get(input.credentialRef); const state = await xmpp.connect(input, password); persistence.upsertAccount({ accountId: input.accountId, host: input.endpoint.host, port: input.endpoint.port, tls: input.endpoint.tls ? 1 : 0, credentialRef: input.credentialRef || null, createdAt: new Date().toISOString() }); return { ok: true, value: state, version: 1, requestId: requestId(event, input) }; } catch (error) { return { ok: false, version: 1, error: { code: error.message === 'secret_unavailable' ? 'STORAGE_FAILED' : 'TRANSPORT_FAILED', retryable: true, requestId: requestId(event, input), message: 'No fue posible conectar con el servidor XMPP.' } }; } });
 ipcMain.handle('account.disconnect', async (event, accountId) => { assertSender(event); await xmpp.disconnect(accountId); return { ok: true, value: undefined, version: 1, requestId: requestId(event) }; });
 ipcMain.handle('session.getState', (event, accountId) => { assertSender(event); return { ok: true, value: { accountId, status: xmpp.sessions.has(accountId) ? 'connected' : 'idle', retryable: false, since: new Date().toISOString() }, version: 1, requestId: requestId(event) }; });
 ipcMain.handle('presence.set', async (event, input) => { assertSender(event); const value = await xmpp.setPresence(input.accountId, input); return { ok: true, value, version: 1, requestId: requestId(event) }; });
 ipcMain.handle('roster.list', async (event, accountId) => { assertSender(event); const value = await xmpp.listRoster(accountId); return { ok: true, value, version: 1, requestId: requestId(event) }; });
-ipcMain.handle('message.send', async (event, input) => { assertSender(event); const accountId = input.accountId || [...xmpp.sessions.keys()][0]; const sent = await xmpp.sendMessage(accountId, { ...input, to: input.conversationId }); const value = { ...sent, id: `msg_${Date.now()}`, senderJid: accountId, conversationId: input.conversationId, status: 'sent' }; persistence.saveMessage(value); return { ok: true, value, version: 1, requestId: requestId(event) }; });
-ipcMain.handle('messages.list', (event, input) => { assertSender(event); const values = persistence.listMessages(input?.conversationId); return { ok: true, value: values, version: 1, requestId: requestId(event) }; });
+ipcMain.handle('message.send', async (event, input) => { assertSender(event); if (!validVersion(input)) throw new Error('UNSUPPORTED'); const accountId = requireText(input.accountId, 'ACCOUNT'); const conversationId = requireText(input.conversationId, 'CONVERSATION'); const clientMessageId = requireText(input.clientMessageId, 'MESSAGE_ID'); if (input.body?.kind !== 'text' || typeof input.body.text !== 'string' || !input.body.text.trim()) throw new Error('INVALID_BODY'); const sent = await xmpp.sendMessage(accountId, { ...input, to: conversationId }); const value = { ...sent, id: `msg_${crypto.randomUUID()}`, accountId, conversationId, clientMessageId, senderJid: accountId, status: 'sent' }; persistence.saveMessage(value); return { ok: true, value, version: 1, requestId: requestId(event, input) }; });
+ipcMain.handle('messages.list', (event, input) => { assertSender(event); if (!validVersion(input) || !input.accountId || !input.conversationId) throw new Error('INVALID_INPUT'); const values = persistence.listMessages(input.accountId, input.conversationId); return { ok: true, value: values, version: 1, requestId: requestId(event, input) }; });
 const preferenceDefaults = { theme: 'atomic', notifications: true, autoLogin: false };
 function preferenceScope(key, accountId) { return key === 'autoLogin' ? { scope: 'account', scopeId: accountId } : { scope: 'global', scopeId: 'app' }; }
 function validatePreferences(changes) { const allowed = { theme: (value) => value === 'atomic', notifications: (value) => typeof value === 'boolean', autoLogin: (value) => typeof value === 'boolean' }; for (const [key, value] of Object.entries(changes || {})) if (!allowed[key] || !allowed[key](value)) throw new Error('INVALID_INPUT'); }
