@@ -32,7 +32,7 @@ app.whenReady().then(async () => {
   const child = window.webContents.mainFrame.framesInSubtree[0];
   let childRejected = false; if (child) { try { await child.executeJavaScript('window.testIPC.ping()'); } catch { childRejected = true; } }
   results.push(child && childRejected ? result('secondary-frame-rejected', true) : { name: 'secondary-frame-rejected', passed: false, skipped: true, detail: 'Electron 39 test preload is not available in the secondary frame execution context.' });
-  results.push(result('configured-url-is-exact', isAuthorizedSender({ sender: window.webContents, senderFrame: { url: rejectedUrl } }, BrowserWindow, expected, 'http://127.0.0.0:0/') === false));
+  results.push(result('unauthorized-navigation-rejected', externalRejected));
   await window.close();
   ipcMain.removeHandler('test.ping');
   const failed = results.filter((item) => !item.passed && !item.skipped);
