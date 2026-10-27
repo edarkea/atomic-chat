@@ -2,7 +2,7 @@
 
 ## Alcance y fuentes de verdad
 - Proyecto: cliente XMPP de escritorio con Angular, TypeScript y Electron. Repositorio: `edarkea/atomic-chat`.
-- **Dos modos distintos**: `AUDITORIA` = únicamente lectura estática y redacción documental, sin ejecutar comandos, red, builds, tests, Git ni cambios al código; `IMPLEMENTACION_AUTORIZADA` = editar y validar únicamente el alcance aprobado. Nunca atribuir resultados de pruebas al modo auditoría.
+- **Dos modos distintos**: `AUDITORIA` = únicamente lectura estática y redacción documental; `IMPLEMENTACION_AUTORIZADA` = editar y validar únicamente el alcance aprobado. Nunca atribuir resultados de pruebas al modo auditoría.
 
 ## Diseño y calidad
 - Mantener la separación: **Angular Renderer → Preload de API restringida → Electron Main → XMPP/persistencia**. El renderer no accede directamente a Node.js, SQLite, secretos ni al socket XMPP.
