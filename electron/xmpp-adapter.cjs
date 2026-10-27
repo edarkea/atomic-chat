@@ -17,9 +17,9 @@ class XmppAdapter {
       tls: { rejectUnauthorized: transport.rejectUnauthorized },
     });
     this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
-    session.on('error', (error) => { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); });
-    session.on('offline', () => { this.sessions.delete(input.accountId); this.setState(input.accountId, 'failed', true, 'offline'); });
-    session.on('online', () => { if (this.sessions.get(input.accountId) === session) this.setState(input.accountId, 'connected', false); });
+    session.on('error', (error) => { this.handleSessionEvent(input.accountId, session, 'error', error.code || 'TRANSPORT_FAILED'); });
+    session.on('offline', () => { this.handleSessionEvent(input.accountId, session, 'offline'); });
+    session.on('online', () => { this.handleSessionEvent(input.accountId, session, 'online'); });
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
     try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
     this.sessions.set(input.accountId, session);
@@ -75,6 +75,7 @@ class XmppAdapter {
 
   require(accountId) { const session = this.sessions.get(accountId); if (!session) throw new Error('not_connected'); return session; }
   setState(accountId, status, retryable, reason) { const state = { accountId, status, retryable, since: new Date().toISOString(), ...(reason ? { reason } : {}) }; this.states.set(accountId, state); this.emit({ type: 'connection.stateChanged', payload: state }); }
+  handleSessionEvent(accountId, session, event, reason) { if (this.sessions.get(accountId) !== session) return false; if (event === 'offline') { this.sessions.delete(accountId); this.setState(accountId, 'failed', true, 'offline'); } else if (event === 'error') this.setState(accountId, 'failed', true, reason || 'TRANSPORT_FAILED'); else if (event === 'online') this.setState(accountId, 'connected', false); return true; }
 }
 
 module.exports = { XmppAdapter };
