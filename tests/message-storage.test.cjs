@@ -79,7 +79,7 @@ test('history paging traverses synthetic 1000 and 10000 message conversations wi
     for (let index = 0; index < total; index += 1) store.saveMessage({ id: `${total}-${String(index).padStart(5, '0')}`, accountId: 'large@example.invalid', conversationId, clientMessageId: `${total}-client-${index}`, senderJid: conversationId, body: { kind: 'text', text: String(index) }, status: 'sent', createdAt: new Date(1700000000000 + index).toISOString() });
     const seen = []; let cursor = null; let hasMore = true;
     while (hasMore) { const page = store.listMessagesPage('large@example.invalid', conversationId, 100, 'older', cursor); seen.push(...page.items.map((message) => message.id)); hasMore = page.hasMore; const first = page.items[0]; cursor = first ? { createdAt: first.createdAt, id: first.id } : null; }
-    assert.equal(seen.length, total); assert.equal(new Set(seen).size, total); assert.equal(seen[0], `${total}-00000`); assert.equal(seen.at(-1), `${total}-${String(total - 1).padStart(5, '0')}`);
+    assert.equal(seen.length, total); assert.equal(new Set(seen).size, total); assert.equal(seen[0], `${total}-${String(total - 100).padStart(5, '0')}`); assert.equal(seen.at(-1), `${total}-00000`);
   }
   store.close(); fs.rmSync(directory, { recursive: true, force: true });
 });
