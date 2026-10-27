@@ -12,6 +12,16 @@ export class App {
   protected readonly selectedJid = signal('');
   protected readonly selectedContact = signal<Contact | undefined>(undefined);
   protected readonly settingsOpen = signal(false);
+  protected readonly presenceOpen = signal(false);
+  protected readonly presenceStatus = signal('');
+  protected readonly presenceOptions = [
+    { mode: 'chat' as const, label: 'Libre para chatear', dot: 'chat' },
+    { mode: undefined, label: 'En línea', dot: 'online' },
+    { mode: 'away' as const, label: 'Ausente', dot: 'away' },
+    { mode: 'away' as const, label: 'Al teléfono', dot: 'phone' },
+    { mode: 'xa' as const, label: 'Ausencia extendida', dot: 'xa' },
+    { mode: 'dnd' as const, label: 'No molestar', dot: 'dnd' },
+  ];
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
   private followLatest = true;
   private renderedConversation = '';
@@ -26,6 +36,9 @@ export class App {
   private scheduleScroll(conversation: string, force: boolean): void { const generation = ++this.scrollGeneration; if (this.frame !== undefined) cancelAnimationFrame(this.frame); if (!force && !this.followLatest) return; this.frame = requestAnimationFrame(() => { this.frame = undefined; if (generation !== this.scrollGeneration || this.bareJid(this.selectedJid()) !== conversation) return; const element = this.chatContent?.nativeElement; if (!element) return; element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight); this.renderedConversation = conversation; }); }
   private async scrollAfterConversationLoad(jid: string): Promise<void> { await this.p0.loadConversation(jid); if (this.bareJid(this.selectedJid()) !== this.bareJid(jid)) return; this.scheduleScroll(this.bareJid(jid), true); }
   protected onUserScrollIntent(): void { queueMicrotask(() => { const element = this.chatContent?.nativeElement; if (element) this.followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 48; }); }
+  protected presenceLabel(): string { const current = this.p0.presence(); return this.presenceOptions.find((option) => option.mode === current.mode)?.label || 'En línea'; }
+  protected togglePresence(): void { this.presenceOpen.update((open) => !open); }
+  protected async choosePresence(mode: 'chat' | 'away' | 'dnd' | 'xa' | undefined, label: string): Promise<void> { await this.p0.setPresence(mode, label === 'Al teléfono' ? 'Al teléfono' : this.presenceStatus()); this.presenceOpen.set(false); }
   protected isOutgoing(message: Message): boolean { const sender = message.senderJid.split('/')[0].toLowerCase(); const account = this.p0.accountId().toLowerCase(); return sender === account || sender.startsWith(`${account}@`); }
   protected selectContact(contact: Contact): void { this.followLatest = true; this.selectedContact.set(contact); this.selectedJid.set(contact.jid); void this.scrollAfterConversationLoad(contact.jid); }
   protected useJid(): void { if (this.search().includes('@')) { this.followLatest = true; this.selectedContact.set(undefined); this.selectedJid.set(this.search().trim()); void this.scrollAfterConversationLoad(this.search().trim()); } }

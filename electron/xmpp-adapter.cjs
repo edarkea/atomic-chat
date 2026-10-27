@@ -2,10 +2,19 @@ const { client, xml } = require('@xmpp/client');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 class XmppAdapter {
-  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); }
+  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); this.connecting = new Map(); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password) {
+    const current = this.connecting.get(input.accountId);
+    if (current) return current;
+    if (this.sessions.has(input.accountId)) await this.disconnect(input.accountId);
+    const operation = this.connectInternal(input, password);
+    this.connecting.set(input.accountId, operation);
+    try { return await operation; } finally { if (this.connecting.get(input.accountId) === operation) this.connecting.delete(input.accountId); }
+  }
+
+  async connectInternal(input, password) {
     if (!password) throw new Error('secret_unavailable');
     const transport = validateXmppTransport(input.endpoint, this.packaged);
     this.states.set(input.accountId, { accountId: input.accountId, status: 'connecting', retryable: true, since: new Date().toISOString() });
@@ -36,7 +45,9 @@ class XmppAdapter {
 
   async setPresence(accountId, presence) {
     const session = this.require(accountId);
-    await session.send(xml('presence', { type: presence.availability === 'unavailable' ? 'unavailable' : undefined }, presence.status ? xml('status', {}, presence.status) : undefined));
+    const show = presence.mode ? xml('show', {}, presence.mode) : undefined;
+    const status = presence.status ? xml('status', {}, presence.status) : undefined;
+    await session.send(xml('presence', { type: presence.availability === 'unavailable' ? 'unavailable' : undefined }, show, status));
     return { jid: accountId, ...presence, updatedAt: new Date().toISOString() };
   }
 
