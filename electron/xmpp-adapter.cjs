@@ -1,8 +1,9 @@
 const { client, xml } = require('@xmpp/client');
+const crypto = require('node:crypto');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 class XmppAdapter {
-  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); this.connecting = new Map(); }
+  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password) {
@@ -74,10 +75,8 @@ class XmppAdapter {
       const senderJid = this.bareJid(stanza.attrs.from || accountId);
       const bodyText = stanza.getChildText('body');
       const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id;
-      const fingerprint = `${senderJid}|${bodyText}|${Math.floor(Date.now() / 2000)}`;
-      if (!explicitId && this.recentIncoming.has(fingerprint)) return;
-      if (!explicitId) this.recentIncoming.set(fingerprint, Date.now());
-      const stanzaId = explicitId || `received_${Buffer.from(fingerprint).toString('hex').slice(0, 32)}`;
+      const identity = `${accountId}|${senderJid}|${explicitId || crypto.randomUUID()}`;
+      const stanzaId = explicitId ? `received_${crypto.createHash('sha256').update(identity).digest('hex')}` : `received_${crypto.randomUUID()}`;
       this.emit({ type: 'message.received', payload: { id: `msg_${stanzaId}`, accountId, conversationId: senderJid, clientMessageId: `received_${stanzaId}`, senderJid, body: { kind: 'text', text: bodyText }, status: 'sent', createdAt: new Date().toISOString() } });
       if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_MESSAGE_RECEIVED]', JSON.stringify({ accountId, from: senderJid, id: stanzaId, hasBody: true }));
     }

@@ -1,6 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
+const { xml } = require('@xmpp/client');
+
+function incoming(from, body, id) { return xml('message', { from, to: 'a@example.invalid/resource', ...(id ? { id } : {}) }, xml('body', {}, body)); }
+
+test('incoming messages without stanza ids remain distinct, including identical text', () => {
+  const adapter = new XmppAdapter(); const messages = []; adapter.onEvent((event) => { if (event.type === 'message.received') messages.push(event.payload); });
+  adapter.handleStanza('a@example.invalid', incoming('b@example.invalid/phone', 'mismo'));
+  adapter.handleStanza('a@example.invalid', incoming('b@example.invalid/phone', 'mismo'));
+  assert.equal(messages.length, 2); assert.notEqual(messages[0].clientMessageId, messages[1].clientMessageId);
+});
+
+test('explicit stanza ids are deterministic and isolated by account and sender', () => {
+  const adapter = new XmppAdapter(); const messages = []; adapter.onEvent((event) => { if (event.type === 'message.received') messages.push(event.payload); });
+  adapter.handleStanza('a@example.invalid', incoming('b@example.invalid/phone', 'uno', 'same-id'));
+  adapter.handleStanza('a@example.invalid', incoming('b@example.invalid/phone', 'uno', 'same-id'));
+  adapter.handleStanza('a@example.invalid', incoming('c@example.invalid/tablet', 'uno', 'same-id'));
+  adapter.handleStanza('other@example.invalid', incoming('b@example.invalid/phone', 'uno', 'same-id'));
+  assert.equal(new Set(messages.map((message) => message.clientMessageId)).size, 3);
+  assert.equal(messages[0].clientMessageId, messages[1].clientMessageId);
+});
 
 test('presence modes use available stanzas with RFC show/status children', async () => {
   const adapter = new XmppAdapter(); const sent = []; adapter.sessions.set('a@example.invalid', { send: async (stanza) => sent.push(stanza) });
