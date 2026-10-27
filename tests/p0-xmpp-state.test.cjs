@@ -43,6 +43,17 @@ test('roster refresh preserves authorized resources and publishes initial presen
   adapter.sessions.get('a@example.invalid').iqCaller.request = async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' })); await adapter.listRoster('a@example.invalid'); assert.equal(adapter.remoteResources.get('a@example.invalid').size, 0);
 });
 
+test('roster refresh revokes resources when subscription is withdrawn', async () => {
+  const adapter = new XmppAdapter(); const events = []; const roster = (subscription) => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription })));
+  const session = { send: async () => {}, iqCaller: { request: async () => roster('both') } }; adapter.sessions.set('a@example.invalid', session); adapter.onEvent((event) => { if (event.type === 'presence.changed') events.push(event.payload); });
+  await adapter.listRoster('a@example.invalid'); adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/one' })); session.iqCaller.request = async () => roster('none'); await adapter.listRoster('a@example.invalid'); adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/two' }));
+  assert.equal(adapter.remoteResources.get('a@example.invalid').size, 0); assert.equal(events.length, 1);
+});
+
+test('initial presence is authorized before a remote presence arrives during roster publication', async () => {
+  const adapter = new XmppAdapter(); const events = []; const session = { iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription: 'both' }))) }, send: async () => adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/desktop' }, xml('show', {}, 'dnd'))) }; adapter.sessions.set('a@example.invalid', session); adapter.onEvent((event) => { if (event.type === 'presence.changed') events.push(event.payload); }); await adapter.listRoster('a@example.invalid'); assert.equal(events[0].mode, 'dnd');
+});
+
 test('presence modes use available stanzas with RFC show/status children', async () => {
   const adapter = new XmppAdapter(); const sent = []; adapter.sessions.set('a@example.invalid', { send: async (stanza) => sent.push(stanza) });
   for (const [mode, status] of [['chat', undefined], [undefined, undefined], ['away', undefined], ['away', 'Al teléfono'], ['xa', undefined], ['dnd', undefined]]) await adapter.setPresence('a@example.invalid', { availability: 'available', mode, status });
