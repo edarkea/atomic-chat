@@ -17,6 +17,22 @@ test('SQLite creates the approved P0 schema and persists idempotent messages', (
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('conversation index is account-isolated, ordered, and survives reopening SQLite', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-conversations-'));
+  let store = new PersistenceStore(directory);
+  for (const accountId of ['one@example.invalid', 'two@example.invalid']) store.upsertAccount({ accountId, host: 'example.invalid', port: 5222, tls: 1, credentialRef: null, createdAt: new Date().toISOString() });
+  const message = (id, accountId, conversationId, createdAt) => store.saveMessage({ id, accountId, conversationId, clientMessageId: id, senderJid: conversationId, body: { kind: 'text', text: id }, status: 'sent', createdAt });
+  message('one-old', 'one@example.invalid', 'old@example.invalid', '2026-01-01T00:00:00.000Z');
+  message('one-new', 'one@example.invalid', 'new@example.invalid', '2026-01-03T00:00:00.000Z');
+  message('two-only', 'two@example.invalid', 'two@example.invalid', '2026-01-04T00:00:00.000Z');
+  assert.deepEqual(store.listConversations('one@example.invalid').map((item) => item.jid), ['new@example.invalid', 'old@example.invalid']);
+  assert.deepEqual(store.listConversations('two@example.invalid').map((item) => item.jid), ['two@example.invalid']);
+  store.close(); store = new PersistenceStore(directory);
+  assert.deepEqual(store.listConversations('one@example.invalid').map((item) => item.jid), ['new@example.invalid', 'old@example.invalid']);
+  assert.equal(store.listConversations('missing@example.invalid').length, 0);
+  store.close(); fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('history is isolated by account and legacy messages are quarantined', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-migrate-'));
   const dbPath = path.join(directory, 'data', 'atomic-chat.sqlite');

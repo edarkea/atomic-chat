@@ -6,7 +6,7 @@ const serviceUrl = service.includes('://') ? new URL(service) : null;
 const endpoint = Object.freeze({ host: serviceUrl?.hostname || service, domain: process.env.ATOMIC_XMPP_DOMAIN || '', port: Number(process.env.ATOMIC_XMPP_PORT || 0), tls: process.env.ATOMIC_XMPP_TLS !== 'false', allowInsecureTls: process.env.ATOMIC_XMPP_ALLOW_INSECURE_TLS === 'true' });
 
 contextBridge.exposeInMainWorld('atomicChat', Object.freeze({
-  config: Object.freeze({ endpoint }),
+  config: Object.freeze({ accountId: process.env.ATOMIC_XMPP_USERNAME || '', endpoint }),
   getContractVersion: () => invoke('p0.contract.version'),
   account: Object.freeze({
     setSecret: (input) => invoke('account.setSecret', input),

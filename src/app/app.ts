@@ -15,11 +15,12 @@ export class App implements AfterViewChecked {
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
   private scrollPending = true;
   private renderedMessageCount = -1;
+  private renderedConversation = '';
   constructor() { void this.p0.tryAutoLogin(); }
   protected filteredContacts(): Contact[] { const term = this.search().trim().toLowerCase(); return this.p0.contacts().filter((contact) => !term || contact.jid.toLowerCase().includes(term) || contact.name?.toLowerCase().includes(term)); }
   protected visibleMessages(): Message[] { const jid = this.bareJid(this.selectedJid()); if (!jid) return []; const accountId = this.p0.accountId(); return this.p0.messages().filter((message) => message.accountId === accountId && (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid)); }
   private bareJid(jid: string): string { return jid.split('/')[0].toLowerCase(); }
-  ngAfterViewChecked(): void { const count = this.visibleMessages().length; if (this.scrollPending && count !== this.renderedMessageCount && this.chatContent) { this.chatContent.nativeElement.scrollTop = this.chatContent.nativeElement.scrollHeight; this.renderedMessageCount = count; this.scrollPending = false; } }
+  ngAfterViewChecked(): void { const count = this.visibleMessages().length; const conversation = this.bareJid(this.selectedJid()); if (this.scrollPending && (count !== this.renderedMessageCount || conversation !== this.renderedConversation) && this.chatContent) { this.chatContent.nativeElement.scrollTop = this.chatContent.nativeElement.scrollHeight; this.renderedMessageCount = count; this.renderedConversation = conversation; this.scrollPending = false; } }
   protected onChatScroll(): void { const element = this.chatContent?.nativeElement; if (element) this.scrollPending = element.scrollHeight - element.scrollTop - element.clientHeight < 48; }
   protected isOutgoing(message: Message): boolean { const sender = message.senderJid.split('/')[0].toLowerCase(); const account = this.p0.accountId().toLowerCase(); return sender === account || sender.startsWith(`${account}@`); }
   protected selectContact(contact: Contact): void { this.selectedContact.set(contact); this.selectedJid.set(contact.jid); void this.p0.loadConversation(contact.jid); }

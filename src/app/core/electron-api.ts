@@ -1,7 +1,7 @@
 import { ConnectInput, ConnectionState, Contact, DomainEvent, Message, MessageSendInput, Presence, PresenceInput, Preferences, Result } from './domain';
 
 export interface AtomicChatApi {
-  config: { endpoint: { host: string; domain: string; port: number; tls: boolean; allowInsecureTls: boolean } };
+  config: { accountId: string; endpoint: { host: string; domain: string; port: number; tls: boolean; allowInsecureTls: boolean } };
   account: {
     setSecret(input: { version: 1; requestId: string; credentialRef: string; secret: string }): Promise<Result<{ stored: true }>>;
     connect(input: ConnectInput): Promise<Result<ConnectionState>>;
