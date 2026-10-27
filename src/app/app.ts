@@ -19,6 +19,6 @@ export class App {
   protected selectContact(contact: Contact): void { this.selectedContact.set(contact); this.selectedJid.set(contact.jid); void this.p0.loadConversation(contact.jid); }
   protected useJid(): void { if (this.search().includes('@')) { this.selectedContact.set(undefined); this.selectedJid.set(this.search().trim()); void this.p0.loadConversation(this.search().trim()); } }
   protected async connect(): Promise<void> { const connected = await this.p0.connect(this.login().accountId, this.login().password); if (connected) this.login.update((value) => ({ ...value, password: '' })); }
-  protected async send(): Promise<void> { const accepted = await this.p0.send(this.draft(), this.selectedJid()); if (accepted) this.draft.set(''); }
+  protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.p0.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.p0.error.set('No fue posible enviar el mensaje.'); } }
   protected toggleSettings(): void { this.settingsOpen.update((open) => !open); }
 }

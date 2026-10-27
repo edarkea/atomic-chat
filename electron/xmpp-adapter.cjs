@@ -19,7 +19,7 @@ class XmppAdapter {
     this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
     session.on('error', (error) => { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); });
     session.on('offline', () => { this.sessions.delete(input.accountId); this.setState(input.accountId, 'failed', true, 'offline'); });
-    session.on('online', () => { this.setState(input.accountId, 'connected', false); });
+    session.on('online', () => { if (this.sessions.get(input.accountId) === session) this.setState(input.accountId, 'connected', false); });
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
     try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
     this.sessions.set(input.accountId, session);
