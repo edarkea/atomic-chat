@@ -6,7 +6,7 @@ import { ElectronXmppPort } from './electron-xmpp.port';
 import { XmppPort } from './ports';
 
 @Injectable({ providedIn: 'root' })
-export class P0Facade {
+export class ChatFacade {
   private readonly inMemory = inject(InMemoryXmppPort);
   private readonly electron = inject(ElectronXmppPort);
   private readonly xmpp: XmppPort = window.atomicChat ? this.electron : this.inMemory;

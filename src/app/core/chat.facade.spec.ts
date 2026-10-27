@@ -1,12 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { P0Facade } from './p0.facade';
+import { ChatFacade } from './chat.facade';
 import { InMemoryXmppPort } from './in-memory-xmpp.port';
 import { ElectronXmppPort } from './electron-xmpp.port';
 
 const ok = <T>(value: T) => ({ ok: true as const, value, version: 1 as const, requestId: 'test' });
 
-describe('P0Facade roster reconciliation', () => {
+describe('ChatFacade roster reconciliation', () => {
   let port: any; let history: Record<string, any[]>;
   beforeEach(() => {
     history = { 'a@example.invalid': [{ accountId: 'a@example.invalid', jid: 'old@example.invalid', lastActivity: '2026-01-01' }], 'b@example.invalid': [] };
@@ -16,7 +16,7 @@ describe('P0Facade roster reconciliation', () => {
   });
 
   it('isolates A, restores A, and preserves local history after roster removal', async () => {
-    const facade = TestBed.inject(P0Facade); await facade.connect('a@example.invalid');
+    const facade = TestBed.inject(ChatFacade); await facade.connect('a@example.invalid');
     expect(facade.contacts().map((contact) => contact.jid)).toEqual(['keep@example.invalid', 'old@example.invalid']);
     expect(facade.contacts()[0].subscription).toBe('both');
     await facade.connect('b@example.invalid'); expect(facade.contacts()).toEqual([]);
@@ -26,6 +26,6 @@ describe('P0Facade roster reconciliation', () => {
 
   it('does not apply a stale roster result after the active account changes', async () => {
     let release!: (value: any) => void; port.listRoster = (accountId: string) => accountId === 'a@example.invalid' ? new Promise((resolve) => { release = resolve; }) : Promise.resolve(ok([]));
-    const facade = TestBed.inject(P0Facade); const first = facade.connect('a@example.invalid'); await Promise.resolve(); await facade.connect('b@example.invalid'); release(ok([{ jid: 'late@example.invalid', name: 'late', groups: [] }])); await first; expect(facade.accountId()).toBe('b@example.invalid'); expect(facade.contacts()).toEqual([]);
+    const facade = TestBed.inject(ChatFacade); const first = facade.connect('a@example.invalid'); await Promise.resolve(); await facade.connect('b@example.invalid'); release(ok([{ jid: 'late@example.invalid', name: 'late', groups: [] }])); await first; expect(facade.accountId()).toBe('b@example.invalid'); expect(facade.contacts()).toEqual([]);
   });
 });

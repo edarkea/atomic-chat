@@ -28,7 +28,7 @@ function validVersion(input) { return input?.version === 1; }
 function requireText(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 512) throw new Error(`INVALID_${name}`); return value.trim(); }
 function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); validateXmppTransport(input.endpoint, app.isPackaged); }
 
-ipcMain.handle('p0.contract.version', (event) => { assertSender(event); return { version: 1 }; });
+ipcMain.handle('contract.version', (event) => { assertSender(event); return { version: 1 }; });
 ipcMain.handle('account.setSecret', (event, input) => { assertSender(event); if (!validVersion(input) || typeof input.credentialRef !== 'string' || typeof input.secret !== 'string' || !input.secret || input.secret.length > 4096) throw new Error('INVALID_INPUT'); secrets.put(input.credentialRef, input.secret); return { ok: true, value: { stored: true }, version: 1, requestId: requestId(event, input) }; });
 ipcMain.handle('account.connect', async (event, input) => { assertSender(event); try { validateAccountInput(input); const password = secrets.get(input.credentialRef); const state = await xmpp.connect(input, password); persistence.upsertAccount({ accountId: input.accountId, host: input.endpoint.host, port: input.endpoint.port, tls: input.endpoint.tls ? 1 : 0, credentialRef: input.credentialRef || null, createdAt: new Date().toISOString() }); return { ok: true, value: state, version: 1, requestId: requestId(event, input) }; } catch (error) { console.error('[XMPP-CONNECT-FAILED]', {
   code: error?.code,

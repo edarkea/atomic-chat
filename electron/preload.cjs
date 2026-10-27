@@ -7,7 +7,7 @@ const endpoint = Object.freeze({ host: serviceUrl?.hostname || service, domain: 
 
 contextBridge.exposeInMainWorld('atomicChat', Object.freeze({
   config: Object.freeze({ accountId: process.env.ATOMIC_XMPP_USERNAME || '', endpoint }),
-  getContractVersion: () => invoke('p0.contract.version'),
+  getContractVersion: () => invoke('contract.version'),
   account: Object.freeze({
     setSecret: (input) => invoke('account.setSecret', input),
     connect: (input) => invoke('account.connect', input),
