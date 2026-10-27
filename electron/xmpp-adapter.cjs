@@ -16,10 +16,10 @@ class XmppAdapter {
       tls: { rejectUnauthorized: input.endpoint.allowInsecureTls !== true },
     });
     this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
-    await session.start();
-    session.on('error', (error) => { this.emit({ type: 'connection.stateChanged', payload: { accountId: input.accountId, status: 'failed', reason: error.code || 'TRANSPORT_FAILED', retryable: true, since: new Date().toISOString() } }); });
-    session.on('offline', () => this.emit({ type: 'connection.stateChanged', payload: { accountId: input.accountId, status: 'failed', reason: 'offline', retryable: true, since: new Date().toISOString() } }));
-    session.on('online', () => this.emit({ type: 'connection.stateChanged', payload: { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() } }));
+    try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
+    session.on('error', (error) => { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); });
+    session.on('offline', () => { this.sessions.delete(input.accountId); this.setState(input.accountId, 'failed', true, 'offline'); });
+    session.on('online', () => { this.setState(input.accountId, 'connected', false); });
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
     this.sessions.set(input.accountId, session);
     const state = { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() }; this.states.set(input.accountId, state); return state;
@@ -72,6 +72,7 @@ class XmppAdapter {
   emit(event) { this.listeners.forEach((listener) => listener(event)); }
 
   require(accountId) { const session = this.sessions.get(accountId); if (!session) throw new Error('not_connected'); return session; }
+  setState(accountId, status, retryable, reason) { const state = { accountId, status, retryable, since: new Date().toISOString(), ...(reason ? { reason } : {}) }; this.states.set(accountId, state); this.emit({ type: 'connection.stateChanged', payload: state }); }
 }
 
 module.exports = { XmppAdapter };

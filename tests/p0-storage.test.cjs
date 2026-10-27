@@ -37,3 +37,27 @@ test('history is isolated by account and legacy messages are quarantined', () =>
   assert.equal(store.database.prepare('SELECT COUNT(*) AS count FROM message_recovery WHERE reason = ?').get('account_identity_missing').count, 1);
   store.close(); fs.rmSync(directory, { recursive: true, force: true });
 });
+
+test('v3 message tables migrate structurally to v4 and remain idempotent', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-v3-'));
+  const dbPath = path.join(directory, 'data', 'atomic-chat.sqlite'); fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const Database = require('better-sqlite3'); const legacy = new Database(dbPath);
+  legacy.exec(`CREATE TABLE schema_meta(version INTEGER NOT NULL); INSERT INTO schema_meta VALUES (3);
+    CREATE TABLE accounts(account_id TEXT PRIMARY KEY, endpoint_host TEXT NOT NULL, endpoint_port INTEGER NOT NULL, tls INTEGER NOT NULL, credential_ref TEXT, created_at TEXT NOT NULL);
+    INSERT INTO accounts VALUES ('one@example.invalid','example.invalid',5222,1,NULL,'2026-01-01'); INSERT INTO accounts VALUES ('two@example.invalid','example.invalid',5222,1,NULL,'2026-01-01');
+    CREATE TABLE messages(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, client_message_id TEXT NOT NULL UNIQUE, sender_jid TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
+    INSERT INTO messages VALUES ('m1','one@example.invalid','c','old-one','x@example.invalid','{"kind":"text","text":"one"}','sent','2026-01-01');
+    INSERT INTO messages VALUES ('m2','two@example.invalid','c','old-two','x@example.invalid','{"kind":"text","text":"two"}','sent','2026-01-02');`);
+  legacy.close();
+  let store = new PersistenceStore(directory);
+  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 4);
+  assert.equal(store.listMessages('one@example.invalid', 'c')[0].body.text, 'one');
+  assert.equal(store.listMessages('two@example.invalid', 'c')[0].body.text, 'two');
+  store.saveMessage({ id: 'shared-one', accountId: 'one@example.invalid', conversationId: 'c', clientMessageId: 'shared', senderJid: 'x@example.invalid', body: { kind: 'text', text: 'one-shared' }, status: 'sent', createdAt: new Date().toISOString() });
+  store.saveMessage({ id: 'shared-two', accountId: 'two@example.invalid', conversationId: 'c', clientMessageId: 'shared', senderJid: 'x@example.invalid', body: { kind: 'text', text: 'two-shared' }, status: 'sent', createdAt: new Date().toISOString() });
+  assert.equal(store.listMessages('one@example.invalid', 'c').find((message) => message.clientMessageId === 'shared').body.text, 'one-shared');
+  assert.equal(store.listMessages('two@example.invalid', 'c').find((message) => message.clientMessageId === 'shared').body.text, 'two-shared');
+  assert.ok(store.database.prepare("SELECT COUNT(*) AS count FROM pragma_index_list('messages') WHERE name LIKE 'sqlite_autoindex_messages_%'").get().count >= 1);
+  store.close(); store = new PersistenceStore(directory); assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 4); store.close();
+  fs.rmSync(directory, { recursive: true, force: true });
+});

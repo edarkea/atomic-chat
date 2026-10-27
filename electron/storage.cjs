@@ -55,7 +55,8 @@ class PersistenceStore {
       UPDATE schema_meta SET version = 2 WHERE version < 2;
     `);
     const columns = this.database.prepare('PRAGMA table_info(messages)').all();
-    if (!columns.some((column) => column.name === 'account_id') && this.database.prepare('SELECT version FROM schema_meta').get().version < 3) {
+    const hasAccount = columns.some((column) => column.name === 'account_id');
+    if (!hasAccount) {
       this.database.exec(`ALTER TABLE messages RENAME TO messages_legacy_unassigned;
         CREATE TABLE messages (
           id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
@@ -73,7 +74,40 @@ class PersistenceStore {
           'account_identity_missing', datetime('now') FROM messages_legacy_unassigned;
         DROP TABLE messages_legacy_unassigned;
         UPDATE schema_meta SET version = 3;`);
-    } else { this.database.prepare('UPDATE schema_meta SET version = 3').run(); }
+    }
+    const currentColumns = this.database.prepare('PRAGMA table_info(messages)').all();
+    const recoveryColumns = this.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'message_recovery'").get() ? this.database.prepare('PRAGMA table_info(message_recovery)').all() : [];
+    if (recoveryColumns.length && !recoveryColumns.some((column) => column.name === 'account_id')) this.database.exec('ALTER TABLE message_recovery ADD COLUMN account_id TEXT');
+    const compositeIndex = this.database.prepare('PRAGMA index_list(messages)').all().some((index) => {
+      const fields = this.database.prepare(`PRAGMA index_info('${index.name.replaceAll("'", "''")}')`).all().map((field) => field.name);
+      return index.unique === 1 && fields.join(',') === 'account_id,client_message_id';
+    });
+    if (currentColumns.some((column) => column.name === 'account_id') && !compositeIndex) {
+      this.database.exec(`ALTER TABLE messages RENAME TO messages_v3;
+        CREATE TABLE messages (
+          id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+          client_message_id TEXT NOT NULL, sender_jid TEXT NOT NULL, body TEXT NOT NULL,
+          status TEXT NOT NULL, created_at TEXT NOT NULL,
+          UNIQUE (account_id, client_message_id),
+          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS message_recovery (
+          id TEXT PRIMARY KEY, account_id TEXT, conversation_id TEXT NOT NULL, client_message_id TEXT NOT NULL,
+          sender_jid TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL,
+          reason TEXT NOT NULL, quarantined_at TEXT NOT NULL
+        );
+        INSERT INTO messages(id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at)
+          SELECT id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at
+          FROM messages_v3 m WHERE m.rowid = (SELECT MIN(rowid) FROM messages_v3 x WHERE x.account_id = m.account_id AND x.client_message_id = m.client_message_id);
+        INSERT OR IGNORE INTO message_recovery(id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at, reason, quarantined_at)
+          SELECT id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at, 'duplicate_client_message_id', datetime('now')
+          FROM messages_v3 m WHERE m.rowid != (SELECT MIN(rowid) FROM messages_v3 x WHERE x.account_id = m.account_id AND x.client_message_id = m.client_message_id);
+        DROP TABLE messages_v3;
+        UPDATE schema_meta SET version = 4;`);
+    } else {
+      this.database.exec(`CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created ON messages(account_id, conversation_id, created_at);`);
+      this.database.prepare('UPDATE schema_meta SET version = 4').run();
+    }
     }); migrate();
   }
 
