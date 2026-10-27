@@ -87,6 +87,7 @@ html, body { overflow: hidden; }
   .chat-content { align-content: end; display: flex; flex-direction: column; padding: 18px 16px; }
   .presence-arrow { margin-left: auto; }
   .contact-copy { min-width: 0; }.contact-copy strong, .contact-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.contact-groups { color: #79d889 !important; font-size: 8px !important; }
+  .contact-presence { background: #54e777; border: 1px solid #b6e7bd; border-radius: 50%; display: inline-block; height: 6px; margin-right: 5px; width: 6px; }.contact-presence.away, .contact-presence.phone { background: #e8c95a; }.contact-presence.xa { background: #9caa9f; }.contact-presence.dnd { background: #e76b67; }.contact-presence.unknown { background: #607568; }
   .online-dot.away, .online-dot.phone { background: #e8c95a; }.online-dot.xa { background: #9caa9f; }.online-dot.dnd { background: #e76b67; }.online-dot.chat { background: #62eb80; }.online-dot.online { background: #54e777; }
   .chat-header { flex: 0 0 61px; height: 61px; }
 @media (max-width: 680px) { .app-window { height: calc(100vh - 12px); margin: 6px; } }

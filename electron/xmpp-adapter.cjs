@@ -3,7 +3,7 @@ const crypto = require('node:crypto');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 class XmppAdapter {
-  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); }
+  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password) {
@@ -41,6 +41,7 @@ class XmppAdapter {
     this.states.set(accountId, { accountId, status: 'disconnecting', retryable: false, since: new Date().toISOString() });
     if (session) await session.stop();
     this.sessions.delete(accountId);
+    this.rosters.delete(accountId); this.remoteResources.delete(accountId);
     this.states.set(accountId, { accountId, status: 'idle', retryable: false, since: new Date().toISOString() });
   }
 
@@ -57,7 +58,7 @@ class XmppAdapter {
     const result = await session.iqCaller.request(xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' })));
     await session.send(xml('presence'));
     const contacts = result.getChild('query', 'jabber:iq:roster')?.getChildren('item').map((item) => ({ jid: this.bareJid(item.attrs.jid), name: item.attrs.name, groups: item.getChildren('group').map((group) => group.getText()), subscription: ['none', 'to', 'from', 'both'].includes(item.attrs.subscription) ? item.attrs.subscription : 'none', ...(item.attrs.ask === 'subscribe' ? { ask: 'subscribe' } : {}), source: 'roster' })) || [];
-    return [...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values()];
+    const normalized = [...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values()]; this.rosters.set(accountId, new Map(normalized.map((contact) => [contact.jid, contact]))); this.remoteResources.set(accountId, new Map()); return normalized;
   }
 
   async sendMessage(accountId, input) {
@@ -70,7 +71,10 @@ class XmppAdapter {
   handleStanza(accountId, stanza) {
     if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_STANZA]', JSON.stringify({ accountId, from: stanza.attrs?.from || '', to: stanza.attrs?.to || '', type: stanza.name || stanza.attrs?.type || '', id: stanza.attrs?.id || '', hasBody: Boolean(stanza.getChildText?.('body')) }));
     if (stanza.is('presence')) {
-      this.emit({ type: 'presence.changed', payload: { jid: this.bareJid(stanza.attrs.from || accountId), availability: stanza.attrs.type === 'unavailable' ? 'unavailable' : 'available', updatedAt: new Date().toISOString() } });
+      const type = stanza.attrs.type; if (['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'error', 'probe'].includes(type)) return;
+      const jid = this.bareJid(stanza.attrs.from || accountId); const contact = this.rosters.get(accountId)?.get(jid); if (!contact || !['to', 'both'].includes(contact.subscription)) return;
+      const resource = String(stanza.attrs.from || '').split('/')[1] || '_bare'; const resources = this.remoteResources.get(accountId) || new Map(); if (type === 'unavailable') resources.delete(jid + '/' + resource); else resources.set(jid + '/' + resource, { mode: stanza.getChildText('show') || undefined, status: stanza.getChildText('status') || undefined }); this.remoteResources.set(accountId, resources);
+      const active = [...resources.entries()].filter(([key]) => key.startsWith(`${jid}/`)); const latest = active[active.length - 1]?.[1]; this.emit({ type: 'presence.changed', payload: { accountId, jid, availability: active.length ? 'available' : 'unavailable', mode: latest?.mode, status: latest?.status, updatedAt: new Date().toISOString() } });
     }
     if (stanza.is('message') && stanza.getChildText('body')) {
       const senderJid = this.bareJid(stanza.attrs.from || accountId);
