@@ -11,7 +11,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:angular": "ng test --no-watch --no-progress",
-    "test:electron": "electron node_modules/electron/cli.js tests/electron-ipc.integration.cjs"
+    "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\""
   },
   "private": true,
   "packageManager": "npm@11.19.0",
