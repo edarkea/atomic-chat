@@ -7,7 +7,8 @@ export type ConnectionStatus = 'idle' | 'connecting' | 'authenticating' | 'conne
 export type MessageStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed';
 export interface ConnectionState { accountId: string; status: ConnectionStatus; reason?: string; retryable: boolean; since: string; }
 export interface Presence { jid: string; availability: Availability; mode?: PresenceMode; status?: string; updatedAt: string; }
-export interface Contact { jid: string; name?: string; groups: string[]; presence?: Presence; }
+export type RosterSubscription = 'none' | 'to' | 'from' | 'both';
+export interface Contact { jid: string; name?: string; groups: string[]; presence?: Presence; subscription?: RosterSubscription; ask?: 'subscribe'; source?: 'roster' | 'conversation'; }
 export interface Message { id: string; accountId: string; conversationId: string; clientMessageId: ClientMessageId; senderJid: string; body: { kind: 'text'; text: string }; status: MessageStatus; createdAt: string; errorCode?: AppError['code']; }
 export type AppErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'NOT_CONNECTED' | 'TIMEOUT' | 'AUTH_FAILED' | 'TRANSPORT_FAILED' | 'CONFLICT' | 'STORAGE_FAILED' | 'UNSUPPORTED' | 'INTERNAL';
 export interface AppError { code: AppErrorCode; retryable: boolean; requestId: RequestId; message: string; }

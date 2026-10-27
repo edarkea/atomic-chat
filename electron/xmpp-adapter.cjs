@@ -56,7 +56,8 @@ class XmppAdapter {
     const session = this.require(accountId);
     const result = await session.iqCaller.request(xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' })));
     await session.send(xml('presence'));
-    return result.getChild('query', 'jabber:iq:roster')?.getChildren('item').map((item) => ({ jid: item.attrs.jid, name: item.attrs.name, groups: item.getChildren('group').map((group) => group.getText()) })) || [];
+    const contacts = result.getChild('query', 'jabber:iq:roster')?.getChildren('item').map((item) => ({ jid: this.bareJid(item.attrs.jid), name: item.attrs.name, groups: item.getChildren('group').map((group) => group.getText()), subscription: ['none', 'to', 'from', 'both'].includes(item.attrs.subscription) ? item.attrs.subscription : 'none', ...(item.attrs.ask === 'subscribe' ? { ask: 'subscribe' } : {}), source: 'roster' })) || [];
+    return [...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values()];
   }
 
   async sendMessage(accountId, input) {
