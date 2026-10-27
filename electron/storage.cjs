@@ -36,11 +36,13 @@ class PersistenceStore {
         id TEXT PRIMARY KEY,
         account_id TEXT NOT NULL,
         conversation_id TEXT NOT NULL,
-        client_message_id TEXT NOT NULL UNIQUE,
+        client_message_id TEXT NOT NULL,
         sender_jid TEXT NOT NULL,
         body TEXT NOT NULL,
         status TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        UNIQUE (account_id, client_message_id),
+        FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS preferences (
         scope TEXT NOT NULL,
@@ -57,9 +59,10 @@ class PersistenceStore {
       this.database.exec(`ALTER TABLE messages RENAME TO messages_legacy_unassigned;
         CREATE TABLE messages (
           id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
-          client_message_id TEXT NOT NULL UNIQUE, sender_jid TEXT NOT NULL, body TEXT NOT NULL,
+          client_message_id TEXT NOT NULL, sender_jid TEXT NOT NULL, body TEXT NOT NULL,
           status TEXT NOT NULL, created_at TEXT NOT NULL,
-          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
+          UNIQUE (account_id, client_message_id)
         );
         CREATE TABLE IF NOT EXISTS message_recovery (
           id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, client_message_id TEXT NOT NULL,
@@ -84,7 +87,7 @@ class PersistenceStore {
     if (!message.accountId) throw new Error('INVALID_INPUT');
     this.database.prepare(`INSERT INTO messages(id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at)
       VALUES (@id, @accountId, @conversationId, @clientMessageId, @senderJid, @body, @status, @createdAt)
-      ON CONFLICT(client_message_id) DO UPDATE SET status=@status, body=@body`).run({ ...message, body: JSON.stringify(message.body) });
+      ON CONFLICT(account_id, client_message_id) DO UPDATE SET status=@status, body=@body`).run({ ...message, body: JSON.stringify(message.body) });
   }
 
   listMessages(accountId, conversationId) {
