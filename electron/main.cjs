@@ -6,6 +6,7 @@ const { PersistenceStore } = require('./storage.cjs');
 const { SecretStore } = require('./secrets.cjs');
 const { XmppAdapter } = require('./xmpp-adapter.cjs');
 const { validateXmppTransport } = require('./security-policy.cjs');
+const { isAuthorizedSender } = require('./ipc-security.cjs');
 
 let persistence;
 let secrets;
@@ -22,7 +23,7 @@ function createWindow() {
 }
 
 function requestId(event, input) { return input?.requestId || `ipc_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
-function assertSender(event) { const frame = event.senderFrame; const url = frame?.url || ''; const window = BrowserWindow.fromWebContents(event.sender); const isMainFrame = frame === event.sender.mainFrame; const packagedUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html')).href; const devUrl = process.env.ATOMIC_CHAT_DEV_SERVER ? new URL(process.env.ATOMIC_CHAT_DEV_SERVER).href : ''; const allowedUrl = url === packagedUrl || url === devUrl; if (!window || !isMainFrame || !allowedUrl) throw new Error('UNAUTHORIZED'); }
+function assertSender(event) { const packagedUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html')).href; const devUrl = process.env.ATOMIC_CHAT_DEV_SERVER ? new URL(process.env.ATOMIC_CHAT_DEV_SERVER).href : ''; if (!isAuthorizedSender(event, BrowserWindow, packagedUrl, devUrl)) throw new Error('UNAUTHORIZED'); }
 function validVersion(input) { return input?.version === 1; }
 function requireText(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 512) throw new Error(`INVALID_${name}`); return value.trim(); }
 function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); validateXmppTransport(input.endpoint, app.isPackaged); }

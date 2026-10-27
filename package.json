@@ -9,7 +9,9 @@
     "electron": "node --env-file=.env node_modules/electron/cli.js electron/main.cjs",
     "test:p0": "node --env-file=.env --test tests/*.test.cjs",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "test:angular": "ng test --no-watch --no-progress",
+    "test:electron": "electron node_modules/electron/cli.js tests/electron-ipc.integration.cjs"
   },
   "private": true,
   "packageManager": "npm@11.19.0",
@@ -30,7 +32,9 @@
     "@angular/cli": "^21.2.14",
     "@angular/compiler-cli": "^21.2.0",
     "electron": "^39.0.0",
+    "jsdom": "^27.0.1",
     "prettier": "^3.8.1",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8"
   }
 }
