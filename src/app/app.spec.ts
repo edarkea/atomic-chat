@@ -2,7 +2,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { App } from './app';
-import { P0Facade } from './core/p0.facade';
+import { ChatFacade } from './core/chat.facade';
 
 function fakeFacade() {
   return {
@@ -10,13 +10,13 @@ function fakeFacade() {
     contacts: signal([]), messages: signal([]), presence: signal({ jid: 'a@example.invalid', availability: 'available' }),
     preferences: signal({ theme: 'atomic', notifications: true, autoLogin: false }), error: signal<string | null>(null), tryAutoLogin: vi.fn(),
     isConnected: signal(true), send: vi.fn(async () => true), loadConversation: vi.fn(async () => undefined), setAvailability: vi.fn(), updatePreferences: vi.fn(), resetPreferences: vi.fn(), disconnect: vi.fn(), refreshRoster: vi.fn(),
-  } as unknown as P0Facade;
+  } as unknown as ChatFacade;
 }
 
 describe('App composer integration', () => {
   let fixture: ComponentFixture<App>; let facade: ReturnType<typeof fakeFacade>;
   const chatMessage = (text: string, clientMessageId: string) => ({ id: clientMessageId, accountId: 'a@example.invalid', conversationId: 'contact@example.invalid', clientMessageId, senderJid: 'contact@example.invalid', body: { kind: 'text' as const, text }, status: 'sent' as const, createdAt: new Date().toISOString() });
-  beforeEach(async () => { facade = fakeFacade(); await TestBed.configureTestingModule({ imports: [App], providers: [{ provide: P0Facade, useValue: facade }] }).compileComponents(); fixture = TestBed.createComponent(App); fixture.detectChanges(); (fixture.componentInstance as any).selectedJid.set('contact@example.invalid'); fixture.detectChanges(); });
+  beforeEach(async () => { facade = fakeFacade(); await TestBed.configureTestingModule({ imports: [App], providers: [{ provide: ChatFacade, useValue: facade }] }).compileComponents(); fixture = TestBed.createComponent(App); fixture.detectChanges(); (fixture.componentInstance as any).selectedJid.set('contact@example.invalid'); fixture.detectChanges(); });
 
   it('clears only after local acceptance', async () => { const input = fixture.nativeElement.querySelector('input[name="message"]'); input.value = 'hola'; input.dispatchEvent(new Event('input')); fixture.detectChanges(); await fixture.nativeElement.querySelector('form.composer').requestSubmit(); fixture.detectChanges(); expect((fixture.componentInstance as any).draft()).toBe(''); });
   it('preserves the draft after a failed result or exception', async () => { const send = facade.send as any; send.mockResolvedValueOnce(false); const input = fixture.nativeElement.querySelector('input[name="message"]'); input.value = 'reintentar'; input.dispatchEvent(new Event('input')); await fixture.nativeElement.querySelector('form.composer').requestSubmit(); expect((fixture.componentInstance as any).draft()).toBe('reintentar'); send.mockRejectedValueOnce(new Error('ipc')); await fixture.nativeElement.querySelector('form.composer').requestSubmit(); expect((fixture.componentInstance as any).draft()).toBe('reintentar'); });
