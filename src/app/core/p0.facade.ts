@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
 import { ConnectionState, Contact, Message, Presence, PresenceInput, Preferences } from './domain';
 import { InMemoryXmppPort } from './in-memory-xmpp.port';
@@ -19,6 +19,7 @@ export class P0Facade {
   readonly error = signal<string | null>(null);
   readonly preferences = signal<Preferences>({ theme: 'atomic', notifications: true, autoLogin: false });
   private identityGeneration = 0;
+  private readonly accountContactReset = effect(() => { this.accountId(); this.contacts.set([]); });
   private isCurrent(generation: number, accountId: string): boolean { return generation === this.identityGeneration && accountId === this.accountId(); }
   private addConversation(accountId: string, jid: string): void { if (accountId !== this.accountId() || !jid) return; const bare = jid.split('/')[0].toLowerCase(); this.contacts.update((items) => items.some((item) => item.jid.split('/')[0].toLowerCase() === bare) ? items : [...items, { jid: bare, name: bare, groups: [], source: 'conversation' }]); }
   private mergeRoster(roster: Contact[]): void { const normalized = new Map<string, Contact>(); for (const contact of roster) { const jid = contact.jid.split('/')[0].toLowerCase(); normalized.set(jid, { ...contact, jid, source: 'roster' }); } this.contacts.update((items) => { const local = items.filter((item) => item.source === 'conversation' && !normalized.has(item.jid.split('/')[0].toLowerCase())); return [...normalized.values(), ...local]; }); }
