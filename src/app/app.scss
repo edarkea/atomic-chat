@@ -86,4 +86,5 @@ html, body { overflow: hidden; }
 .chat-content::-webkit-scrollbar-thumb:hover { background: #42b866; }
   .chat-content { align-content: end; display: flex; flex-direction: column; padding: 18px 16px; }
   .presence-arrow { margin-left: auto; }
+  .chat-header { flex: 0 0 61px; height: 61px; }
 @media (max-width: 680px) { .app-window { height: calc(100vh - 12px); margin: 6px; } }
