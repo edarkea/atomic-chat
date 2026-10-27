@@ -40,6 +40,7 @@ export class App {
   protected presenceLabel(): string { return this.selectedPresenceOption().label; }
   protected presenceDot(): string { return this.selectedPresenceOption().dot; }
   protected isPresenceSelected(id: string): boolean { return this.selectedPresenceOption().id === id; }
+  protected connectionLabel(): string { const labels: Record<string, string> = { idle: 'Desconectado', connecting: 'Conectando', authenticating: 'Autenticando', connected: 'Conectado', disconnecting: 'Desconectando', failed: 'Falló' }; return labels[this.p0.connection().status] || this.p0.connection().status; }
   protected togglePresence(): void { this.presenceOpen.update((open) => !open); }
   protected async choosePresence(option: { id: string; mode: 'chat' | 'away' | 'dnd' | 'xa' | undefined; label: string }): Promise<void> { const status = option.id === 'phone' ? 'Al teléfono' : option.id === 'away' ? '' : this.presenceStatus(); await this.p0.setPresence(option.mode, status); this.presenceOpen.set(false); }
   protected isOutgoing(message: Message): boolean { const sender = message.senderJid.split('/')[0].toLowerCase(); const account = this.p0.accountId().toLowerCase(); return sender === account || sender.startsWith(`${account}@`); }

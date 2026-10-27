@@ -86,5 +86,6 @@ html, body { overflow: hidden; }
 .chat-content::-webkit-scrollbar-thumb:hover { background: #42b866; }
   .chat-content { align-content: end; display: flex; flex-direction: column; padding: 18px 16px; }
   .presence-arrow { margin-left: auto; }
+  .online-dot.away, .online-dot.phone { background: #e8c95a; }.online-dot.xa { background: #9caa9f; }.online-dot.dnd { background: #e76b67; }.online-dot.chat { background: #62eb80; }.online-dot.online { background: #54e777; }
   .chat-header { flex: 0 0 61px; height: 61px; }
 @media (max-width: 680px) { .app-window { height: calc(100vh - 12px); margin: 6px; } }
