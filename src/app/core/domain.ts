@@ -10,6 +10,8 @@ export interface Presence { jid: string; availability: Availability; mode?: Pres
 export type RosterSubscription = 'none' | 'to' | 'from' | 'both';
 export interface Contact { jid: string; name?: string; groups: string[]; presence?: Presence; subscription?: RosterSubscription; ask?: 'subscribe'; source?: 'roster' | 'conversation'; }
 export interface Message { id: string; accountId: string; conversationId: string; clientMessageId: ClientMessageId; senderJid: string; body: { kind: 'text'; text: string }; status: MessageStatus; createdAt: string; errorCode?: AppError['code']; }
+export interface HistoryPageInput { version: 1; requestId: string; accountId: string; conversationId: string; limit: number; direction: 'older' | 'newer'; cursor?: string | null; }
+export interface HistoryPage { items: Message[]; nextCursor: string | null; hasMore: boolean; }
 export type AppErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'NOT_CONNECTED' | 'TIMEOUT' | 'AUTH_FAILED' | 'TRANSPORT_FAILED' | 'CONFLICT' | 'STORAGE_FAILED' | 'UNSUPPORTED' | 'INTERNAL';
 export interface AppError { code: AppErrorCode; retryable: boolean; requestId: RequestId; message: string; }
 export type Result<T> = { ok: true; value: T; version: ContractVersion; requestId: RequestId } | { ok: false; error: AppError; version: ContractVersion };

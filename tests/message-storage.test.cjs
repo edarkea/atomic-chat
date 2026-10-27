@@ -54,6 +54,20 @@ test('history is isolated by account and legacy messages are quarantined', () =>
   store.close(); fs.rmSync(directory, { recursive: true, force: true });
 });
 
+test('history pages use stable composite ordering and recover both directions', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-pages-'));
+  const store = new PersistenceStore(directory);
+  store.upsertAccount({ accountId: 'page@example.invalid', host: 'example.invalid', port: 5222, tls: 1, credentialRef: null, createdAt: new Date().toISOString() });
+  for (let index = 0; index < 101; index += 1) store.saveMessage({ id: `message-${String(index).padStart(3, '0')}`, accountId: 'page@example.invalid', conversationId: 'contact@example.invalid', clientMessageId: `client-${index}`, senderJid: 'contact@example.invalid', body: { kind: 'text', text: String(index) }, status: 'sent', createdAt: '2026-01-01T00:00:00.000Z' });
+  const recent = store.listMessagesPage('page@example.invalid', 'contact@example.invalid', 50, 'older', null);
+  assert.equal(recent.items.length, 50); assert.equal(recent.items[0].id, 'message-051'); assert.equal(recent.items.at(-1).id, 'message-100'); assert.equal(recent.hasMore, true);
+  const older = store.listMessagesPage('page@example.invalid', 'contact@example.invalid', 50, 'older', { createdAt: recent.items[0].createdAt, id: recent.items[0].id });
+  assert.equal(older.items[0].id, 'message-001'); assert.equal(older.items.at(-1).id, 'message-050');
+  const newer = store.listMessagesPage('page@example.invalid', 'contact@example.invalid', 50, 'newer', { createdAt: older.items.at(-1).createdAt, id: older.items.at(-1).id });
+  assert.equal(newer.items[0].id, 'message-051'); assert.equal(newer.items.at(-1).id, 'message-100');
+  store.close(); fs.rmSync(directory, { recursive: true, force: true });
+});
+
 test('v3 message tables migrate structurally to v4 and remain idempotent', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-v3-'));
   const dbPath = path.join(directory, 'data', 'atomic-chat.sqlite'); fs.mkdirSync(path.dirname(dbPath), { recursive: true });

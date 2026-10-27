@@ -105,7 +105,7 @@ class PersistenceStore {
         DROP TABLE messages_v3;
         UPDATE schema_meta SET version = 4;`);
     } else {
-      this.database.exec(`CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created ON messages(account_id, conversation_id, created_at);`);
+      this.database.exec(`CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created ON messages(account_id, conversation_id, created_at); CREATE INDEX IF NOT EXISTS idx_messages_account_conversation_created_id ON messages(account_id, conversation_id, created_at, id);`);
       this.database.prepare('UPDATE schema_meta SET version = 4').run();
     }
     }); migrate();
@@ -128,6 +128,23 @@ class PersistenceStore {
     return this.database.prepare(`SELECT id, conversation_id AS conversationId, client_message_id AS clientMessageId,
       sender_jid AS senderJid, body, status, created_at AS createdAt
       FROM messages WHERE account_id = ? AND conversation_id = ? ORDER BY created_at ASC`).all(accountId, conversationId).map((row) => ({ ...row, accountId, body: JSON.parse(row.body) }));
+  }
+
+  listMessagesPage(accountId, conversationId, limit, direction, cursor) {
+    const values = [accountId, conversationId];
+    let order = 'ORDER BY created_at DESC, id DESC';
+    let predicate = '';
+    if (cursor) {
+      if (direction === 'older') { predicate = ' AND (created_at < ? OR (created_at = ? AND id < ?))'; values.push(cursor.createdAt, cursor.createdAt, cursor.id); }
+      else { predicate = ' AND (created_at > ? OR (created_at = ? AND id > ?))'; values.push(cursor.createdAt, cursor.createdAt, cursor.id); order = 'ORDER BY created_at ASC, id ASC'; }
+    }
+    const rows = this.database.prepare(`SELECT id, conversation_id AS conversationId, client_message_id AS clientMessageId,
+      sender_jid AS senderJid, body, status, created_at AS createdAt FROM messages
+      WHERE account_id = ? AND conversation_id = ?${predicate} ${order} LIMIT ?`).all(...values, limit + 1);
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).map((row) => ({ ...row, accountId, body: JSON.parse(row.body) }));
+    if (direction === 'older') page.reverse();
+    return { items: page, hasMore };
   }
 
   listConversations(accountId) {

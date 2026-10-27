@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('atomicChat', Object.freeze({
   presence: Object.freeze({ set: (input) => invoke('presence.set', input) }),
   roster: Object.freeze({ list: (accountId) => invoke('roster.list', accountId) }),
   messaging: Object.freeze({ send: (input) => invoke('message.send', input) }),
-  history: Object.freeze({ list: (input) => invoke('messages.list', input), conversations: (input) => invoke('conversations.list', input) }),
+  history: Object.freeze({ list: (input) => invoke('messages.list', input), listPage: (input) => invoke('messages.page', input), conversations: (input) => invoke('conversations.list', input) }),
   preferences: Object.freeze({ get: (input) => invoke('preferences.get', input), update: (input) => invoke('preferences.update', input), reset: (input) => invoke('preferences.reset', input) }),
   subscribe: (listener) => { const handler = (_event, value) => listener(value); ipcRenderer.on('domain.event', handler); return () => ipcRenderer.removeListener('domain.event', handler); },
 }));
