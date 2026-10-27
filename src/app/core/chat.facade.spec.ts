@@ -5,6 +5,7 @@ import { InMemoryXmppPort } from './in-memory-xmpp.port';
 import { ElectronXmppPort } from './electron-xmpp.port';
 
 const ok = <T>(value: T) => ({ ok: true as const, value, version: 1 as const, requestId: 'test' });
+const historyMessage = (accountId: string, conversationId: string, index: number) => ({ id: `message-${index}`, accountId, conversationId, clientMessageId: `client-${index}`, senderJid: conversationId, body: { kind: 'text' as const, text: String(index) }, status: 'sent' as const, createdAt: new Date(1700000000000 + index).toISOString() });
 
 describe('ChatFacade roster reconciliation', () => {
   let port: any; let history: Record<string, any[]>;
@@ -27,5 +28,21 @@ describe('ChatFacade roster reconciliation', () => {
   it('does not apply a stale roster result after the active account changes', async () => {
     let release!: (value: any) => void; port.listRoster = (accountId: string) => accountId === 'a@example.invalid' ? new Promise((resolve) => { release = resolve; }) : Promise.resolve(ok([]));
     const facade = TestBed.inject(ChatFacade); const first = facade.connect('a@example.invalid'); await Promise.resolve(); await facade.connect('b@example.invalid'); release(ok([{ jid: 'late@example.invalid', name: 'late', groups: [] }])); await first; expect(facade.accountId()).toBe('b@example.invalid'); expect(facade.contacts()).toEqual([]);
+  });
+
+  it('walks a 1000-message history in both directions with a bounded window', async () => {
+    const accountId = 'a@example.invalid'; const conversationId = 'history@example.invalid'; const all = Array.from({ length: 1000 }, (_, index) => historyMessage(accountId, conversationId, index));
+    const page = (input: { direction: 'older' | 'newer'; cursor?: string | null; limit: number }) => { const initial = !input.cursor; const cursor = input.cursor ? input.cursor.split(':').map(Number) : [950, 1000]; const start = initial ? 950 : input.direction === 'older' ? Math.max(0, cursor[0] - input.limit) : cursor[1]; const end = initial ? 1000 : input.direction === 'older' ? cursor[0] : Math.min(all.length, cursor[1] + input.limit); const items = all.slice(start, end); return ok({ items, nextCursor: items.length ? `${start}:${end}` : null, hasMore: input.direction === 'older' ? start > 0 : end < all.length }); };
+    window.atomicChat!.history.listPage = async (input: any) => page(input);
+    const facade = TestBed.inject(ChatFacade); await facade.loadConversation(conversationId); expect(facade.messages().map((message) => message.id)).toEqual(all.slice(950).map((message) => message.id));
+    for (let index = 0; index < 19; index += 1) await facade.loadOlderMessages(conversationId);
+    expect(facade.messages()).toHaveLength(200); expect(facade.messages()[0].id).toBe('message-0'); expect(facade.hasOlderMessages()).toBe(false); expect(facade.hasNewerMessages()).toBe(true);
+    for (let index = 0; index < 19; index += 1) await facade.loadNewerMessages(conversationId);
+    expect(facade.messages()).toHaveLength(200); expect(facade.messages().at(-1)?.id).toBe('message-999'); expect(new Set(facade.messages().map((message) => message.id)).size).toBe(200);
+  });
+
+  it('invalidates a pending conversation response', async () => {
+    let releaseFirst!: (value: any) => void; let releaseSecond!: (value: any) => void; let calls = 0; window.atomicChat!.history.listPage = () => new Promise((resolve) => { calls += 1; if (calls === 1) releaseFirst = resolve; else releaseSecond = resolve; }) as any;
+    const facade = TestBed.inject(ChatFacade); const pending = facade.loadConversation('first@example.invalid'); await Promise.resolve(); const second = facade.loadConversation('second@example.invalid'); releaseFirst(ok({ items: [historyMessage('a@example.invalid', 'first@example.invalid', 1)], nextCursor: null, hasMore: false })); await pending; expect(facade.messages()).toEqual([]); expect(facade.historyLoading()).toBe(true); releaseSecond(ok({ items: [], nextCursor: null, hasMore: false })); await second; expect(facade.historyLoading()).toBe(false);
   });
 });
