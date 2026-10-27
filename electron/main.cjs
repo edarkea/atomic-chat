@@ -7,13 +7,12 @@ const { SecretStore } = require('./secrets.cjs');
 const { XmppAdapter } = require('./xmpp-adapter.cjs');
 const { validateXmppTransport } = require('./security-policy.cjs');
 const { isAuthorizedSender } = require('./ipc-security.cjs');
+const { createHistorySecurity } = require('./history-security.cjs');
 
 let persistence;
 let secrets;
 let xmpp;
-const historyCursorKey = crypto.randomBytes(32);
-const senderAccounts = new Map();
-const pendingConnections = new Map();
+const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -21,7 +20,7 @@ function createWindow() {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
   window.removeMenu();
-  window.webContents.on('destroyed', () => { senderAccounts.delete(window.webContents.id); pendingConnections.delete(window.webContents.id); });
+  window.webContents.on('destroyed', () => historySecurity.destroySender(window.webContents.id));
   if (process.env['ATOMIC_CHAT_DEV_SERVER']) window.loadURL(process.env['ATOMIC_CHAT_DEV_SERVER']);
   else window.loadFile(path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html'));
 }
@@ -31,13 +30,13 @@ function assertSender(event) { const packagedUrl = pathToFileURL(path.join(__dir
 function validVersion(input) { return input?.version === 1; }
 function requireText(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 512) throw new Error(`INVALID_${name}`); return value.trim(); }
 function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); validateXmppTransport(input.endpoint, app.isPackaged); }
-function authorizedHistoryAccount(event, accountId) { const senderId = event.sender.id; const owner = senderAccounts.get(senderId); if (owner) return owner === accountId; const configured = process.env.ATOMIC_XMPP_USERNAME || ''; if (accountId === configured && configured) { senderAccounts.set(senderId, accountId); return true; } return false; }
-function encodeHistoryCursor(value) { const payload = Buffer.from(JSON.stringify(value)).toString('base64url'); const mac = crypto.createHmac('sha256', historyCursorKey).update(payload).digest('base64url'); return `${payload}.${mac}`; }
-function decodeHistoryCursor(cursor, accountId, conversationId) { if (typeof cursor !== 'string' || cursor.length > 1024) throw new Error('INVALID_INPUT'); const [payload, mac] = cursor.split('.'); const expected = crypto.createHmac('sha256', historyCursorKey).update(payload || '').digest('base64url'); if (!payload || !mac || mac.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) throw new Error('INVALID_INPUT'); let value; try { value = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { throw new Error('INVALID_INPUT'); } if (value.accountId !== accountId || value.conversationId !== conversationId || !value.lower || !value.upper || typeof value.lower.createdAt !== 'string' || typeof value.lower.id !== 'string' || typeof value.upper.createdAt !== 'string' || typeof value.upper.id !== 'string') throw new Error('INVALID_INPUT'); return value; }
+function authorizedHistoryAccount(event, accountId) { return historySecurity.authorize(event.sender.id, accountId); }
+function encodeHistoryCursor(value) { return historySecurity.encodeCursor(value); }
+function decodeHistoryCursor(cursor, accountId, conversationId) { return historySecurity.decodeCursor(cursor, accountId, conversationId); }
 
 ipcMain.handle('contract.version', (event) => { assertSender(event); return { version: 1 }; });
 ipcMain.handle('account.setSecret', (event, input) => { assertSender(event); if (!validVersion(input) || typeof input.credentialRef !== 'string' || typeof input.secret !== 'string' || !input.secret || input.secret.length > 4096) throw new Error('INVALID_INPUT'); secrets.put(input.credentialRef, input.secret); return { ok: true, value: { stored: true }, version: 1, requestId: requestId(event, input) }; });
-ipcMain.handle('account.connect', async (event, input) => { assertSender(event); const connectionRequest = requestId(event, input); pendingConnections.set(event.sender.id, connectionRequest); try { validateAccountInput(input); const password = secrets.get(input.credentialRef); const state = await xmpp.connect(input, password); persistence.upsertAccount({ accountId: input.accountId, host: input.endpoint.host, port: input.endpoint.port, tls: input.endpoint.tls ? 1 : 0, credentialRef: input.credentialRef || null, createdAt: new Date().toISOString() }); if (pendingConnections.get(event.sender.id) === connectionRequest) senderAccounts.set(event.sender.id, input.accountId); return { ok: true, value: state, version: 1, requestId: connectionRequest }; } catch (error) { console.error('[XMPP-CONNECT-FAILED]', {
+ipcMain.handle('account.connect', async (event, input) => { assertSender(event); const connectionRequest = requestId(event, input); const connectionToken = historySecurity.beginConnection(event.sender.id, connectionRequest); try { validateAccountInput(input); const password = secrets.get(input.credentialRef); const state = await xmpp.connect(input, password); persistence.upsertAccount({ accountId: input.accountId, host: input.endpoint.host, port: input.endpoint.port, tls: input.endpoint.tls ? 1 : 0, credentialRef: input.credentialRef || null, createdAt: new Date().toISOString() }); historySecurity.completeConnection(event.sender.id, connectionToken, input.accountId); return { ok: true, value: state, version: 1, requestId: connectionRequest }; } catch (error) { console.error('[XMPP-CONNECT-FAILED]', {
   code: error?.code,
   message: error?.message,
   cause: error?.cause?.message,

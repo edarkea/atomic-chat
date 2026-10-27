@@ -30,15 +30,15 @@ describe('ChatFacade roster reconciliation', () => {
     const facade = TestBed.inject(ChatFacade); const first = facade.connect('a@example.invalid'); await Promise.resolve(); await facade.connect('b@example.invalid'); release(ok([{ jid: 'late@example.invalid', name: 'late', groups: [] }])); await first; expect(facade.accountId()).toBe('b@example.invalid'); expect(facade.contacts()).toEqual([]);
   });
 
-  it('walks a 1000-message history in both directions with a bounded window', async () => {
-    const accountId = 'a@example.invalid'; const conversationId = 'history@example.invalid'; const all = Array.from({ length: 1000 }, (_, index) => historyMessage(accountId, conversationId, index));
+  it('walks a 10000-message history in both directions with a bounded window', async () => {
+    const accountId = 'a@example.invalid'; const conversationId = 'history@example.invalid'; const all = Array.from({ length: 10000 }, (_, index) => historyMessage(accountId, conversationId, index));
     const page = (input: { direction: 'older' | 'newer'; cursor?: string | null; limit: number }) => { const initial = !input.cursor; const cursor = input.cursor ? input.cursor.split(':').map(Number) : [950, 1000]; const start = initial ? 950 : input.direction === 'older' ? Math.max(0, cursor[0] - input.limit) : cursor[1]; const end = initial ? 1000 : input.direction === 'older' ? cursor[0] : Math.min(all.length, cursor[1] + input.limit); const items = all.slice(start, end); return ok({ items, nextCursor: items.length ? `${start}:${end}` : null, hasMore: input.direction === 'older' ? start > 0 : end < all.length }); };
     window.atomicChat!.history.listPage = async (input: any) => page(input);
-    const facade = TestBed.inject(ChatFacade); await facade.loadConversation(conversationId); expect(facade.messages().map((message) => message.id)).toEqual(all.slice(950).map((message) => message.id));
-    for (let index = 0; index < 19; index += 1) await facade.loadOlderMessages(conversationId);
+    const facade = TestBed.inject(ChatFacade); await facade.loadConversation(conversationId); expect(facade.messages().map((message) => message.id)).toEqual(all.slice(950, 1000).map((message) => message.id));
+    for (let index = 0; index < 199; index += 1) await facade.loadOlderMessages(conversationId);
     expect(facade.messages()).toHaveLength(200); expect(facade.messages()[0].id).toBe('message-0'); expect(facade.hasOlderMessages()).toBe(false); expect(facade.hasNewerMessages()).toBe(true);
-    for (let index = 0; index < 19; index += 1) await facade.loadNewerMessages(conversationId);
-    expect(facade.messages()).toHaveLength(200); expect(facade.messages().at(-1)?.id).toBe('message-999'); expect(new Set(facade.messages().map((message) => message.id)).size).toBe(200);
+    for (let index = 0; index < 199; index += 1) await facade.loadNewerMessages(conversationId);
+    expect(facade.messages()).toHaveLength(200); expect(facade.messages().at(-1)?.id).toBe('message-9999'); expect(new Set(facade.messages().map((message) => message.id)).size).toBe(200);
   });
 
   it('invalidates a pending conversation response', async () => {
