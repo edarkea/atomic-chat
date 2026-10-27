@@ -61,3 +61,18 @@ test('v3 message tables migrate structurally to v4 and remain idempotent', () =>
   store.close(); store = new PersistenceStore(directory); assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 4); store.close();
   fs.rmSync(directory, { recursive: true, force: true });
 });
+
+test('v3 migration rolls back atomically when source metadata is invalid', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-rollback-'));
+  const dbPath = path.join(directory, 'data', 'atomic-chat.sqlite'); fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const Database = require('better-sqlite3'); const legacy = new Database(dbPath);
+  legacy.exec(`CREATE TABLE schema_meta(version INTEGER NOT NULL); INSERT INTO schema_meta VALUES (3);
+    CREATE TABLE accounts(account_id TEXT PRIMARY KEY, endpoint_host TEXT NOT NULL, endpoint_port INTEGER NOT NULL, tls INTEGER NOT NULL, credential_ref TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE messages(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, conversation_id TEXT NOT NULL, client_message_id TEXT NOT NULL, sender_jid TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL);`);
+  legacy.close();
+  assert.throws(() => new PersistenceStore(directory));
+  const check = new Database(dbPath);
+  assert.equal(check.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").get().name, 'messages');
+  assert.equal(check.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages_v3'").get(), undefined);
+  check.close(); fs.rmSync(directory, { recursive: true, force: true });
+});

@@ -1,4 +1,5 @@
 const { client, xml } = require('@xmpp/client');
+const { validateXmppTransport } = require('./security-policy.cjs');
 
 class XmppAdapter {
   constructor() { this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); }
@@ -6,21 +7,21 @@ class XmppAdapter {
 
   async connect(input, password) {
     if (!password) throw new Error('secret_unavailable');
-    if (!input.endpoint.tls && process.env.NODE_ENV === 'production') throw new Error('TLS_POLICY');
+    const transport = validateXmppTransport(input.endpoint);
     this.states.set(input.accountId, { accountId: input.accountId, status: 'connecting', retryable: true, since: new Date().toISOString() });
     const session = client({
-      service: `xmpp://${input.endpoint.host}:${input.endpoint.port}`,
-      domain: process.env.ATOMIC_XMPP_DOMAIN || input.endpoint.host,
+      service: `${transport.tls ? 'xmpps' : 'xmpp'}://${transport.host}:${transport.port}`,
+      domain: input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host,
       username: input.accountId.split('@')[0],
       password,
-      tls: { rejectUnauthorized: input.endpoint.allowInsecureTls !== true },
+      tls: { rejectUnauthorized: transport.rejectUnauthorized },
     });
     this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
-    try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
     session.on('error', (error) => { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); });
     session.on('offline', () => { this.sessions.delete(input.accountId); this.setState(input.accountId, 'failed', true, 'offline'); });
     session.on('online', () => { this.setState(input.accountId, 'connected', false); });
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
+    try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
     this.sessions.set(input.accountId, session);
     const state = { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() }; this.states.set(input.accountId, state); return state;
   }
@@ -46,6 +47,7 @@ class XmppAdapter {
   }
 
   async sendMessage(accountId, input) {
+    if (this.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
     const session = this.require(accountId);
     await session.send(xml('message', { type: 'chat', to: input.to }, xml('body', {}, input.body.text)));
     return { ...input, status: 'sent', createdAt: new Date().toISOString() };

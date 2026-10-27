@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { PersistenceStore } = require('./storage.cjs');
 const { SecretStore } = require('./secrets.cjs');
 const { XmppAdapter } = require('./xmpp-adapter.cjs');
+const { validateXmppTransport } = require('./security-policy.cjs');
 
 let persistence;
 let secrets;
@@ -24,7 +25,7 @@ function requestId(event, input) { return input?.requestId || `ipc_${Date.now()}
 function assertSender(event) { const frame = event.senderFrame; const url = frame?.url || ''; const window = BrowserWindow.fromWebContents(event.sender); const isMainFrame = frame === event.sender.mainFrame; const packagedUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html')).href; const devUrl = process.env.ATOMIC_CHAT_DEV_SERVER ? new URL(process.env.ATOMIC_CHAT_DEV_SERVER).href : ''; const allowedUrl = url === packagedUrl || url === devUrl; if (!window || !isMainFrame || !allowedUrl) throw new Error('UNAUTHORIZED'); }
 function validVersion(input) { return input?.version === 1; }
 function requireText(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 512) throw new Error(`INVALID_${name}`); return value.trim(); }
-function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); requireText(input.endpoint?.host, 'HOST'); if (!Number.isInteger(input.endpoint.port) || input.endpoint.port < 1 || input.endpoint.port > 65535 || typeof input.endpoint.tls !== 'boolean') throw new Error('INVALID_ENDPOINT'); if (input.endpoint.allowInsecureTls === true && !process.defaultApp) throw new Error('TLS_POLICY'); }
+function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); validateXmppTransport(input.endpoint); }
 
 ipcMain.handle('p0.contract.version', (event) => { assertSender(event); return { version: 1 }; });
 ipcMain.handle('account.setSecret', (event, input) => { assertSender(event); if (!validVersion(input) || typeof input.credentialRef !== 'string' || typeof input.secret !== 'string' || !input.secret || input.secret.length > 4096) throw new Error('INVALID_INPUT'); secrets.put(input.credentialRef, input.secret); return { ok: true, value: { stored: true }, version: 1, requestId: requestId(event, input) }; });

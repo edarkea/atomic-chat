@@ -9,7 +9,7 @@ class PersistenceStore {
     this.database = new Database(path.join(directory, 'atomic-chat.sqlite'));
     this.database.pragma('journal_mode = WAL');
     this.database.pragma('foreign_keys = ON');
-    this.migrate();
+    try { this.migrate(); } catch (error) { this.database.close(); throw error; }
   }
 
   migrate() {
