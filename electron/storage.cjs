@@ -130,6 +130,12 @@ class PersistenceStore {
       FROM messages WHERE account_id = ? AND conversation_id = ? ORDER BY created_at ASC`).all(accountId, conversationId).map((row) => ({ ...row, accountId, body: JSON.parse(row.body) }));
   }
 
+  listConversations(accountId) {
+    return this.database.prepare(`SELECT account_id AS accountId, conversation_id AS jid,
+      MAX(created_at) AS lastActivity FROM messages WHERE account_id = ?
+      GROUP BY account_id, conversation_id ORDER BY lastActivity DESC`).all(accountId);
+  }
+
   getPreferences(scope, scopeId) {
     const rows = this.database.prepare('SELECT preference_key, value_json FROM preferences WHERE scope = ? AND scope_id = ?').all(scope, scopeId);
     return Object.fromEntries(rows.map((row) => [row.preference_key, JSON.parse(row.value_json)]));

@@ -11,7 +11,7 @@ export interface AtomicChatApi {
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };
   messaging: { send(input: MessageSendInput): Promise<Result<Message>> };
-  history: { list(input: { version: 1; requestId: string; accountId: string; conversationId: string }): Promise<Result<Message[]>> };
+  history: { list(input: { version: 1; requestId: string; accountId: string; conversationId: string }): Promise<Result<Message[]>>; conversations(input: { version: 1; requestId: string; accountId: string }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>> > };
   preferences: { get(input: { accountId: string }): Promise<Result<Preferences>>; update(input: { accountId: string; changes: Partial<Preferences> }): Promise<Result<Partial<Preferences>>>; reset(input: { accountId: string }): Promise<Result<Preferences>> };
   subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
 }
