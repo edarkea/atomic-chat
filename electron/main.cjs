@@ -25,7 +25,7 @@ function requestId(event, input) { return input?.requestId || `ipc_${Date.now()}
 function assertSender(event) { const frame = event.senderFrame; const url = frame?.url || ''; const window = BrowserWindow.fromWebContents(event.sender); const isMainFrame = frame === event.sender.mainFrame; const packagedUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html')).href; const devUrl = process.env.ATOMIC_CHAT_DEV_SERVER ? new URL(process.env.ATOMIC_CHAT_DEV_SERVER).href : ''; const allowedUrl = url === packagedUrl || url === devUrl; if (!window || !isMainFrame || !allowedUrl) throw new Error('UNAUTHORIZED'); }
 function validVersion(input) { return input?.version === 1; }
 function requireText(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 512) throw new Error(`INVALID_${name}`); return value.trim(); }
-function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); validateXmppTransport(input.endpoint); }
+function validateAccountInput(input) { if (!validVersion(input)) throw new Error('UNSUPPORTED'); requireText(input.accountId, 'ACCOUNT'); validateXmppTransport(input.endpoint, app.isPackaged); }
 
 ipcMain.handle('p0.contract.version', (event) => { assertSender(event); return { version: 1 }; });
 ipcMain.handle('account.setSecret', (event, input) => { assertSender(event); if (!validVersion(input) || typeof input.credentialRef !== 'string' || typeof input.secret !== 'string' || !input.secret || input.secret.length > 4096) throw new Error('INVALID_INPUT'); secrets.put(input.credentialRef, input.secret); return { ok: true, value: { stored: true }, version: 1, requestId: requestId(event, input) }; });
@@ -46,7 +46,7 @@ ipcMain.handle('preferences.reset', (event, input) => { assertSender(event); con
 app.whenReady().then(() => {
   persistence = new PersistenceStore(app.getPath('userData'));
   secrets = new SecretStore(safeStorage, app.getPath('userData'));
-  xmpp = new XmppAdapter();
+  xmpp = new XmppAdapter(app.isPackaged);
   xmpp.onEvent((event) => { if (event.type === 'message.received') { try { const message = event.payload; if (message?.id && message?.conversationId && message?.clientMessageId && message?.senderJid && message?.body && message?.createdAt) persistence.saveMessage(message); else console.warn('[PERSISTENCE] Incoming message missing required fields.'); } catch (error) { console.error('[PERSISTENCE] Could not save incoming message:', error.message); } } BrowserWindow.getAllWindows().forEach((window) => window.webContents.send('domain.event', { version: 1, eventId: `evt_${Date.now()}`, type: event.type, payload: event.payload })); });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

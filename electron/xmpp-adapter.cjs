@@ -2,12 +2,12 @@ const { client, xml } = require('@xmpp/client');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 class XmppAdapter {
-  constructor() { this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); }
+  constructor(packaged = false) { this.packaged = packaged; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.recentIncoming = new Map(); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password) {
     if (!password) throw new Error('secret_unavailable');
-    const transport = validateXmppTransport(input.endpoint);
+    const transport = validateXmppTransport(input.endpoint, this.packaged);
     this.states.set(input.accountId, { accountId: input.accountId, status: 'connecting', retryable: true, since: new Date().toISOString() });
     const session = client({
       service: `${transport.tls ? 'xmpps' : 'xmpp'}://${transport.host}:${transport.port}`,

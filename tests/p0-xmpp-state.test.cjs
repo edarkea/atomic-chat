@@ -3,12 +3,9 @@ const assert = require('node:assert/strict');
 const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
 
 test('production rejects insecure XMPP TLS before opening a session', async () => {
-  const previous = process.env.ATOMIC_CHAT_PACKAGED;
-  process.env.ATOMIC_CHAT_PACKAGED = 'true';
-  const adapter = new XmppAdapter();
+  const adapter = new XmppAdapter(true);
   await assert.rejects(() => adapter.connect({ accountId: 'a@example.invalid', endpoint: { host: 'example.invalid', port: 5222, tls: false } }, 'synthetic'), /TLS_POLICY/);
   assert.equal(adapter.sessions.size, 0);
-  if (previous === undefined) delete process.env.ATOMIC_CHAT_PACKAGED; else process.env.ATOMIC_CHAT_PACKAGED = previous;
 });
 
 test('disconnect reports a stable idle state after a failed or absent session', async () => {
