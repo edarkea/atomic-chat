@@ -37,6 +37,12 @@ class FileTransferCoordinator {
     this.beforePublish = options.beforePublish;
     this.publish = options.publish || ((temporary, destination) => fsp.link(temporary, destination));
     this.removeTemporary = options.removeTemporary || ((record) => this.removeTemporaryFiles(record));
+    this.scheduleTimeout = options.scheduleTimeout || ((callback, milliseconds) => setTimeout(callback, milliseconds));
+    this.cancelTimeout = options.cancelTimeout || ((timer) => clearTimeout(timer));
+    this.cleanupRetryLimit = options.cleanupRetryLimit ?? 3;
+    this.cleanupRetryDelay = options.cleanupRetryDelay ?? 1000;
+    this.unrefCleanupTimers = options.unrefCleanupTimers ?? true;
+    this.cleanupJobs = new Map();
   }
 
   onEvent(listener) {
@@ -67,9 +73,10 @@ class FileTransferCoordinator {
       bytes: 0n,
       queue: Promise.resolve(),
       updatedAt: new Date().toISOString(),
-      timer: setTimeout(() => { void this.reject(input.offer.transferId, 'timed_out').catch(() => undefined); }, 60000),
+      timer: undefined,
     };
     this.records.set(input.offer.transferId, record);
+    this.armTimer(record, 'offer', 60000, 'timed_out', 'cancelled');
     this.emit(record, 'file.offerReceived');
     return record;
   }
@@ -160,8 +167,7 @@ class FileTransferCoordinator {
 
   markTerminal(record, state, reason) {
     if (TERMINAL.has(record.state)) return false;
-    clearTimeout(record.timer);
-    record.timer = undefined;
+    this.clearTimer(record);
     record.terminalRequested = true;
     record.state = state;
     record.endReason = reason;
@@ -223,9 +229,8 @@ class FileTransferCoordinator {
       record.ownerMarker = ownerMarker;
       this.ownedTemporaries.add(temporary);
       record.handle = handle;
-      clearTimeout(record.timer);
-      record.timer = setTimeout(() => { void this.fail(id, 'timed_out').catch(() => undefined); }, 30000);
       record.state = 'accepted';
+      this.armTimer(record, 'open', 30000, 'timed_out', 'failed');
       record.updatedAt = new Date().toISOString();
       this.emit(record);
       try {
@@ -262,13 +267,61 @@ class FileTransferCoordinator {
   async cleanup(record) {
     try { await record.handle?.close(); } catch { /* cleanup remains best effort */ }
     record.handle = undefined;
-    await this.removeTemporary(record).catch(() => undefined);
+    await this.requestTemporaryCleanup(record);
   }
 
   async removeTemporaryFiles(record) {
-    if (record.temporary) await fsp.rm(record.temporary, { force: true }).catch(() => undefined);
-    if (record.ownerMarker) await fsp.rm(record.ownerMarker, { force: true }).catch(() => undefined);
-    if (record.temporary) this.ownedTemporaries?.delete(record.temporary);
+    const failures = [];
+    for (const candidate of [record.temporary, record.ownerMarker]) {
+      if (!candidate) continue;
+      try { await fsp.rm(candidate, { force: true }); } catch (cause) { failures.push(cause); }
+    }
+    if (failures.length) throw failures[0];
+  }
+
+  async requestTemporaryCleanup(record, attempt = 0) {
+    if (!record.temporary) return;
+    try {
+      await this.removeTemporary(record);
+      this.ownedTemporaries.delete(record.temporary);
+      record.cleanupPending = false;
+    } catch {
+      record.cleanupPending = true;
+      this.scheduleCleanupRetry(record, attempt + 1);
+    }
+  }
+
+  scheduleCleanupRetry(record, attempt) {
+    const temporary = record.temporary;
+    if (!temporary || attempt > this.cleanupRetryLimit || this.cleanupJobs.has(temporary)) return;
+    const timer = this.scheduleTimeout(() => {
+      this.cleanupJobs.delete(temporary);
+      void this.requestTemporaryCleanup(record, attempt).catch(() => undefined);
+    }, this.cleanupRetryDelay);
+    if (this.unrefCleanupTimers) timer?.unref?.();
+    this.cleanupJobs.set(temporary, timer);
+  }
+
+  clearTimer(record) {
+    if (record.timer !== undefined) this.cancelTimeout(record.timer);
+    record.timer = undefined;
+    record.timerPhase = undefined;
+    record.timerToken = undefined;
+  }
+
+  armTimer(record, phase, milliseconds, reason, terminalState) {
+    this.clearTimer(record);
+    const token = Symbol(phase);
+    record.timerPhase = phase;
+    record.timer = this.scheduleTimeout(() => {
+      if (record.timerToken !== token || TERMINAL.has(record.state)) return;
+      record.timer = undefined;
+      record.timerPhase = undefined;
+      record.timerToken = undefined;
+      void (terminalState === 'cancelled' ? this.reject(record.offer.transferId, reason) : this.fail(record.offer.transferId, reason)).catch(() => undefined);
+    }, milliseconds);
+    record.timerToken = token;
+    record.timer?.unref?.();
   }
 
   async cancelAccount(accountId) {
@@ -291,10 +344,10 @@ class FileTransferCoordinator {
           offset += result.bytesWritten;
         }
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
-        clearTimeout(record.timer);
-        record.timer = setTimeout(() => { void this.fail(id, 'timed_out').catch(() => undefined); }, 60000);
         record.bytes = next;
         record.state = 'transferring';
+        this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
+        if (next < BigInt(record.offer.sizeBytes)) this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
         record.updatedAt = new Date().toISOString();
         this.emit(record);
         return transferView(record);
@@ -315,8 +368,7 @@ class FileTransferCoordinator {
       try {
         if (record.terminalRequested || TERMINAL.has(record.state) || record.state !== 'transferring') throw error('CONFLICT', 'transfer is not ready to close');
         if (!record.handle || record.bytes !== BigInt(record.offer.sizeBytes)) throw error('INVALID_INPUT', 'size mismatch');
-        clearTimeout(record.timer);
-        record.timer = undefined;
+        this.clearTimer(record);
         await record.handle.sync();
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
         await record.handle.close();
@@ -331,13 +383,25 @@ class FileTransferCoordinator {
         record.terminalRequested = true;
         record.updatedAt = new Date().toISOString();
         this.emit(record);
-        await this.removeTemporary(record).catch(() => undefined);
+        await this.requestTemporaryCleanup(record);
         return transferView(record);
       } catch (cause) {
         if (record.publicationState === 'publishing') record.publicationState = undefined;
         if (!record.publicationState && !record.terminalRequested && !TERMINAL.has(record.state)) await this.failCurrent(record, cause?.code === 'INVALID_INPUT' ? 'integrity_failed' : 'storage_failed');
         throw cause;
       }
+    });
+  }
+
+  open(id) {
+    return this.enqueue(id, async (record) => {
+      if (record.terminalRequested || record.state !== 'accepted') throw error('CONFLICT', 'transfer is not accepted');
+      record.state = 'transferring';
+      this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
+      if (record.bytes === BigInt(record.offer.sizeBytes)) this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
+      record.updatedAt = new Date().toISOString();
+      this.emit(record);
+      return transferView(record);
     });
   }
 }
