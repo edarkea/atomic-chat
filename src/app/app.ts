@@ -2,7 +2,12 @@ import { Component, computed, DestroyRef, ElementRef, effect, inject, signal, Vi
 import { FormsModule } from '@angular/forms';
 import { ChatFacade } from './core/chat.facade';
 import { MucFacade } from './core/muc.facade';
-import { CertificateTrustDecision, Contact, Message } from './core/domain';
+import { CertificateTrustDecision, Contact, Message, RoomState } from './core/domain';
+
+type ConversationSelection =
+  | { kind: 'none'; accountId: string }
+  | { kind: 'direct'; accountId: string; jid: string }
+  | { kind: 'muc'; accountId: string; roomJid: string };
 
 @Component({ selector: 'app-root', imports: [FormsModule], templateUrl: './app.html', styleUrls: ['./app.scss', './certificate-dialog.scss'] })
 export class App {
@@ -11,7 +16,7 @@ export class App {
   protected readonly draft = signal('');
   protected readonly login = signal({ accountId: '', password: '' });
   protected readonly search = signal('');
-  protected readonly selectedJid = signal('');
+  protected readonly conversationSelection = signal<ConversationSelection>({ kind: 'none', accountId: '' });
   protected readonly selectedContact = signal<Contact | undefined>(undefined);
   protected readonly settingsOpen = signal(false);
   protected readonly certificateRequest = computed(() => this.chat.certificateRequest?.() ?? null);
@@ -20,6 +25,22 @@ export class App {
   protected readonly mucNickname = signal('');
   protected readonly mucDraft = signal('');
   protected readonly mucDiscovering = signal(false);
+  protected readonly activeSelection = computed<ConversationSelection>(() => {
+    const selection = this.conversationSelection();
+    const accountId = this.chat.accountId();
+    if (!accountId || !this.chat.isConnected() || selection.accountId !== accountId) return { kind: 'none', accountId };
+    if (selection.kind === 'muc' && !this.joinedRoom(selection.roomJid)) return { kind: 'none', accountId };
+    return selection;
+  });
+  protected readonly selectedJid = computed(() => {
+    const selection = this.activeSelection();
+    return selection.kind === 'direct' ? selection.jid : '';
+  });
+  protected readonly joinedRooms = computed(() => this.muc.states().filter((state) => state.accountId === this.chat.accountId() && state.status === 'joined'));
+  protected readonly activeRoomState = computed(() => {
+    const selection = this.activeSelection();
+    return selection.kind === 'muc' ? this.joinedRoom(selection.roomJid) : undefined;
+  });
   protected readonly filteredContacts = computed(() => { const term = this.search().trim().toLowerCase(); return this.chat.contacts().filter((contact) => !term || contact.jid.toLowerCase().includes(term) || contact.name?.toLowerCase().includes(term)); });
   protected readonly visibleMessages = computed(() => { const jid = this.bareJid(this.selectedJid()); if (!jid) return []; const accountId = this.chat.accountId(); return this.chat.messages().filter((message) => message.accountId === accountId && (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid)); });
   protected readonly activeContact = computed(() => { const jid = this.bareJid(this.selectedJid()); return this.chat.contacts().find((contact) => this.bareJid(contact.jid) === jid); });
@@ -60,16 +81,23 @@ export class App {
   protected togglePresence(): void { this.presenceOpen.update((open) => !open); }
   protected async choosePresence(option: { id: string; mode: 'chat' | 'away' | 'dnd' | 'xa' | undefined; label: string }): Promise<void> { const status = option.id === 'phone' ? 'Al teléfono' : option.id === 'away' ? '' : this.presenceStatus(); await this.chat.setPresence(option.mode, status); this.presenceOpen.set(false); }
   protected isOutgoing(message: Message): boolean { const sender = message.senderJid.split('/')[0].toLowerCase(); const account = this.chat.accountId().toLowerCase(); return sender === account || sender.startsWith(`${account}@`); }
-  protected selectContact(contact: Contact): void { this.followLatest = true; this.selectedContact.set(contact); this.selectedJid.set(contact.jid); void this.scrollAfterConversationLoad(contact.jid); }
-  protected useJid(): void { if (this.search().includes('@')) { this.followLatest = true; this.selectedContact.set(undefined); this.selectedJid.set(this.search().trim()); void this.scrollAfterConversationLoad(this.search().trim()); } }
-  protected async connect(): Promise<void> { this.muc.setAccount(this.login().accountId.trim()); const connected = await this.chat.connect(this.login().accountId, this.login().password); if (connected) this.login.update((value) => ({ ...value, password: '' })); }
+  protected selectContact(contact: Contact): void { this.followLatest = true; this.selectedContact.set(contact); this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid: contact.jid }); void this.scrollAfterConversationLoad(contact.jid); }
+  protected useJid(): void { if (this.search().includes('@')) { this.followLatest = true; const jid = this.search().trim(); this.selectedContact.set(undefined); this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid }); void this.scrollAfterConversationLoad(jid); } }
+  protected selectJoinedRoom(roomJid: string): void { if (!this.joinedRoom(roomJid)) return; this.muc.select(roomJid); this.selectedContact.set(undefined); this.conversationSelection.set({ kind: 'muc', accountId: this.chat.accountId(), roomJid }); this.followLatest = true; }
+  protected selectRoomFromCatalog(roomJid: string): void { const room = this.joinedRoom(roomJid); if (room) { this.selectJoinedRoom(roomJid); return; } if (this.activeSelection().kind !== 'muc') this.muc.select(roomJid); }
+  protected isDirectSelected(jid: string): boolean { const selection = this.activeSelection(); return selection.kind === 'direct' && this.bareJid(selection.jid) === this.bareJid(jid); }
+  protected isMucSelected(roomJid: string): boolean { const selection = this.activeSelection(); return selection.kind === 'muc' && selection.roomJid === roomJid; }
+  protected async connect(): Promise<void> { this.resetConversationSelection(); this.muc.setAccount(this.login().accountId.trim()); const connected = await this.chat.connect(this.login().accountId, this.login().password); if (connected) this.login.update((value) => ({ ...value, password: '' })); }
+  protected async disconnect(): Promise<void> { this.resetConversationSelection(); await this.chat.disconnect(); }
   protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> { await this.chat.decideCertificate(decision); }
   protected onCertificateDialogKeydown(event: KeyboardEvent): void { const dialog = this.certificateDialog?.nativeElement; if (!dialog) return; if (event.key === 'Escape') { event.preventDefault(); void this.decideCertificate('cancel'); return; } if (event.key !== 'Tab') return; const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('hidden') && element.getClientRects().length > 0); if (!focusable.length) { event.preventDefault(); dialog.focus(); return; } const first = focusable[0]; const last = focusable[focusable.length - 1]; if (!dialog.contains(document.activeElement)) { event.preventDefault(); first.focus(); } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
   protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.chat.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.chat.error.set('No fue posible enviar el mensaje.'); } }
   protected async discoverRooms(): Promise<void> { this.mucDiscovering.set(true); try { await this.muc.discover(this.chat.accountId()); } finally { this.mucDiscovering.set(false); } }
-  protected async joinRoom(roomJid: string): Promise<void> { const nickname = this.mucNickname().trim() || this.chat.accountId().split('@')[0] || 'operator'; await this.muc.join(this.chat.accountId(), roomJid, nickname); }
-  protected async leaveRoom(): Promise<void> { const roomJid = this.muc.selectedRoomJid(); if (roomJid) await this.muc.leave(this.chat.accountId(), roomJid); }
-  protected async sendRoom(): Promise<void> { const roomJid = this.muc.selectedRoomJid(); const sent = this.mucDraft(); if (roomJid && await this.muc.send(this.chat.accountId(), roomJid, sent) && this.mucDraft() === sent) this.mucDraft.set(''); }
+  protected async joinRoom(roomJid: string): Promise<void> { const accountId = this.chat.accountId(); const nickname = this.mucNickname().trim() || accountId.split('@')[0] || 'operator'; await this.muc.join(accountId, roomJid, nickname); if (this.joinedRoom(roomJid)?.accountId === accountId) this.selectJoinedRoom(roomJid); }
+  protected async leaveRoom(): Promise<void> { const selection = this.activeSelection(); if (selection.kind !== 'muc') return; await this.muc.leave(selection.accountId, selection.roomJid); if (!this.joinedRoom(selection.roomJid)) this.resetConversationSelection(); }
+  protected async sendRoom(): Promise<void> { const selection = this.activeSelection(); const sent = this.mucDraft(); if (selection.kind === 'muc' && await this.muc.send(selection.accountId, selection.roomJid, sent) && this.mucDraft() === sent) this.mucDraft.set(''); }
   protected roomStatus(roomJid: string): string { return this.muc.states().find((state) => state.room.jid === roomJid)?.status || 'idle'; }
   protected toggleSettings(): void { this.settingsOpen.update((open) => !open); }
+  private joinedRoom(roomJid: string): RoomState | undefined { return this.muc.states().find((state) => state.room.jid === roomJid && state.accountId === this.chat.accountId() && state.status === 'joined'); }
+  private resetConversationSelection(): void { this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() }); this.selectedContact.set(undefined); this.mucDraft.set(''); }
 }

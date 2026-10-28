@@ -38,3 +38,7 @@
 .room-join:disabled { color:#72bd7d; cursor:default; opacity:.65; }
 .leave-room { font-size:11px; height:34px; }
 @media (max-width:680px) { .muc-heading .muc-discover { min-width:84px; padding-inline:6px; } .muc-subtitle { font-size:9px; } .room-copy strong { font-size:11px; } }
+
+.muc-conversation-item { border-left:2px solid #42b866; }
+.muc-conversation-item .muc-avatar { background:#14552d; border-color:#42b866; color:#7cf28f; }
+.muc-conversation-item.active .muc-avatar { background:#267342; }
