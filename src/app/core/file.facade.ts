@@ -25,7 +25,11 @@ export class FileFacade {
     if (!window.atomicChat || !accountId) return;
     const result = await window.atomicChat.file.listActive({ version: 1, requestId: createOpaqueId('file-list'), accountId });
     if (this.account !== accountId) return;
-    if (result.ok) this.items.set([...result.value]); else this.error.set(result.error.message);
+    if (result.ok) {
+      const active = new Map(result.value.map((item) => [item.offer.transferId, item]));
+      for (const current of this.items()) if (current.offer.accountId === accountId) active.set(current.offer.transferId, current);
+      this.items.set([...active.values()]);
+    } else this.error.set(result.error.message);
   }
 
   async accept(transferId: string): Promise<void> { await this.mutate('accept', transferId); }
