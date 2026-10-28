@@ -57,6 +57,16 @@ async function fixture() {
   return { root, destination, sent, session, coordinator, adapter, accountId: 'account@example.invalid' };
 }
 
+async function captureTrace(run) {
+  const previousFlag = process.env.ATOMIC_XMPP_FILE_TRACE;
+  const previousInfo = console.info;
+  const lines = [];
+  process.env.ATOMIC_XMPP_FILE_TRACE = 'true';
+  console.info = (...args) => lines.push(args.join(' '));
+  try { await run(); } finally { console.info = previousInfo; if (previousFlag === undefined) delete process.env.ATOMIC_XMPP_FILE_TRACE; else process.env.ATOMIC_XMPP_FILE_TRACE = previousFlag; }
+  return lines;
+}
+
 test('C5-INT-01 SI acceptance and IBB IQ complete the real coordinator path', async () => {
   const ctx = await fixture();
   try {
@@ -145,4 +155,30 @@ test('C5-INT-04 deferred write keeps data and close ACKs behind persistence', as
   } finally {
     await fs.rm(ctx.root, { recursive: true, force: true });
   }
+});
+
+test('C5-NEG-01 traces SI send attempt and transport failure without sensitive fields', async () => {
+  const ctx = await fixture();
+  try {
+    const lines = await captureTrace(async () => {
+      ctx.adapter.handleStanza(ctx.accountId, offer('offer-fail', 'sid-fail', '0'));
+      ctx.session.send = async (value) => { if (value.attrs.id === 'offer-fail') throw new Error('send failed'); ctx.sent.push(value); };
+      const record = [...ctx.coordinator.records.values()][0];
+      await assert.rejects(() => ctx.coordinator.accept(record.offer.transferId, 7));
+    });
+    assert.ok(lines.some((line) => line.includes('SI_RESULT_TX_ATTEMPT')));
+    assert.ok(lines.some((line) => line.includes('SI_RESULT_TX_FAILED')));
+    assert.ok(!lines.some((line) => /spark@example|sid-fail|offer-fail|fixture\.bin|<iq|base64/i.test(line)));
+  } finally { await fs.rm(ctx.root, { recursive: true, force: true }); }
+});
+
+test('C5-NEG-02 observes an unmatched IBB open without exposing identifiers', async () => {
+  const ctx = await fixture();
+  try {
+    const lines = await captureTrace(async () => { ctx.adapter.handleStanza(ctx.accountId, stanza('open', 'open-unknown', 'unknown-sid')); });
+    assert.ok(lines.some((line) => line.includes('IBB_OPEN_CANDIDATE_RX')));
+    assert.ok(lines.some((line) => line.includes('IBB_OPEN_UNMATCHED')));
+    assert.ok(!lines.some((line) => /spark@example|unknown-sid|open-unknown|<iq/i.test(line)));
+    assert.equal(ctx.sent.at(-1).attrs.type, 'error');
+  } finally { await fs.rm(ctx.root, { recursive: true, force: true }); }
 });
