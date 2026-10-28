@@ -34,6 +34,13 @@ export interface CertificateTrustRequest { requestId: RequestId; accountId: stri
 export interface CertificateTrustDecisionInput { version: ContractVersion; requestId: RequestId; accountId: string; fingerprintSha256: string; decision: CertificateTrustDecision; }
 export type AppErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'NOT_CONNECTED' | 'TIMEOUT' | 'AUTH_FAILED' | 'TRANSPORT_FAILED' | 'SERVER_UNREACHABLE' | 'TRANSPORT_INCOMPATIBLE' | 'STARTTLS_UNAVAILABLE' | 'TLS_NEGOTIATION_FAILED' | 'CONFLICT' | 'STORAGE_FAILED' | 'UNSUPPORTED' | 'INTERNAL' | 'CERTIFICATE_REJECTED' | 'CERTIFICATE_INVALID' | 'CERTIFICATE_CHANGED' | 'CERTIFICATE_DECISION_TIMEOUT';
 export interface AppError { code: AppErrorCode; retryable: boolean; requestId: RequestId; message: string; certificate?: CertificateVerificationError; }
+export type DecimalByteCount = string;
+export type FileTransferStatus = 'offered' | 'accepted' | 'transferring' | 'completed' | 'failed' | 'cancelled';
+export type FileEndReason = 'user_rejected' | 'cancelled_by_receiver' | 'cancelled_by_sender' | 'timed_out' | 'network_lost' | 'unsupported_method' | 'resource_limit' | 'invalid_protocol' | 'integrity_failed' | 'storage_failed';
+export interface FileOffer { readonly transferId: string; readonly accountId: string; readonly conversationId: string; readonly senderJid: string; readonly name: string; readonly sizeBytes: DecimalByteCount; readonly mimeType?: string; readonly description?: string; readonly transport: 'ibb'; readonly offeredAt: string; }
+export interface FileTransfer { readonly offer: FileOffer; readonly direction: 'incoming'; readonly state: FileTransferStatus; readonly bytesTransferred: DecimalByteCount; readonly endReason?: FileEndReason; readonly errorCode?: AppErrorCode; readonly updatedAt: string; }
+export interface FileRequest { readonly version: 1; readonly requestId: RequestId; readonly accountId: string; readonly transferId: string; }
+export interface FileActiveInput { readonly version: 1; readonly requestId: RequestId; readonly accountId: string; }
 export type Result<T> = { ok: true; value: T; version: ContractVersion; requestId: RequestId } | { ok: false; error: AppError; version: ContractVersion };
 export type RoomId = string;
 export type OccupantId = string;
@@ -52,7 +59,7 @@ export interface RoomMessage { id: string; accountId: string; roomJid: RoomId; o
 export type MucNoticeCode = 'IDENTITY_VISIBLE' | 'PUBLIC_LOGGING' | 'SERVER_NICKNAME';
 export interface MucNotice { accountId: string; roomJid: RoomId; code: MucNoticeCode; nickname?: string; sessionGeneration: number; }
 export interface RoomSendReceipt { accountId: string; roomJid: RoomId; clientMessageId: ClientMessageId; status: 'sent'; }
-export type DomainEventType = 'connection.stateChanged' | 'presence.changed' | 'roster.changed' | 'message.stateChanged' | 'message.received' | 'certificate.trustRequired' | 'muc.stateChanged' | 'muc.participantChanged' | 'muc.messageReceived' | 'muc.notice';
+export type DomainEventType = 'connection.stateChanged' | 'presence.changed' | 'roster.changed' | 'message.stateChanged' | 'message.received' | 'certificate.trustRequired' | 'muc.stateChanged' | 'muc.participantChanged' | 'muc.messageReceived' | 'muc.notice' | 'file.offerReceived' | 'file.stateChanged';
 export interface DomainEvent<T> { version: ContractVersion; eventId: string; correlationId?: RequestId | ClientMessageId; type: DomainEventType; payload: T; }
 export interface ConnectInput { version: ContractVersion; requestId: RequestId; accountId: string; endpoint: { host: string; port: number; tls: boolean; transport?: XmppTransport; domain?: string; allowInsecureTls?: boolean }; credentialRef?: string; }
 export interface PresenceInput { version: ContractVersion; requestId: RequestId; accountId: string; availability: Availability; mode?: PresenceMode; status?: string; }

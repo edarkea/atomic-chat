@@ -5,6 +5,7 @@ const tls = require('node:tls');
 const { EventEmitter } = require('node:events');
 const { validateXmppTransport } = require('./security-policy.cjs');
 const { CertificateVerificationFailure, assessCertificate } = require('./certificate-trust.cjs');
+const { parseOffer, IBB_NS, SI_NS, SI_FILE_NS, FEATURE_NEG_NS, DATAFORM_NS, validateOpen, validateData } = require('./file-protocol.cjs');
 const STARTTLS_NS = 'urn:ietf:params:xml:ns:xmpp-tls';
 const DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items';
 const DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info';
@@ -98,7 +99,7 @@ function certificateSocket(tlsOptions) {
 }
 
 class XmppAdapter {
-  constructor(packaged = false, trustStore = null, mucPolicies = []) { this.packaged = packaged; this.trustStore = trustStore; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); this.sessionGenerations = new Map(); this.sessionDomains = new Map(); this.sessionEndpoints = new Map(); this.mucDiscoveries = new Map(); this.mucRooms = new Map(); this.mucPolicies = new Map(); mucPolicies.forEach((policy) => this.setMucPolicy(policy)); }
+  constructor(packaged = false, trustStore = null, mucPolicies = [], fileTransfers = null) { this.packaged = packaged; this.trustStore = trustStore; this.fileTransfers = fileTransfers; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); this.sessionGenerations = new Map(); this.sessionDomains = new Map(); this.sessionEndpoints = new Map(); this.mucDiscoveries = new Map(); this.mucRooms = new Map(); this.filePending = new Map(); this.fileOwners = new Map(); this.mucPolicies = new Map(); mucPolicies.forEach((policy) => this.setMucPolicy(policy)); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password, senderId) {
@@ -128,6 +129,7 @@ class XmppAdapter {
     session.on('error', (error) => { this.handleSessionEvent(input.accountId, session, 'error', error.code || 'TRANSPORT_FAILED'); });
     session.on('offline', () => { this.handleSessionEvent(input.accountId, session, 'offline'); });
     session.on('online', () => { this.handleSessionEvent(input.accountId, session, 'online'); });
+    this.fileOwners.set(input.accountId, senderId);
     session.on('stanza', (stanza) => { if (this.sessions.get(input.accountId) !== session) return; this.handleStanza(input.accountId, stanza); });
     try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
     this.remoteResources.set(input.accountId, new Map()); this.initialPresencePublished.delete(input.accountId); this.sessions.set(input.accountId, session); this.sessionDomains.set(input.accountId, input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host); this.sessionEndpoints.set(input.accountId, { host: transport.host, port: transport.port, transport: transport.transport }); this.sessionGenerations.set(input.accountId, (this.sessionGenerations.get(input.accountId) || 0) + 1);
@@ -357,6 +359,7 @@ class XmppAdapter {
   handleStanza(accountId, stanza) {
     if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_STANZA]', JSON.stringify({ accountId, from: stanza.attrs?.from || '', to: stanza.attrs?.to || '', type: stanza.name || stanza.attrs?.type || '', id: stanza.attrs?.id || '', hasBody: Boolean(stanza.getChildText?.('body')) }));
     if (this.handleMucStanza(accountId, stanza)) return;
+    if (this.handleFileStanza(accountId, stanza)) return;
     if (stanza.is('presence')) {
       const type = stanza.attrs.type; if (['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'error', 'probe'].includes(type)) return;
       const jid = this.bareJid(stanza.attrs.from || accountId); const contact = this.rosters.get(accountId)?.get(jid); if (!contact || !['to', 'both'].includes(contact.subscription)) return;
@@ -372,6 +375,23 @@ class XmppAdapter {
       this.emit({ type: 'message.received', payload: { id: `msg_${stanzaId}`, accountId, conversationId: senderJid, clientMessageId: `received_${stanzaId}`, senderJid, body: { kind: 'text', text: bodyText }, status: 'sent', createdAt: new Date().toISOString() } });
       if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_MESSAGE_RECEIVED]', JSON.stringify({ accountId, from: senderJid, id: stanzaId, hasBody: true }));
     }
+  }
+
+  handleFileStanza(accountId, stanza) {
+    if (!this.fileTransfers) return false;
+    if (!stanza?.is?.('iq')) return false;
+    const session = this.sessions.get(accountId); const generation = this.sessionGenerations.get(accountId) || 0; const si = stanza.getChild?.('si', SI_NS); const open = stanza.getChild?.('open', IBB_NS); const data = stanza.getChild?.('data', IBB_NS); const close = stanza.getChild?.('close', IBB_NS);
+    if (stanza.attrs?.type !== 'set' || (!si && !open && !data && !close)) return false;
+    if (si) { try { const offer = parseOffer(stanza, accountId, generation); const record = this.fileTransfers.add({ offer: { ...offer, offeredAt: new Date().toISOString(), transport: 'ibb' }, siSessionId: offer.siSid, ownerSenderId: this.fileOwners.get(accountId), iq: stanza, session, onAccepted: async () => { await session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from }, xml('si', { xmlns: SI_NS, id: offer.siSid }, xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS))))))); } }); this.filePending.set(offer.transferId, { record, session, generation }); this.emit({ type: 'file.offerReceived', payload: record.offer, targetSenderId: record.ownerSenderId }); } catch (error) { void session?.send(xml('iq', { type: 'error', id: stanza.attrs.id, to: stanza.attrs.from }, xml('error', { type: 'modify' }, xml('bad-request', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))).catch(() => undefined); } return true; }
+    const pending = [...this.filePending.values()].find((entry) => entry.session === session && entry.generation === generation && entry.record.offer.senderJid === stanza.attrs.from);
+    if (!pending) return true;
+    const sendFileError = (id, from, condition = 'undefined-condition') => session.send(xml('iq', { type: 'error', id, to: from }, xml('error', { type: 'cancel' }, xml(condition, { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' }))));
+    try {
+      const record = pending.record; if (open) { if (record.state !== 'accepted') throw new Error('NOT_ACCEPTED'); const blockSize = validateOpen(open, record.siSessionId, record.offer.senderJid); pending.sid = open.attrs.sid; pending.blockSize = blockSize; pending.seq = 0; pending.record.state = 'transferring'; void session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from })).catch(() => undefined); }
+      if (data) { const expectedSeq = pending.seq; const bytes = validateData(data, pending.sid, record.offer.senderJid, pending.blockSize, expectedSeq); void this.fileTransfers.append(record.offer.transferId, bytes).then(() => { pending.seq = (expectedSeq + 1) % 65536; return session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from })); }).catch(async () => { await this.fileTransfers.fail(record.offer.transferId, 'storage_failed').catch(() => undefined); await sendFileError(stanza.attrs.id, stanza.attrs.from, 'resource-constraint').catch(() => undefined); }); }
+      if (close) { void this.fileTransfers.complete(record.offer.transferId).then(() => session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from }))).catch(async () => { await this.fileTransfers.fail(record.offer.transferId, 'storage_failed').catch(() => undefined); await sendFileError(stanza.attrs.id, stanza.attrs.from, 'undefined-condition').catch(() => undefined); }); }
+    } catch { void sendFileError(stanza.attrs.id, stanza.attrs.from, 'bad-request').catch(() => undefined); }
+    return true;
   }
 
   bareJid(jid) { return String(jid).split('/')[0]; }
