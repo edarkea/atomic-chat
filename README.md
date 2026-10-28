@@ -15,6 +15,7 @@ Atomic Chat is a desktop XMPP messaging client built with Angular and Electron. 
 - Chronological conversation loading after restarting the application.
 - P1 preferences: Atomic theme, notification preference persistence and per-account automatic login.
 - Restricted Main/Preload/Renderer IPC architecture.
+- MUC V1 discovery, entry/exit, participant state and in-memory groupchat messages. Room entry remains blocked unless Electron Main has operator-controlled evidence that the account cannot create rooms.
 
 ## System description
 
@@ -47,6 +48,8 @@ ATOMIC_XMPP_TRANSPORT=starttls
 ATOMIC_XMPP_USERNAME=your-user
 ATOMIC_XMPP_PASSWORD=your-password
 ATOMIC_XMPP_ALLOW_INSECURE_TLS=false
+# Optional operator-controlled JSON accreditation; do not provide this from the Renderer.
+# ATOMIC_XMPP_MUC_POLICY_JSON=[{"accountId":"user@your-xmpp-domain","service":"conference.your-xmpp-domain","canCreate":false,"source":"operator","evidence":"approved Openfire policy record"}]
 ```
 
 Never commit `.env` or real credentials. Passwords are handled by Electron Main and `safeStorage`, not stored as regular SQLite fields.
@@ -89,7 +92,7 @@ P0 has been validated in the observed Openfire/Spark environment for connection,
 - Set `ATOMIC_XMPP_TRANSPORT=starttls` for the usual port `5222`, or `direct-tls` for `xmpps:`/port `5223`. The legacy `ATOMIC_XMPP_TLS` boolean is adapted when no explicit transport is present: a host-only endpoint on port `5222` maps to STARTTLS, while port `5223` maps to direct TLS; explicit `transport` always wins. The selected transport is persisted and never shares trust with the other transport.
 - Migration failure/recovery testing and a complete automatic retry policy remain limited.
 - Notification preference persistence exists; system notification behavior is not complete.
-- Sounds, MUC rooms, file transfer, plugins and advanced XMPP extensions are outside the current implemented scope.
+- MUC V1 does not create/configure/moderate rooms, invite users, handle room passwords, private MUC messages, automatic rejoin/forwarding, files or persistent MUC history.
 - Interoperability evidence is specific to the tested Openfire/Spark environment.
 
 ## Certificate trust implementation references

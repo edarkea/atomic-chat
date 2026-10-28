@@ -6,6 +6,15 @@ const { EventEmitter } = require('node:events');
 const { validateXmppTransport } = require('./security-policy.cjs');
 const { CertificateVerificationFailure, assessCertificate } = require('./certificate-trust.cjs');
 const STARTTLS_NS = 'urn:ietf:params:xml:ns:xmpp-tls';
+const DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items';
+const DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info';
+const MUC_NS = 'http://jabber.org/protocol/muc';
+const MUC_USER_NS = 'http://jabber.org/protocol/muc#user';
+const DELAY_NS = 'urn:xmpp:delay';
+const LEGACY_DELAY_NS = 'jabber:x:delay';
+const MUC_TEXT_LIMIT_BYTES = 4096;
+const MUC_MESSAGE_BUFFER_LIMIT = 200;
+const MUC_ROOM_LIMIT = 5;
 
 function taggedError(code, message, phase, cause) {
   const error = new Error(message);
@@ -89,7 +98,7 @@ function certificateSocket(tlsOptions) {
 }
 
 class XmppAdapter {
-  constructor(packaged = false, trustStore = null) { this.packaged = packaged; this.trustStore = trustStore; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); }
+  constructor(packaged = false, trustStore = null, mucPolicies = []) { this.packaged = packaged; this.trustStore = trustStore; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); this.sessionGenerations = new Map(); this.sessionDomains = new Map(); this.mucDiscoveries = new Map(); this.mucRooms = new Map(); this.mucPolicies = new Map(); mucPolicies.forEach((policy) => this.setMucPolicy(policy)); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password, senderId) {
@@ -121,17 +130,18 @@ class XmppAdapter {
     session.on('online', () => { this.handleSessionEvent(input.accountId, session, 'online'); });
     session.on('stanza', (stanza) => this.handleStanza(input.accountId, stanza));
     try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
-    this.remoteResources.set(input.accountId, new Map()); this.initialPresencePublished.delete(input.accountId); this.sessions.set(input.accountId, session);
+    this.remoteResources.set(input.accountId, new Map()); this.initialPresencePublished.delete(input.accountId); this.sessions.set(input.accountId, session); this.sessionDomains.set(input.accountId, input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host); this.sessionGenerations.set(input.accountId, (this.sessionGenerations.get(input.accountId) || 0) + 1);
     const state = { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() }; this.states.set(input.accountId, state); return state;
   }
 
   async disconnect(accountId) {
     this.cancelPendingDecision(accountId);
+    this.clearMucRooms(accountId);
     const session = this.sessions.get(accountId);
     this.states.set(accountId, { accountId, status: 'disconnecting', retryable: false, since: new Date().toISOString() });
     if (session) await session.stop();
     this.sessions.delete(accountId);
-    this.rosters.delete(accountId); this.remoteResources.delete(accountId); this.initialPresencePublished.delete(accountId);
+    this.rosters.delete(accountId); this.remoteResources.delete(accountId); this.initialPresencePublished.delete(accountId); this.sessionDomains.delete(accountId); this.sessionGenerations.set(accountId, (this.sessionGenerations.get(accountId) || 0) + 1);
     this.states.set(accountId, { accountId, status: 'idle', retryable: false, since: new Date().toISOString() });
   }
 
@@ -249,8 +259,96 @@ class XmppAdapter {
     return { ...input, status: 'sent', createdAt: new Date().toISOString() };
   }
 
+  setMucPolicy(policy) {
+    if (!policy || typeof policy.accountId !== 'string' || typeof policy.service !== 'string' || policy.canCreate !== false || policy.source !== 'operator' || typeof policy.evidence !== 'string' || !policy.evidence.trim()) return false;
+    this.mucPolicies.set(this.mucPolicyKey(policy.accountId, policy.service), { ...policy }); return true;
+  }
+
+  async discoverMuc(input) {
+    this.assertMucRequest(input); const session = this.requireConnected(input.accountId); const request = this.withTimeout(this.discoverServices(session, input.accountId), 10000, 'TIMEOUT', 'El descubrimiento MUC excedió el tiempo límite.');
+    const rooms = await request; this.mucDiscoveries.set(input.accountId, new Map(rooms.map((room) => [room.jid.toLowerCase(), room]))); return rooms;
+  }
+
+  async discoverServices(session, accountId) {
+    const domain = this.sessionDomains.get(accountId) || process.env.ATOMIC_XMPP_DOMAIN || accountId.split('@')[1];
+    const items = await this.discoItems(session, domain); const services = [];
+    for (const item of items) {
+      const jid = this.bareJid(item.attrs.jid || ''); if (!jid) continue;
+      const info = await this.discoInfo(session, jid); const identities = info.getChild('query', DISCO_INFO_NS)?.getChildren('identity') || []; const features = info.getChild('query', DISCO_INFO_NS)?.getChildren('feature') || [];
+      if (!identities.some((identity) => identity.attrs.category === 'conference' && identity.attrs.type === 'text') || !features.some((feature) => feature.attrs.var === 'http://jabber.org/protocol/muc')) continue;
+      services.push(jid);
+    }
+    const rooms = []; for (const service of services) { const visible = await this.discoItems(session, service); for (const item of visible) { const jid = this.bareJid(item.attrs.jid || ''); if (!jid || !jid.endsWith(`@${service}`) || jid.includes('/')) continue; rooms.push({ service, room: jid.slice(0, -service.length - 1), jid }); } }
+    return [...new Map(rooms.map((room) => [room.jid.toLowerCase(), room])).values()];
+  }
+
+  async discoItems(session, to) { const result = await session.iqCaller.request(xml('iq', { type: 'get', to }, xml('query', { xmlns: DISCO_ITEMS_NS }))); const query = result.getChild('query', DISCO_ITEMS_NS); if (!query) throw taggedError('TRANSPORT_FAILED', 'La respuesta de descubrimiento está incompleta.', 'muc.discovery'); return query.getChildren('item'); }
+  async discoInfo(session, to) { const result = await session.iqCaller.request(xml('iq', { type: 'get', to }, xml('query', { xmlns: DISCO_INFO_NS }))); if (!result.getChild('query', DISCO_INFO_NS)) throw taggedError('TRANSPORT_FAILED', 'La respuesta de identidad MUC está incompleta.', 'muc.discovery'); return result; }
+
+  async joinMuc(input) {
+    this.assertMucRequest(input); const roomJid = this.validateRoomJid(input.roomJid); const nickname = this.validateNickname(input.nickname); const session = this.requireConnected(input.accountId); const discovered = this.mucDiscoveries.get(input.accountId)?.get(roomJid.toLowerCase());
+    if (!discovered || discovered.service !== this.bareJid(roomJid).split('@')[1]) throw taggedError('UNAUTHORIZED', 'La sala no fue descubierta en el servicio seleccionado.', 'muc.join');
+    const policy = this.mucPolicies.get(this.mucPolicyKey(input.accountId, discovered.service)); if (!policy) throw taggedError('UNAUTHORIZED', 'La entrada requiere acreditación administrativa de que la cuenta no puede crear salas.', 'muc.policy');
+    const rooms = this.mucRooms.get(input.accountId) || new Map(); const active = [...rooms.values()].filter((room) => room.state.status === 'joining' || room.state.status === 'joined').length; if (active >= MUC_ROOM_LIMIT) throw taggedError('CONFLICT', 'Se alcanzó el máximo de salas simultáneas.', 'muc.join');
+    if (rooms.get(roomJid.toLowerCase())?.state.status === 'joining' || rooms.get(roomJid.toLowerCase())?.state.status === 'joined') throw taggedError('CONFLICT', 'La cuenta ya está en esta sala.', 'muc.join');
+    const generation = this.sessionGenerations.get(input.accountId) || 0; const record = this.createMucRoom(input.accountId, discovered, generation, nickname, input.requestId); rooms.set(roomJid.toLowerCase(), record); this.mucRooms.set(input.accountId, rooms); this.emitMucState(record, input.requestId);
+    const presence = xml('presence', { to: `${roomJid}/${nickname}` }, xml('x', { xmlns: MUC_NS }, xml('history', { maxstanzas: '0' })));
+    try { await session.send(presence); return await this.withTimeout(record.joinPromise, 15000, 'TIMEOUT', 'La entrada a la sala excedió el tiempo límite.'); } catch (error) { this.failMucRoom(record, error); throw error; }
+  }
+
+  async leaveMuc(input) {
+    this.assertMucRequest(input); const roomJid = this.validateRoomJid(input.roomJid); const record = this.mucRooms.get(input.accountId)?.get(roomJid.toLowerCase()); if (!record || record.state.status !== 'joined') throw taggedError('CONFLICT', 'La cuenta no está dentro de esta sala.', 'muc.leave');
+    record.state = { ...record.state, status: 'leaving' }; this.emitMucState(record, input.requestId); const session = this.requireConnected(input.accountId); await session.send(xml('presence', { to: record.state.selfOccupantJid || `${roomJid}/${record.nickname}`, type: 'unavailable' })); const result = { ...record.state, status: 'idle', participants: [] }; this.mucRooms.get(input.accountId).delete(roomJid.toLowerCase()); this.emit({ type: 'muc.stateChanged', correlationId: input.requestId, payload: result }); return result;
+  }
+
+  async sendMucMessage(input) {
+    this.assertMucRequest(input); const roomJid = this.validateRoomJid(input.roomJid); if (!input.clientMessageId || typeof input.clientMessageId !== 'string' || input.clientMessageId.length > 512 || input.body?.kind !== 'text' || typeof input.body.text !== 'string' || !input.body.text.trim()) throw taggedError('INVALID_INPUT', 'El mensaje MUC no es válido.', 'muc.send'); if (Buffer.byteLength(input.body.text, 'utf8') > MUC_TEXT_LIMIT_BYTES) throw taggedError('INVALID_INPUT', 'El mensaje supera el límite de 4096 bytes UTF-8.', 'muc.send');
+    const record = this.mucRooms.get(input.accountId)?.get(roomJid.toLowerCase()); if (!record || record.state.status !== 'joined') throw taggedError('NOT_CONNECTED', 'La sala no está confirmada como ingresada.', 'muc.send'); const self = record.state.selfOccupantJid && record.participants.get(record.state.selfOccupantJid); if (!self || !['participant', 'moderator'].includes(self.role)) throw taggedError('UNAUTHORIZED', 'El usuario no tiene voz en la sala.', 'muc.send');
+    await this.requireConnected(input.accountId).send(xml('message', { type: 'groupchat', to: roomJid, id: input.clientMessageId }, xml('body', {}, input.body.text), xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }))); return { accountId: input.accountId, roomJid, clientMessageId: input.clientMessageId, status: 'sent' };
+  }
+
+  createMucRoom(accountId, room, generation, nickname, requestId) { let resolveJoin; let rejectJoin; const joinPromise = new Promise((resolve, reject) => { resolveJoin = resolve; rejectJoin = reject; }); joinPromise.catch(() => undefined); return { accountId, generation, room, nickname, requestId, participants: new Map(), seenMessageIds: new Set(), joinPromise, resolveJoin, rejectJoin, state: { accountId, room, status: 'joining', participants: [], sessionGeneration: generation } }; }
+  emitMucState(record, correlationId) { this.emit({ type: 'muc.stateChanged', correlationId: correlationId || record.requestId, payload: { ...record.state, participants: [...record.participants.values()] } }); }
+  emitMucParticipant(record, participant, correlationId) { this.emit({ type: 'muc.participantChanged', correlationId: correlationId || record.requestId, payload: { accountId: record.accountId, room: record.room, participant, sessionGeneration: record.generation } }); }
+  mucPolicyKey(accountId, service) { return `${accountId.toLowerCase()}|${service.toLowerCase()}`; }
+  assertMucRequest(input) { if (!input || input.version !== 1 || typeof input.requestId !== 'string' || !input.requestId.trim() || typeof input.accountId !== 'string' || !input.accountId.trim()) throw taggedError('INVALID_INPUT', 'La solicitud MUC no es válida.', 'muc.input'); }
+  validateRoomJid(value) { if (typeof value !== 'string' || value.length > 512 || value.includes('/') || !/^[^@\s]+@[^@\s]+$/.test(value.trim())) throw taggedError('INVALID_INPUT', 'El JID de sala no es válido.', 'muc.input'); return value.trim().toLowerCase(); }
+  validateNickname(value) { if (typeof value !== 'string' || !value.trim() || value.length > 128 || /[\s/@<>:&"']/.test(value)) throw taggedError('INVALID_INPUT', 'El nickname no es válido.', 'muc.input'); return value.trim(); }
+  requireConnected(accountId) { if (!this.sessions.has(accountId) || this.states.get(accountId)?.status !== 'connected') throw taggedError('NOT_CONNECTED', 'La cuenta no está conectada.', 'muc.session'); return this.sessions.get(accountId); }
+  withTimeout(promise, milliseconds, code, message) { let timer; return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(taggedError(code, message, 'muc.timeout')), milliseconds); })]).finally(() => clearTimeout(timer)); }
+  clearMucRooms(accountId) { const rooms = this.mucRooms.get(accountId); if (!rooms) return; for (const record of rooms.values()) { record.rejectJoin?.(taggedError('NOT_CONNECTED', 'La sesión XMPP terminó.', 'muc.session')); record.participants.clear(); } rooms.clear(); this.mucRooms.delete(accountId); this.mucDiscoveries.delete(accountId); }
+  failMucRoom(record, error) { const code = error?.code || 'TRANSPORT_FAILED'; record.state = { ...record.state, status: 'failed', errorCode: ['INVALID_INPUT', 'UNAUTHORIZED', 'NOT_CONNECTED', 'TIMEOUT', 'TRANSPORT_FAILED', 'CONFLICT', 'UNSUPPORTED', 'INTERNAL'].includes(code) ? code : 'TRANSPORT_FAILED', participants: [] }; record.participants.clear(); this.emitMucState(record); record.rejectJoin?.(error); }
+
+  handleMucStanza(accountId, stanza) {
+    if (stanza.is('presence')) return this.handleMucPresence(accountId, stanza);
+    if (stanza.is('message') && stanza.attrs.type === 'groupchat') { this.handleMucMessage(accountId, stanza); return true; }
+    return false;
+  }
+
+  handleMucPresence(accountId, stanza) {
+    const from = String(stanza.attrs.from || ''); const roomJid = this.bareJid(from); const record = this.mucRooms.get(accountId)?.get(roomJid.toLowerCase()); if (!record || record.generation !== this.sessionGenerations.get(accountId)) return false;
+    const type = stanza.attrs.type; const errorCondition = stanza.getChild('error')?.getChildren()?.find((child) => child.name !== 'text')?.name; if (type === 'error' || errorCondition) { const error = taggedError(this.mucConditionCode(errorCondition), 'El servidor rechazó la entrada a la sala.', 'muc.join'); record.rejectJoin?.(error); this.failMucRoom(record, error); return true; }
+    const x = stanza.getChild('x', MUC_USER_NS); const item = x?.getChild('item'); const statusCodes = new Set((x?.getChildren('status') || []).map((status) => String(status.attrs.code || ''))); const participant = { occupantJid: from, nick: from.split('/').slice(1).join('/') || '', role: this.mucRole(item?.attrs.role), affiliation: this.mucAffiliation(item?.attrs.affiliation), availability: type === 'unavailable' ? 'unavailable' : 'available' };
+    if (type === 'unavailable') record.participants.delete(from); else record.participants.set(from, participant); this.emitMucParticipant(record, participant);
+    if (type === 'unavailable' && statusCodes.has('110')) { const error = taggedError('TRANSPORT_FAILED', 'La presencia propia fue retirada antes de confirmar la entrada.', 'muc.join'); this.failMucRoom(record, error); return true; }
+    if (statusCodes.has('201')) { const error = taggedError('CONFLICT', 'El servidor indicó que la sala fue creada durante la entrada.', 'muc.join'); void Promise.resolve(this.requireConnected(accountId).send(xml('presence', { to: from, type: 'unavailable' }))).catch(() => undefined); this.failMucRoom(record, error); return true; }
+    if (statusCodes.has('110')) { record.state = { ...record.state, status: 'joined', selfOccupantJid: from, participants: [...record.participants.values()] }; this.emitMucState(record); record.resolveJoin?.(record.state); }
+    return true;
+  }
+
+  handleMucMessage(accountId, stanza) {
+    const from = String(stanza.attrs.from || ''); const roomJid = this.bareJid(from); const record = this.mucRooms.get(accountId)?.get(roomJid.toLowerCase()); if (!record || record.generation !== this.sessionGenerations.get(accountId)) return;
+    const body = stanza.getChildText('body'); if (typeof body !== 'string') return; const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id || ''; const identity = explicitId ? `${accountId}|${roomJid}|${from}|${explicitId}` : `muc_${crypto.randomUUID()}`; const id = explicitId ? `room_${crypto.createHash('sha256').update(identity).digest('hex')}` : identity; if (record.seenMessageIds.has(id)) return; record.seenMessageIds.add(id); if (record.seenMessageIds.size > MUC_MESSAGE_BUFFER_LIMIT * 2) record.seenMessageIds.delete(record.seenMessageIds.values().next().value);
+    const source = stanza.getChild('delay', DELAY_NS) || stanza.getChild('x', LEGACY_DELAY_NS) ? 'server-history' : 'live'; const clientMessageId = stanza.getChild('origin-id')?.attrs?.id || (from === record.state.selfOccupantJid ? explicitId || undefined : undefined); const message = { id, accountId, roomJid, occupantJid: from, body: { kind: 'text', text: body }, receivedAt: new Date().toISOString(), ...(clientMessageId ? { clientMessageId } : {}), source, sessionGeneration: record.generation }; if (source === 'live') { record.messageBuffer = [...(record.messageBuffer || []), message].slice(-MUC_MESSAGE_BUFFER_LIMIT); } this.emit({ type: 'muc.messageReceived', correlationId: clientMessageId || id, payload: message });
+  }
+
+  mucRole(value) { return ['none', 'visitor', 'participant', 'moderator'].includes(value) ? value : 'none'; }
+  mucAffiliation(value) { return ['none', 'member', 'admin', 'owner'].includes(value) ? value : 'none'; }
+  mucConditionCode(condition) { return ['conflict', 'not-acceptable'].includes(condition) ? 'CONFLICT' : ['forbidden', 'not-authorized', 'registration-required', 'membership-required'].includes(condition) ? 'UNAUTHORIZED' : ['service-unavailable', 'item-not-found', 'remote-server-not-found', 'recipient-unavailable'].includes(condition) ? 'NOT_CONNECTED' : condition === 'resource-constraint' ? 'CONFLICT' : 'TRANSPORT_FAILED'; }
+
   handleStanza(accountId, stanza) {
     if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_STANZA]', JSON.stringify({ accountId, from: stanza.attrs?.from || '', to: stanza.attrs?.to || '', type: stanza.name || stanza.attrs?.type || '', id: stanza.attrs?.id || '', hasBody: Boolean(stanza.getChildText?.('body')) }));
+    if (this.handleMucStanza(accountId, stanza)) return;
     if (stanza.is('presence')) {
       const type = stanza.attrs.type; if (['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'error', 'probe'].includes(type)) return;
       const jid = this.bareJid(stanza.attrs.from || accountId); const contact = this.rosters.get(accountId)?.get(jid); if (!contact || !['to', 'both'].includes(contact.subscription)) return;
@@ -274,7 +372,7 @@ class XmppAdapter {
 
   require(accountId) { const session = this.sessions.get(accountId); if (!session) throw new Error('not_connected'); return session; }
   setState(accountId, status, retryable, reason) { const state = { accountId, status, retryable, since: new Date().toISOString(), ...(reason ? { reason } : {}) }; this.states.set(accountId, state); this.emit({ type: 'connection.stateChanged', payload: state }); }
-  handleSessionEvent(accountId, session, event, reason) { if (this.sessions.get(accountId) !== session) return false; if (event === 'offline') { this.sessions.delete(accountId); this.setState(accountId, 'failed', true, 'offline'); } else if (event === 'error') this.setState(accountId, 'failed', true, reason || 'TRANSPORT_FAILED'); else if (event === 'online') this.setState(accountId, 'connected', false); return true; }
+  handleSessionEvent(accountId, session, event, reason) { if (this.sessions.get(accountId) !== session) return false; if (event === 'offline') { this.clearMucRooms(accountId); this.sessions.delete(accountId); this.sessionGenerations.set(accountId, (this.sessionGenerations.get(accountId) || 0) + 1); this.setState(accountId, 'failed', true, 'offline'); } else if (event === 'error') this.setState(accountId, 'failed', true, reason || 'TRANSPORT_FAILED'); else if (event === 'online') this.setState(accountId, 'connected', false); return true; }
 }
 
 module.exports = { XmppAdapter, negotiateStartTls };

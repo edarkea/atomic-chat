@@ -35,7 +35,23 @@ export interface CertificateTrustDecisionInput { version: ContractVersion; reque
 export type AppErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'NOT_CONNECTED' | 'TIMEOUT' | 'AUTH_FAILED' | 'TRANSPORT_FAILED' | 'SERVER_UNREACHABLE' | 'TRANSPORT_INCOMPATIBLE' | 'STARTTLS_UNAVAILABLE' | 'TLS_NEGOTIATION_FAILED' | 'CONFLICT' | 'STORAGE_FAILED' | 'UNSUPPORTED' | 'INTERNAL' | 'CERTIFICATE_REJECTED' | 'CERTIFICATE_INVALID' | 'CERTIFICATE_CHANGED' | 'CERTIFICATE_DECISION_TIMEOUT';
 export interface AppError { code: AppErrorCode; retryable: boolean; requestId: RequestId; message: string; certificate?: CertificateVerificationError; }
 export type Result<T> = { ok: true; value: T; version: ContractVersion; requestId: RequestId } | { ok: false; error: AppError; version: ContractVersion };
-export interface DomainEvent<T> { version: ContractVersion; eventId: string; correlationId?: RequestId | ClientMessageId; type: 'connection.stateChanged' | 'presence.changed' | 'roster.changed' | 'message.stateChanged' | 'message.received' | 'certificate.trustRequired'; payload: T; }
+export type RoomId = string;
+export type OccupantId = string;
+export type MucRoomStatus = 'idle' | 'joining' | 'joined' | 'leaving' | 'failed';
+export type MucRole = 'none' | 'visitor' | 'participant' | 'moderator';
+export type MucAffiliation = 'none' | 'member' | 'admin' | 'owner';
+export interface RoomRef { service: string; room: string; jid: RoomId; }
+export interface RoomParticipant { occupantJid: OccupantId; nick: string; role: MucRole; affiliation: MucAffiliation; availability: Availability; }
+export interface RoomState { accountId: string; room: RoomRef; status: MucRoomStatus; selfOccupantJid?: OccupantId; participants: ReadonlyArray<RoomParticipant>; sessionGeneration: number; errorCode?: AppError['code']; }
+export interface MucRequest { version: ContractVersion; requestId: RequestId; accountId: string; }
+export interface MucDiscoverInput extends MucRequest {}
+export interface MucJoinInput extends MucRequest { roomJid: RoomId; nickname: string; }
+export interface MucLeaveInput extends MucRequest { roomJid: RoomId; }
+export interface MucSendInput extends MucRequest { roomJid: RoomId; clientMessageId: ClientMessageId; body: { kind: 'text'; text: string }; }
+export interface RoomMessage { id: string; accountId: string; roomJid: RoomId; occupantJid: OccupantId; body: { kind: 'text'; text: string }; receivedAt: string; clientMessageId?: ClientMessageId; source: 'live' | 'server-history'; sessionGeneration: number; }
+export interface RoomSendReceipt { accountId: string; roomJid: RoomId; clientMessageId: ClientMessageId; status: 'sent'; }
+export type DomainEventType = 'connection.stateChanged' | 'presence.changed' | 'roster.changed' | 'message.stateChanged' | 'message.received' | 'certificate.trustRequired' | 'muc.stateChanged' | 'muc.participantChanged' | 'muc.messageReceived';
+export interface DomainEvent<T> { version: ContractVersion; eventId: string; correlationId?: RequestId | ClientMessageId; type: DomainEventType; payload: T; }
 export interface ConnectInput { version: ContractVersion; requestId: RequestId; accountId: string; endpoint: { host: string; port: number; tls: boolean; transport?: XmppTransport; domain?: string; allowInsecureTls?: boolean }; credentialRef?: string; }
 export interface PresenceInput { version: ContractVersion; requestId: RequestId; accountId: string; availability: Availability; mode?: PresenceMode; status?: string; }
 export interface MessageSendInput { version: ContractVersion; requestId: RequestId; accountId: string; conversationId: string; clientMessageId: ClientMessageId; body: { kind: 'text'; text: string }; }

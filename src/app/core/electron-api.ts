@@ -1,4 +1,4 @@
-import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, HistoryPage, HistoryPageInput, Message, MessageSendInput, Presence, PresenceInput, Preferences, Result, XmppTransport } from './domain';
+import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, HistoryPage, HistoryPageInput, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Preferences, Result, RoomMessage, RoomRef, RoomSendReceipt, RoomState, XmppTransport } from './domain';
 
 export interface AtomicChatApi {
   config: { accountId: string; endpoint: { host: string; domain: string; port: number; tls: boolean; transport: XmppTransport; allowInsecureTls: boolean } };
@@ -12,6 +12,7 @@ export interface AtomicChatApi {
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };
   messaging: { send(input: MessageSendInput): Promise<Result<Message>> };
+  muc: { discover(input: MucDiscoverInput): Promise<Result<ReadonlyArray<RoomRef>>>; join(input: MucJoinInput): Promise<Result<RoomState>>; leave(input: MucLeaveInput): Promise<Result<RoomState>>; sendMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>> };
   history: { list(input: { version: 1; requestId: string; accountId: string; conversationId: string }): Promise<Result<Message[]>>; listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>; conversations(input: { version: 1; requestId: string; accountId: string }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>> > };
   preferences: { get(input: { accountId: string }): Promise<Result<Preferences>>; update(input: { accountId: string; changes: Partial<Preferences> }): Promise<Result<Partial<Preferences>>>; reset(input: { accountId: string }): Promise<Result<Preferences>> };
   subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
