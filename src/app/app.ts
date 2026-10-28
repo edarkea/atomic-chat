@@ -19,6 +19,7 @@ export class App {
   protected readonly presenceStatus = signal('');
   protected readonly mucNickname = signal('');
   protected readonly mucDraft = signal('');
+  protected readonly mucDiscovering = signal(false);
   protected readonly filteredContacts = computed(() => { const term = this.search().trim().toLowerCase(); return this.chat.contacts().filter((contact) => !term || contact.jid.toLowerCase().includes(term) || contact.name?.toLowerCase().includes(term)); });
   protected readonly visibleMessages = computed(() => { const jid = this.bareJid(this.selectedJid()); if (!jid) return []; const accountId = this.chat.accountId(); return this.chat.messages().filter((message) => message.accountId === accountId && (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid)); });
   protected readonly activeContact = computed(() => { const jid = this.bareJid(this.selectedJid()); return this.chat.contacts().find((contact) => this.bareJid(contact.jid) === jid); });
@@ -65,7 +66,7 @@ export class App {
   protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> { await this.chat.decideCertificate(decision); }
   protected onCertificateDialogKeydown(event: KeyboardEvent): void { const dialog = this.certificateDialog?.nativeElement; if (!dialog) return; if (event.key === 'Escape') { event.preventDefault(); void this.decideCertificate('cancel'); return; } if (event.key !== 'Tab') return; const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('hidden') && element.getClientRects().length > 0); if (!focusable.length) { event.preventDefault(); dialog.focus(); return; } const first = focusable[0]; const last = focusable[focusable.length - 1]; if (!dialog.contains(document.activeElement)) { event.preventDefault(); first.focus(); } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
   protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.chat.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.chat.error.set('No fue posible enviar el mensaje.'); } }
-  protected async discoverRooms(): Promise<void> { await this.muc.discover(this.chat.accountId()); }
+  protected async discoverRooms(): Promise<void> { this.mucDiscovering.set(true); try { await this.muc.discover(this.chat.accountId()); } finally { this.mucDiscovering.set(false); } }
   protected async joinRoom(roomJid: string): Promise<void> { const nickname = this.mucNickname().trim() || this.chat.accountId().split('@')[0] || 'operator'; await this.muc.join(this.chat.accountId(), roomJid, nickname); }
   protected async leaveRoom(): Promise<void> { const roomJid = this.muc.selectedRoomJid(); if (roomJid) await this.muc.leave(this.chat.accountId(), roomJid); }
   protected async sendRoom(): Promise<void> { const roomJid = this.muc.selectedRoomJid(); const sent = this.mucDraft(); if (roomJid && await this.muc.send(this.chat.accountId(), roomJid, sent) && this.mucDraft() === sent) this.mucDraft.set(''); }

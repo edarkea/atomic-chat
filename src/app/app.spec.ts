@@ -3,7 +3,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { App } from './app';
 import { ChatFacade } from './core/chat.facade';
-import { CertificateTrustRequest } from './core/domain';
+import { CertificateTrustRequest, RoomRef } from './core/domain';
+import { MucFacade } from './core/muc.facade';
 
 function fakeFacade() {
   return {
@@ -14,10 +15,19 @@ function fakeFacade() {
   } as unknown as ChatFacade;
 }
 
+function fakeMucFacade() {
+  const services = signal<ReadonlyArray<RoomRef>>([]);
+  return { services, states: signal([]), selectedRoomJid: signal(''), selectedState: signal(undefined), participants: signal([]), visibleParticipants: signal([]), hasMoreParticipants: signal(false), participantPage: signal(0), messages: signal([]), error: signal<string | null>(null), visibleNotices: signal([]), discover: vi.fn(async () => undefined), select: vi.fn(), join: vi.fn(async () => undefined), leave: vi.fn(async () => undefined), send: vi.fn(async () => true), previousParticipantPage: vi.fn(), nextParticipantPage: vi.fn() } as unknown as MucFacade;
+}
+
 describe('App composer integration', () => {
-  let fixture: ComponentFixture<App>; let facade: ReturnType<typeof fakeFacade>;
+  let fixture: ComponentFixture<App>; let facade: ReturnType<typeof fakeFacade>; let muc: ReturnType<typeof fakeMucFacade>;
   const chatMessage = (text: string, clientMessageId: string) => ({ id: clientMessageId, accountId: 'a@example.invalid', conversationId: 'contact@example.invalid', clientMessageId, senderJid: 'contact@example.invalid', body: { kind: 'text' as const, text }, status: 'sent' as const, createdAt: new Date().toISOString() });
-  beforeEach(async () => { facade = fakeFacade(); await TestBed.configureTestingModule({ imports: [App], providers: [{ provide: ChatFacade, useValue: facade }] }).compileComponents(); fixture = TestBed.createComponent(App); fixture.detectChanges(); (fixture.componentInstance as any).selectedJid.set('contact@example.invalid'); fixture.detectChanges(); });
+  beforeEach(async () => { facade = fakeFacade(); muc = fakeMucFacade(); await TestBed.configureTestingModule({ imports: [App], providers: [{ provide: ChatFacade, useValue: facade }, { provide: MucFacade, useValue: muc }] }).compileComponents(); fixture = TestBed.createComponent(App); fixture.detectChanges(); (fixture.componentInstance as any).selectedJid.set('contact@example.invalid'); fixture.detectChanges(); });
+
+  it('renders one accessible discovery action and a readable nickname control', () => { const panel = fixture.nativeElement.querySelector('.muc-panel') as HTMLElement; expect(panel.querySelectorAll('button').length).toBe(1); expect(panel.querySelector('label[for="muc-nickname"]')?.textContent).toContain('Apodo en salas'); expect(panel.querySelector('input[placeholder="Ej. operador"]')).toBeTruthy(); expect(panel.textContent).toContain('No hay salas descubiertas todavía.'); });
+  it('separates room selection from joining', () => { muc.services.set([{ service: 'conference.example.invalid', room: 'lobby', jid: 'lobby@conference.example.invalid' }]); fixture.detectChanges(); const panel = fixture.nativeElement.querySelector('.muc-panel') as HTMLElement; const select = panel.querySelector('.room-select') as HTMLButtonElement; const join = panel.querySelector('.room-join') as HTMLButtonElement; select.click(); expect(muc.select).toHaveBeenCalledWith('lobby@conference.example.invalid'); expect(muc.join).not.toHaveBeenCalled(); join.click(); expect(muc.join).toHaveBeenCalledWith('a@example.invalid', 'lobby@conference.example.invalid', 'a'); expect(panel.querySelectorAll('.room-item button').length).toBe(2); });
+  it('shows the local discovery state without duplicating IPC actions', async () => { let release!: () => void; (muc.discover as unknown as { mockImplementationOnce: (implementation: () => Promise<void>) => void }).mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; })); const discoverButton = fixture.nativeElement.querySelector('.muc-discover') as HTMLButtonElement; discoverButton.click(); fixture.detectChanges(); expect(discoverButton.disabled).toBe(true); expect(fixture.nativeElement.textContent).toContain('Consultando salas'); release(); await Promise.resolve(); fixture.detectChanges(); expect(discoverButton.disabled).toBe(false); expect(muc.discover).toHaveBeenCalledTimes(1); });
 
   it('clears only after local acceptance', async () => { const input = fixture.nativeElement.querySelector('input[name="message"]'); input.value = 'hola'; input.dispatchEvent(new Event('input')); fixture.detectChanges(); await fixture.nativeElement.querySelector('form.composer').requestSubmit(); fixture.detectChanges(); expect((fixture.componentInstance as any).draft()).toBe(''); });
   it('shows one certificate dialog with the selected transport and fingerprint', () => { facade.certificateRequest.set({ requestId: 'cert-1', accountId: 'a@example.invalid', host: 'xmpp.example.invalid', port: 5222, transport: 'starttls', certificate: { fingerprintSha256: 'AA:BB', subject: 'CN=xmpp.example.invalid', issuer: 'CN=xmpp.example.invalid', validFrom: '2026-01-01', validTo: '2027-01-01', subjectAltNames: ['DNS:xmpp.example.invalid'], chain: [{ fingerprintSha256: 'AA:BB', subject: 'CN=xmpp.example.invalid', issuer: 'CN=xmpp.example.invalid' }], pem: 'pem' } }); fixture.detectChanges(); expect(fixture.nativeElement.querySelectorAll('[role="dialog"]').length).toBe(1); expect(fixture.nativeElement.textContent).toContain('STARTTLS'); expect(fixture.nativeElement.textContent).toContain('AA:BB'); expect(fixture.nativeElement.querySelectorAll('.certificate-actions button').length).toBe(3); });
