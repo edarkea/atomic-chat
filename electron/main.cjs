@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, safeStorage, webContents, dialog } = require('electron');
 const crypto = require('node:crypto');
+const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { PersistenceStore } = require('./storage.cjs');
@@ -13,7 +14,21 @@ const { FileTransferCoordinator } = require('./file-transfer.cjs');
 let persistence;
 let secrets;
 let xmpp;
-const fileTransfers = new FileTransferCoordinator({ selectDestination: async (offer) => { const result = await dialog.showSaveDialog({ title: 'Guardar archivo recibido', defaultPath: offer.name, properties: ['showOverwriteConfirmation'] }); return result.canceled ? null : result.filePath; } });
+async function selectFileDestination(offer) {
+  while (true) {
+    const result = await dialog.showSaveDialog({ title: 'Guardar archivo recibido', defaultPath: offer.name, properties: [] });
+    if (result.canceled || !result.filePath) return null;
+    try {
+      await fsp.lstat(result.filePath);
+      const choice = await dialog.showMessageBox({ type: 'warning', buttons: ['Elegir otro', 'Cancelar'], defaultId: 0, cancelId: 1, message: 'El archivo de destino ya existe. Atomic Chat no sobrescribe archivos.' });
+      if (choice.response !== 0) return null;
+    } catch (cause) {
+      if (cause.code === 'ENOENT') return result.filePath;
+      return null;
+    }
+  }
+}
+const fileTransfers = new FileTransferCoordinator({ selectDestination: selectFileDestination });
 const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
 
 function createWindow() {
