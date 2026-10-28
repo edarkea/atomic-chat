@@ -1,7 +1,7 @@
 import { Component, computed, DestroyRef, ElementRef, effect, inject, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ChatFacade } from './core/chat.facade';
-import { Contact, Message } from './core/domain';
+import { CertificateTrustDecision, Contact, Message } from './core/domain';
 
 @Component({ selector: 'app-root', imports: [FormsModule], templateUrl: './app.html', styleUrl: './app.scss' })
 export class App {
@@ -12,6 +12,7 @@ export class App {
   protected readonly selectedJid = signal('');
   protected readonly selectedContact = signal<Contact | undefined>(undefined);
   protected readonly settingsOpen = signal(false);
+  protected readonly certificateRequest = computed(() => this.chat.certificateRequest?.() ?? null);
   protected readonly presenceOpen = signal(false);
   protected readonly presenceStatus = signal('');
   protected readonly filteredContacts = computed(() => { const term = this.search().trim().toLowerCase(); return this.chat.contacts().filter((contact) => !term || contact.jid.toLowerCase().includes(term) || contact.name?.toLowerCase().includes(term)); });
@@ -54,6 +55,7 @@ export class App {
   protected selectContact(contact: Contact): void { this.followLatest = true; this.selectedContact.set(contact); this.selectedJid.set(contact.jid); void this.scrollAfterConversationLoad(contact.jid); }
   protected useJid(): void { if (this.search().includes('@')) { this.followLatest = true; this.selectedContact.set(undefined); this.selectedJid.set(this.search().trim()); void this.scrollAfterConversationLoad(this.search().trim()); } }
   protected async connect(): Promise<void> { const connected = await this.chat.connect(this.login().accountId, this.login().password); if (connected) this.login.update((value) => ({ ...value, password: '' })); }
+  protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> { await this.chat.decideCertificate(decision); }
   protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.chat.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.chat.error.set('No fue posible enviar el mensaje.'); } }
   protected toggleSettings(): void { this.settingsOpen.update((open) => !open); }
 }

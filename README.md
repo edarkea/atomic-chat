@@ -84,11 +84,16 @@ P0 has been validated in the observed Openfire/Spark environment for connection,
 
 ## Known limitations
 
-- `ATOMIC_XMPP_ALLOW_INSECURE_TLS=true` may be required for the current self-signed Openfire certificate. This is an explicitly accepted risk and is not a secure production configuration.
+- A self-signed certificate is never accepted automatically. Electron Main performs an unauthenticated TLS-only probe, shows the certificate details in Angular, and keeps the operational XMPP connection at `rejectUnauthorized: true`. Trust is scoped to the XMPP account, endpoint, direct-TLS transport and exact SHA-256 certificate.
+- The current `@xmpp/client@0.14.0` STARTTLS plugin does not expose per-connection `ca` or certificate-pinning options: `electron/xmpp-adapter.cjs` therefore implements the interactive trust flow for the existing direct-TLS path (`xmpps:`). STARTTLS remains system-validated and an unknown certificate is blocked; it is not downgraded or globally trusted. Replacing this limitation requires an upstream/library extension or an explicitly approved transport change.
 - Migration failure/recovery testing and a complete automatic retry policy remain limited.
 - Notification preference persistence exists; system notification behavior is not complete.
 - Sounds, MUC rooms, file transfer, plugins and advanced XMPP extensions are outside the current implemented scope.
 - Interoperability evidence is specific to the tested Openfire/Spark environment.
+
+## Certificate trust implementation references
+
+The implementation maps the audit plan areas as follows: A1.3 (TLS transport and certificate classification) is in `electron/certificate-trust.cjs` and `electron/xmpp-adapter.cjs`; B1 (restricted Main/Preload/Renderer IPC and explicit decisions) is in `electron/main.cjs`, `electron/preload.cjs`, `src/app/core/electron-api.ts`, and `src/app/core/chat.facade.ts`; D1 (persistent, endpoint-scoped trust) is in `electron/storage.cjs` and the `trusted_certificates` table migration. The Angular warning is in `src/app/app.html` and uses the existing Wasteland Terminal styles.
 
 ## Project structure
 

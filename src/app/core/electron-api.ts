@@ -1,4 +1,4 @@
-import { ConnectInput, ConnectionState, Contact, DomainEvent, HistoryPage, HistoryPageInput, Message, MessageSendInput, Presence, PresenceInput, Preferences, Result } from './domain';
+import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, HistoryPage, HistoryPageInput, Message, MessageSendInput, Presence, PresenceInput, Preferences, Result } from './domain';
 
 export interface AtomicChatApi {
   config: { accountId: string; endpoint: { host: string; domain: string; port: number; tls: boolean; allowInsecureTls: boolean } };
@@ -7,6 +7,7 @@ export interface AtomicChatApi {
     connect(input: ConnectInput): Promise<Result<ConnectionState>>;
     disconnect(accountId: string): Promise<Result<void>>;
   };
+  certificate: { decide(input: CertificateTrustDecisionInput): Promise<Result<void>> };
   session: { getState(accountId: string): Promise<Result<ConnectionState>> };
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };

@@ -5,8 +5,10 @@ const Database = require('better-sqlite3');
 class PersistenceStore {
   constructor(userDataPath) {
     const directory = path.join(userDataPath, 'data');
-    fs.mkdirSync(directory, { recursive: true });
-    this.database = new Database(path.join(directory, 'atomic-chat.sqlite'));
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const databasePath = path.join(directory, 'atomic-chat.sqlite');
+    this.database = new Database(databasePath);
+    try { fs.chmodSync(directory, 0o700); fs.chmodSync(databasePath, 0o600); } catch { /* Windows ACLs are managed by the userData directory. */ }
     this.database.pragma('journal_mode = WAL');
     this.database.pragma('foreign_keys = ON');
     try { this.migrate(); } catch (error) { this.database.close(); throw error; }
@@ -51,6 +53,17 @@ class PersistenceStore {
         value_json TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (scope, scope_id, preference_key)
+      );
+      CREATE TABLE IF NOT EXISTS trusted_certificates (
+        account_id TEXT NOT NULL,
+        endpoint_host TEXT NOT NULL,
+        endpoint_port INTEGER NOT NULL,
+        transport TEXT NOT NULL,
+        fingerprint_sha256 TEXT NOT NULL,
+        certificate_pem TEXT NOT NULL,
+        approved_at TEXT NOT NULL,
+        PRIMARY KEY (account_id, endpoint_host, endpoint_port, transport),
+        FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
       );
       UPDATE schema_meta SET version = 2 WHERE version < 2;
     `);
@@ -116,6 +129,20 @@ class PersistenceStore {
     this.database.prepare(`INSERT INTO accounts(account_id, endpoint_host, endpoint_port, tls, credential_ref, created_at)
       VALUES (@accountId, @host, @port, @tls, @credentialRef, @createdAt)
       ON CONFLICT(account_id) DO UPDATE SET endpoint_host=@host, endpoint_port=@port, tls=@tls, credential_ref=@credentialRef`).run(account);
+  }
+
+  getTrustedCertificate(accountId, host, port, transport) {
+    const row = this.database.prepare(`SELECT account_id AS accountId, endpoint_host AS host, endpoint_port AS port,
+      transport, fingerprint_sha256 AS fingerprintSha256, certificate_pem AS certificatePem, approved_at AS approvedAt
+      FROM trusted_certificates WHERE account_id = ? AND endpoint_host = ? AND endpoint_port = ? AND transport = ?`).get(accountId, host, port, transport);
+    return row || null;
+  }
+
+  upsertTrustedCertificate(record) {
+    this.database.prepare(`INSERT INTO trusted_certificates(account_id, endpoint_host, endpoint_port, transport, fingerprint_sha256, certificate_pem, approved_at)
+      VALUES (@accountId, @host, @port, @transport, @fingerprintSha256, @certificatePem, @approvedAt)
+      ON CONFLICT(account_id, endpoint_host, endpoint_port, transport) DO UPDATE SET
+        fingerprint_sha256=@fingerprintSha256, certificate_pem=@certificatePem, approved_at=@approvedAt`).run(record);
   }
 
   saveMessage(message) {

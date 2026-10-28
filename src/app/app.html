@@ -34,3 +34,31 @@
     </section>
   </main>
 }
+
+@if (certificateRequest(); as request) {
+  <div class="certificate-backdrop">
+    <section class="certificate-dialog" role="dialog" aria-modal="true" aria-labelledby="certificate-title">
+      <p class="eyebrow">ADVERTENCIA TLS</p>
+      <h2 id="certificate-title">Verifica el certificado del servidor</h2>
+      <p class="certificate-intro">Atomic Chat detuvo el inicio de sesión antes de enviar tus credenciales.</p>
+      <dl class="certificate-details">
+        <dt>Servidor</dt><dd>{{ request.host }}:{{ request.port }}</dd>
+        <dt>Motivo</dt><dd>{{ request.verificationError?.message || 'El certificado presentado cambió respecto al aprobado anteriormente.' }}</dd>
+        <dt>Sujeto</dt><dd>{{ request.certificate.subject || 'No disponible' }}</dd>
+        <dt>Emisor</dt><dd>{{ request.certificate.issuer || 'No disponible' }}</dd>
+        <dt>Vigencia</dt><dd>{{ request.certificate.validFrom }} — {{ request.certificate.validTo }}</dd>
+        <dt>Nombres</dt><dd>{{ request.certificate.subjectAltNames.join(', ') || 'No disponibles' }}</dd>
+        <dt>Huella SHA-256</dt><dd class="certificate-fingerprint">{{ request.certificate.fingerprintSha256 }}</dd>
+        <dt>Cadena</dt><dd>{{ request.certificate.chain.length }} certificado(s) inspeccionado(s)<ul>@for (chainCertificate of request.certificate.chain; track chainCertificate.fingerprintSha256) { <li>{{ chainCertificate.subject }} · {{ chainCertificate.fingerprintSha256 }}</li> }</ul></dd>
+      </dl>
+      @if (request.previous) {
+        <p class="certificate-change"><strong>Certificado anterior:</strong> {{ request.previous.fingerprintSha256 }}<br /><strong>Certificado nuevo:</strong> {{ request.certificate.fingerprintSha256 }}</p>
+      }
+      <div class="certificate-actions">
+        <button type="button" (click)="decideCertificate('cancel')">Cancelar</button>
+        <button type="button" (click)="decideCertificate('trust_once')">Confiar una vez</button>
+        <button class="primary" type="button" (click)="decideCertificate('trust_and_remember')">Confiar y recordar</button>
+      </div>
+    </section>
+  </div>
+}
