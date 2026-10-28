@@ -29,10 +29,14 @@ function transferView(record) {
 class FileTransferCoordinator {
   constructor(options = {}) {
     this.root = options.root || path.join(os.tmpdir(), 'atomic-chat-transfers');
+    this.instanceId = crypto.randomUUID();
     this.records = new Map();
+    this.ownedTemporaries = new Set();
     this.listeners = new Set();
     this.selectDestination = options.selectDestination || (async () => null);
     this.beforePublish = options.beforePublish;
+    this.publish = options.publish || ((temporary, destination) => fsp.link(temporary, destination));
+    this.removeTemporary = options.removeTemporary || ((record) => this.removeTemporaryFiles(record));
   }
 
   onEvent(listener) {
@@ -56,7 +60,7 @@ class FileTransferCoordinator {
 
   add(input) {
     const counts = this.counts(input.offer.accountId);
-    if (counts.account >= ACTIVE_PER_ACCOUNT || counts.global >= ACTIVE_GLOBAL || counts.offers >= OFFER_LIMIT) throw error('RESOURCE_CONSTRAINT', 'transfer capacity exceeded');
+    if (counts.offers >= OFFER_LIMIT) throw error('RESOURCE_CONSTRAINT', 'pending offer capacity exceeded');
     const record = {
       ...input,
       state: 'offered',
@@ -105,8 +109,24 @@ class FileTransferCoordinator {
     return temporaryRoot;
   }
 
-  async cleanupAbandoned(destinationDirectory) {
-    const temporaryRoot = path.join(destinationDirectory, '.atomic-chat-transfers');
+  async processExists(pid) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (cause) {
+      return cause.code === 'EPERM';
+    }
+  }
+
+  async cleanupAbandoned(temporaryRoot) {
+    let rootInformation;
+    try {
+      rootInformation = await fsp.lstat(temporaryRoot);
+    } catch (cause) {
+      if (cause.code === 'ENOENT') return;
+      throw error('STORAGE_FAILED', 'cannot inspect transfer cleanup directory');
+    }
+    if (!rootInformation.isDirectory() || rootInformation.isSymbolicLink()) throw error('STORAGE_FAILED', 'private transfer directory is not trusted');
     let entries;
     try {
       entries = await fsp.readdir(temporaryRoot, { withFileTypes: true });
@@ -115,9 +135,26 @@ class FileTransferCoordinator {
       throw error('STORAGE_FAILED', 'cannot inspect transfer cleanup directory');
     }
     const active = new Set([...this.records.values()].map((record) => record.temporary).filter(Boolean));
-    await Promise.all(entries.filter((entry) => entry.name.endsWith('.part')).map(async (entry) => {
+    await Promise.all(entries.filter((entry) => entry.name.endsWith('.part') && entry.name.startsWith('atomic-')).map(async (entry) => {
       const candidate = path.join(temporaryRoot, entry.name);
-      if (!active.has(candidate)) await fsp.rm(candidate, { force: true });
+      if (active.has(candidate)) return;
+      const marker = `${candidate}.owner`;
+      try {
+        const [partInformation, markerInformation, metadata] = await Promise.all([
+          fsp.lstat(candidate),
+          fsp.lstat(marker),
+          fsp.readFile(marker, 'utf8'),
+        ]);
+        if (!partInformation.isFile() || partInformation.isSymbolicLink() || !markerInformation.isFile() || markerInformation.isSymbolicLink()) return;
+        const owner = JSON.parse(metadata);
+        if (owner.file !== entry.name || !Number.isInteger(owner.pid) || await this.processExists(owner.pid)) return;
+        const latestRootInformation = await fsp.lstat(temporaryRoot);
+        if (!latestRootInformation.isDirectory() || latestRootInformation.isSymbolicLink() || latestRootInformation.dev !== rootInformation.dev || latestRootInformation.ino !== rootInformation.ino) return;
+        await fsp.rm(candidate, { force: true });
+        await fsp.rm(marker, { force: true });
+      } catch {
+        // Unknown, malformed, active, or racing files are preserved fail-closed.
+      }
     }));
   }
 
@@ -136,6 +173,10 @@ class FileTransferCoordinator {
 
   async terminate(id, state, reason) {
     const record = this.get(id);
+    if (record.publicationState === 'publishing') {
+      await record.queue;
+      return transferView(record);
+    }
     if (TERMINAL.has(record.state)) {
       await record.queue;
       return transferView(record);
@@ -159,18 +200,28 @@ class FileTransferCoordinator {
       if (!destination) return this.reject(id, 'user_rejected');
       const destinationPath = path.resolve(String(destination));
       const destinationDirectory = path.dirname(destinationPath);
-      await this.cleanupAbandoned(destinationDirectory);
       const temporaryRoot = await this.ensureTemporaryRoot(destinationDirectory);
+      await this.cleanupAbandoned(temporaryRoot);
       if (record.terminalRequested || record.state !== 'offered') return transferView(record);
-      const temporary = path.join(temporaryRoot, `${crypto.randomUUID()}.part`);
+      const temporary = path.join(temporaryRoot, `atomic-${process.pid}-${this.instanceId}-${crypto.randomUUID()}.part`);
       const handle = await fsp.open(temporary, 'wx', 0o600);
       if (record.terminalRequested || record.state !== 'offered') {
         await handle.close().catch(() => undefined);
         await fsp.rm(temporary, { force: true }).catch(() => undefined);
         return transferView(record);
       }
+      const ownerMarker = `${temporary}.owner`;
+      try {
+        await fsp.writeFile(ownerMarker, JSON.stringify({ file: path.basename(temporary), pid: process.pid, instanceId: this.instanceId }), { flag: 'wx', mode: 0o600 });
+      } catch (cause) {
+        await handle.close().catch(() => undefined);
+        await fsp.rm(temporary, { force: true }).catch(() => undefined);
+        throw cause;
+      }
       record.destination = destinationPath;
       record.temporary = temporary;
+      record.ownerMarker = ownerMarker;
+      this.ownedTemporaries.add(temporary);
       record.handle = handle;
       clearTimeout(record.timer);
       record.timer = setTimeout(() => { void this.fail(id, 'timed_out').catch(() => undefined); }, 30000);
@@ -211,7 +262,13 @@ class FileTransferCoordinator {
   async cleanup(record) {
     try { await record.handle?.close(); } catch { /* cleanup remains best effort */ }
     record.handle = undefined;
+    await this.removeTemporary(record).catch(() => undefined);
+  }
+
+  async removeTemporaryFiles(record) {
     if (record.temporary) await fsp.rm(record.temporary, { force: true }).catch(() => undefined);
+    if (record.ownerMarker) await fsp.rm(record.ownerMarker, { force: true }).catch(() => undefined);
+    if (record.temporary) this.ownedTemporaries?.delete(record.temporary);
   }
 
   async cancelAccount(accountId) {
@@ -267,15 +324,18 @@ class FileTransferCoordinator {
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
         await this.beforePublish?.(record);
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
-        await fsp.link(record.temporary, record.destination);
-        await fsp.rm(record.temporary, { force: true });
+        record.publicationState = 'publishing';
+        await this.publish(record.temporary, record.destination);
+        record.publicationState = 'published';
         record.state = 'completed';
         record.terminalRequested = true;
         record.updatedAt = new Date().toISOString();
         this.emit(record);
+        await this.removeTemporary(record).catch(() => undefined);
         return transferView(record);
       } catch (cause) {
-        if (!record.terminalRequested && !TERMINAL.has(record.state)) await this.failCurrent(record, cause?.code === 'INVALID_INPUT' ? 'integrity_failed' : 'storage_failed');
+        if (record.publicationState === 'publishing') record.publicationState = undefined;
+        if (!record.publicationState && !record.terminalRequested && !TERMINAL.has(record.state)) await this.failCurrent(record, cause?.code === 'INVALID_INPUT' ? 'integrity_failed' : 'storage_failed');
         throw cause;
       }
     });
