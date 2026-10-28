@@ -107,7 +107,7 @@ function certificateSocket(tlsOptions) {
 }
 
 class XmppAdapter {
-  constructor(packaged = false, trustStore = null, mucPolicies = [], fileTransfers = null) { this.packaged = packaged; this.trustStore = trustStore; this.fileTransfers = fileTransfers; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); this.sessionGenerations = new Map(); this.sessionDomains = new Map(); this.sessionEndpoints = new Map(); this.mucDiscoveries = new Map(); this.mucRooms = new Map(); this.filePending = new Map(); this.fileOwners = new Map(); this.fileTraceAttempts = new WeakMap(); this.mucPolicies = new Map(); if (this.fileTransfers) this.fileTransfers.onEvent((event) => { if (!event.type.endsWith('stateChanged')) return; const transferId = event.payload?.offer?.transferId; if (!transferId || !['completed', 'failed', 'cancelled'].includes(event.payload?.state)) return; for (const [key, pending] of this.filePending) if (pending.record.offer.transferId === transferId) this.filePending.delete(key); }); mucPolicies.forEach((policy) => this.setMucPolicy(policy)); }
+  constructor(packaged = false, trustStore = null, mucPolicies = [], fileTransfers = null) { this.packaged = packaged; this.trustStore = trustStore; this.fileTransfers = fileTransfers; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); this.sessionGenerations = new Map(); this.sessionDomains = new Map(); this.sessionEndpoints = new Map(); this.mucDiscoveries = new Map(); this.mucRooms = new Map(); this.filePending = new Map(); this.fileOwners = new Map(); this.fileIqHandled = new WeakSet(); this.fileTraceAttempts = new WeakMap(); this.mucPolicies = new Map(); if (this.fileTransfers) this.fileTransfers.onEvent((event) => { if (!event.type.endsWith('stateChanged')) return; const transferId = event.payload?.offer?.transferId; if (!transferId || !['completed', 'failed', 'cancelled'].includes(event.payload?.state)) return; for (const [key, pending] of this.filePending) if (pending.record.offer.transferId === transferId) this.filePending.delete(key); }); mucPolicies.forEach((policy) => this.setMucPolicy(policy)); }
   onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async connect(input, password, senderId) {
@@ -133,11 +133,13 @@ class XmppAdapter {
     });
     if (transport.transport === 'direct-tls') this.installTlsTransport(session, service, tlsOptions);
     else this.installStartTlsTransport(session, service, tlsOptions, input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host);
+    this.installFileIqHandlers(input.accountId, session);
     this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
     session.on('error', (error) => { this.handleSessionEvent(input.accountId, session, 'error', error.code || 'TRANSPORT_FAILED'); });
     session.on('offline', () => { this.handleSessionEvent(input.accountId, session, 'offline'); });
     session.on('online', () => { this.handleSessionEvent(input.accountId, session, 'online'); });
     this.fileOwners.set(input.accountId, senderId);
+    session.on('element', (stanza) => { if (this.isFileIq(stanza)) this.fileIqHandled.add(stanza); });
     session.on('stanza', (stanza) => { if (this.sessions.get(input.accountId) !== session) return; this.handleStanza(input.accountId, stanza); });
     try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
     this.remoteResources.set(input.accountId, new Map()); this.initialPresencePublished.delete(input.accountId); this.sessions.set(input.accountId, session); this.sessionDomains.set(input.accountId, input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host); this.sessionEndpoints.set(input.accountId, { host: transport.host, port: transport.port, transport: transport.transport }); this.sessionGenerations.set(input.accountId, (this.sessionGenerations.get(input.accountId) || 0) + 1); await session.send(xml('presence')); this.initialPresencePublished.add(input.accountId);
@@ -366,9 +368,42 @@ class XmppAdapter {
   mucAffiliation(value) { return ['none', 'member', 'admin', 'owner'].includes(value) ? value : 'none'; }
   mucConditionCode(condition) { return ['conflict', 'not-acceptable'].includes(condition) ? 'CONFLICT' : ['forbidden', 'not-authorized', 'registration-required', 'membership-required'].includes(condition) ? 'UNAUTHORIZED' : ['service-unavailable', 'item-not-found', 'remote-server-not-found', 'recipient-unavailable'].includes(condition) ? 'NOT_CONNECTED' : condition === 'resource-constraint' ? 'CONFLICT' : 'TRANSPORT_FAILED'; }
 
+  isFileIq(stanza) {
+    if (!stanza?.is?.('iq') || !['get', 'set'].includes(stanza.attrs?.type)) return false;
+    return Boolean(stanza.getChild?.('si', SI_NS) || stanza.getChild?.('open', IBB_NS) || stanza.getChild?.('data', IBB_NS) || stanza.getChild?.('close', IBB_NS) || stanza.getChild?.('query', DISCO_INFO_NS));
+  }
+
+  installFileIqHandlers(accountId, session) {
+    if (!session?.iqCallee?.set || !session?.iqCallee?.get) return;
+    const handler = async (context) => {
+      this.fileIqHandled.add(context.stanza);
+      const response = await this.handleFileIq(accountId, context.stanza);
+      if (response) this.observeFileIqReply(session, context.stanza, response);
+      return response;
+    };
+    session.iqCallee.get(DISCO_INFO_NS, 'query', handler);
+    session.iqCallee.set(SI_NS, 'si', handler);
+    session.iqCallee.set(IBB_NS, 'open', handler);
+    session.iqCallee.set(IBB_NS, 'data', handler);
+    session.iqCallee.set(IBB_NS, 'close', handler);
+  }
+
+  observeFileIqReply(session, request, response) {
+    if (process.env.ATOMIC_XMPP_FILE_TRACE !== 'true' || !session?.on) return;
+    const child = request.getChild?.('si', SI_NS) || request.getChild?.('open', IBB_NS) || request.getChild?.('data', IBB_NS) || request.getChild?.('close', IBB_NS) || request.getChild?.('query', DISCO_INFO_NS);
+    const phase = child?.getName?.() === 'si' ? 'SI_RESULT' : child?.getName?.() === 'open' ? 'IBB_OPEN_RESULT' : child?.getName?.() === 'data' ? 'IBB_DATA' : child?.getName?.() === 'close' ? 'IBB_CLOSE' : 'DISCO_INFO';
+    const correlation = this.fileTraceAttempts.get(request);
+    let settled = false; let timer;
+    const cleanup = () => { if (settled) return; settled = true; clearTimeout(timer); session.removeListener?.('send', onSend); session.removeListener?.('error', onError); };
+    const onSend = (sent) => { if (!sent?.is?.('iq') || sent.attrs?.id !== request.attrs?.id) return; fileTrace(`${phase}_TX_FULFILLED`, 'TX', { iqType: sent.attrs.type, result: sent.attrs.type === 'result' ? 'sent' : undefined, correlation }); cleanup(); };
+    const onError = () => { fileTrace(`${phase}_TX_FAILED`, 'TX', { iqType: request.attrs?.type, errorCode: 'TRANSPORT_FAILED', correlation }); cleanup(); };
+    session.on('send', onSend); session.on('error', onError); timer = setTimeout(cleanup, 30000); timer.unref?.();
+  }
+
   handleStanza(accountId, stanza) {
     if (process.env.ATOMIC_XMPP_FILE_TRACE === 'true' && stanza?.is?.('iq') && stanza.attrs?.type === 'set' && stanza.getChild?.('si', SI_NS)) { const correlation = `attempt_${crypto.randomUUID()}`; this.fileTraceAttempts.set(stanza, correlation); fileTrace('FILE_IQ_CANDIDATE_RX', 'RX', { iqType: 'set', correlation }); }
     if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_STANZA]', JSON.stringify({ accountId, from: stanza.attrs?.from || '', to: stanza.attrs?.to || '', type: stanza.name || stanza.attrs?.type || '', id: stanza.attrs?.id || '', hasBody: Boolean(stanza.getChildText?.('body')) }));
+    if (this.fileIqHandled.has(stanza) || (this.sessions.get(accountId)?.iqCallee && this.isFileIq(stanza))) return;
     if (this.handleMucStanza(accountId, stanza)) return;
     if (this.handleFileStanza(accountId, stanza)) return;
     if (stanza.is('presence')) {
@@ -388,24 +423,55 @@ class XmppAdapter {
     }
   }
 
-  handleFileStanza(accountId, stanza) {
-    if (!this.fileTransfers) return false;
-    if (!stanza?.is?.('iq')) return false;
+  handleFileIq(accountId, stanza, options = {}) {
+    if (!this.fileTransfers || !stanza?.is?.('iq')) return undefined;
     const session = this.sessions.get(accountId); const generation = this.sessionGenerations.get(accountId) || 0; const si = stanza.getChild?.('si', SI_NS); const open = stanza.getChild?.('open', IBB_NS); const data = stanza.getChild?.('data', IBB_NS); const close = stanza.getChild?.('close', IBB_NS); const disco = stanza.getChild?.('query', DISCO_INFO_NS);
-    if (stanza.attrs?.type === 'get' && disco) { fileTrace('DISCO_INFO', 'RX', { iqType: 'get' }); void session?.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from }, xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: SI_NS }), xml('feature', { var: SI_FILE_NS }), xml('feature', { var: IBB_NS })))).then(() => fileTrace('DISCO_INFO', 'TX', { iqType: 'result', result: 'supported' })).catch(() => undefined); return true; }
-    if (stanza.attrs?.type !== 'set' || (!si && !open && !data && !close)) return false;
-    if (si) { const attempt = this.fileTraceAttempts.get(stanza) || `attempt_${crypto.randomUUID()}`; fileTrace('SI_OFFER_RX', 'RX', { iqType: stanza.attrs.type, result: 'recognized', correlation: attempt }); try { const offer = parseOffer(stanza, accountId, generation); const publicOffer = { transferId: offer.transferId, accountId, conversationId: offer.conversationId, senderJid: offer.senderJid, name: offer.name, sizeBytes: offer.sizeBytes, ...(offer.description ? { description: offer.description } : {}), transport: 'ibb', offeredAt: new Date().toISOString() }; let replied = false; const replyError = async (reason) => { if (replied) return; replied = true; fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition: reason === 'user_rejected' ? 'forbidden' : 'not-acceptable', correlation: attempt }); await session.send(xml('iq', { type: 'error', id: stanza.attrs.id, to: stanza.attrs.from }, xml('error', { type: 'cancel' }, xml(reason === 'user_rejected' ? 'forbidden' : 'not-acceptable', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))); }; const record = this.fileTransfers.add({ offer: publicOffer, iqOfferId: offer.iqId, siSessionId: offer.siSid, ownerSenderId: this.fileOwners.get(accountId), iq: stanza, session, onRejected: replyError, onAccepted: async () => { if (replied) throw new Error('SI_ALREADY_REPLIED'); replied = true; fileTrace('SI_RESULT_TX_ATTEMPT', 'TX', { iqType: 'result', correlation: attempt }); try { await session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from }, xml('si', { xmlns: SI_NS }, xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS))))))); fileTrace('SI_RESULT_TX_FULFILLED', 'TX', { iqType: 'result', correlation: attempt }); } catch (cause) { fileTrace('SI_RESULT_TX_FAILED', 'TX', { iqType: 'result', errorCode: 'TRANSPORT_FAILED', correlation: attempt }); throw cause; } } }); this.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, { record, session, generation, attempt, protocolQueue: Promise.resolve() }); fileTrace('SI_OFFER_REGISTERED', 'RX', { result: 'offered', correlation: attempt }); } catch (error) { const condition = error?.code === 'UNSUPPORTED_METHOD' ? 'not-acceptable' : error?.code === 'RESOURCE_CONSTRAINT' ? 'resource-constraint' : error?.code === 'BAD_REQUEST' ? 'bad-request' : 'undefined-condition'; fileTrace('SI_PARSE_REJECTED', 'RX', { iqType: 'set', condition, correlation: attempt }); void session?.send(xml('iq', { type: 'error', id: stanza.attrs.id, to: stanza.attrs.from }, xml('error', { type: 'cancel' }, xml(condition, { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))).catch(() => undefined); } return true; }
-    const sid = open?.attrs?.sid || data?.attrs?.sid || close?.attrs?.sid || '';
-    const pending = this.filePending.get(`${accountId}|${generation}|${stanza.attrs.from}|${sid}`);
+    const deliver = async (child) => { if (options.send) await options.send(child); return child; };
+    const errorElement = (condition) => xml('error', { type: 'cancel' }, xml(condition, { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' }));
+    const conditionFor = (cause) => cause?.code === 'RESOURCE_CONSTRAINT' || cause?.message === 'RESOURCE_CONSTRAINT' ? 'resource-constraint' : cause?.code === 'UNSUPPORTED_METHOD' ? 'not-acceptable' : cause?.code === 'CONFLICT' || cause?.message === 'NOT_ACCEPTED' ? 'not-acceptable' : cause?.code === 'UNAUTHORIZED' ? 'not-authorized' : cause?.message === 'BAD_SENDER' ? 'item-not-found' : cause?.message === 'INVALID_BASE64' ? 'bad-request' : cause?.message === 'BAD_REQUEST' ? 'bad-request' : 'undefined-condition';
+    if (stanza.attrs?.type === 'get' && disco) { fileTrace('DISCO_INFO', 'RX', { iqType: 'get' }); const response = xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: SI_NS }), xml('feature', { var: SI_FILE_NS }), xml('feature', { var: IBB_NS })); fileTrace('DISCO_INFO', 'TX', { iqType: 'result', result: 'supported' }); return response; }
+    if (stanza.attrs?.type !== 'set' || (!si && !open && !data && !close)) return undefined;
+    if (si) {
+      const attempt = this.fileTraceAttempts.get(stanza) || `attempt_${crypto.randomUUID()}`; this.fileTraceAttempts.set(stanza, attempt); fileTrace('SI_OFFER_RX', 'RX', { iqType: stanza.attrs.type, result: 'recognized', correlation: attempt });
+      try {
+        const offer = parseOffer(stanza, accountId, generation); const publicOffer = { transferId: offer.transferId, accountId, conversationId: offer.conversationId, senderJid: offer.senderJid, name: offer.name, sizeBytes: offer.sizeBytes, ...(offer.description ? { description: offer.description } : {}), transport: 'ibb', offeredAt: new Date().toISOString() };
+        let replied = false; let resolveResponse; let rejectResponse;
+        const response = new Promise((resolve, reject) => { resolveResponse = resolve; rejectResponse = reject; });
+        const reply = async (child) => { if (replied) return; replied = true; try { await deliver(child); resolveResponse(child); } catch (cause) { rejectResponse(cause); throw cause; } };
+        const replyError = async (reason) => { if (replied) return; const condition = reason === 'user_rejected' ? 'forbidden' : 'not-acceptable'; fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition, correlation: attempt }); await reply(errorElement(condition)); };
+        const record = this.fileTransfers.add({ offer: publicOffer, iqOfferId: offer.iqId, siSessionId: offer.siSid, ownerSenderId: this.fileOwners.get(accountId), iq: stanza, session, onRejected: replyError, onAccepted: async () => { if (replied) throw new Error('SI_ALREADY_REPLIED'); fileTrace('SI_RESULT_TX_ATTEMPT', 'TX', { iqType: 'result', correlation: attempt }); try { await reply(xml('si', { xmlns: SI_NS }, xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS)))))); if (options.send) fileTrace('SI_RESULT_TX_FULFILLED', 'TX', { iqType: 'result', correlation: attempt }); } catch (cause) { if (options.send) fileTrace('SI_RESULT_TX_FAILED', 'TX', { iqType: 'result', errorCode: 'TRANSPORT_FAILED', correlation: attempt }); throw cause; } } });
+        this.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, { record, session, generation, attempt, protocolQueue: Promise.resolve() }); fileTrace('SI_OFFER_REGISTERED', 'RX', { result: 'offered', correlation: attempt }); return response;
+      } catch (cause) { const condition = cause?.code === 'UNSUPPORTED_METHOD' ? 'not-acceptable' : cause?.code === 'RESOURCE_CONSTRAINT' ? 'resource-constraint' : cause?.code === 'BAD_REQUEST' ? 'bad-request' : 'undefined-condition'; fileTrace('SI_PARSE_REJECTED', 'RX', { iqType: 'set', condition, correlation: this.fileTraceAttempts.get(stanza) }); return errorElement(condition); }
+    }
+    const sid = open?.attrs?.sid || data?.attrs?.sid || close?.attrs?.sid || ''; const pending = this.filePending.get(`${accountId}|${generation}|${stanza.attrs.from}|${sid}`);
     if (open) fileTrace('IBB_OPEN_CANDIDATE_RX', 'RX', { iqType: 'set', correlation: pending?.attempt || `open_${crypto.randomUUID()}` });
-    if (!pending) { if (open) fileTrace('IBB_OPEN_UNMATCHED', 'RX', { iqType: 'set', condition: 'item-not-found' }); void session.send(xml('iq', { type: 'error', id: stanza.attrs.id, to: stanza.attrs.from }, xml('error', { type: 'cancel' }, xml('item-not-found', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))).catch(() => undefined); return true; }
-    const sendFileError = (id, from, condition = 'undefined-condition') => session.send(xml('iq', { type: 'error', id, to: from }, xml('error', { type: 'cancel' }, xml(condition, { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' }))));
-    try {
-      const record = pending.record; if (stanza.attrs.from !== record.offer.senderJid) throw new Error('BAD_SENDER'); if (open) { pending.protocolQueue = pending.protocolQueue.then(async () => { if (record.state !== 'accepted') throw new Error('NOT_ACCEPTED'); const blockSize = validateOpen(open, record.siSessionId, record.offer.senderJid); pending.sid = open.attrs.sid; pending.blockSize = blockSize; pending.seq = 0; record.state = 'transferring'; fileTrace('IBB_OPEN_MATCHED', 'RX', { iqType: 'set', blockSize, result: 'accepted', correlation: pending.attempt }); try { await session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from })); fileTrace('IBB_OPEN_RESULT_TX_FULFILLED', 'TX', { iqType: 'result', correlation: pending.attempt }); } catch (cause) { fileTrace('IBB_OPEN_RESULT_TX_FAILED', 'TX', { iqType: 'result', errorCode: 'TRANSPORT_FAILED', correlation: pending.attempt }); throw cause; } }); }
-      if (data) { pending.protocolQueue = pending.protocolQueue.then(async () => { const expectedSeq = pending.seq; const bytes = validateData(data, pending.sid, record.offer.senderJid, pending.blockSize, expectedSeq); fileTrace('IBB_DATA', 'RX', { iqType: 'set', seq: expectedSeq, bytes: bytes.length }); await this.fileTransfers.append(record.offer.transferId, bytes); pending.seq = (expectedSeq + 1) % 65536; await session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from })); fileTrace('IBB_DATA', 'TX', { iqType: 'result', seq: expectedSeq, bytes: bytes.length }); }); }
-      if (close) { pending.protocolQueue = pending.protocolQueue.then(async () => { fileTrace('IBB_CLOSE', 'RX', { iqType: 'set' }); await this.fileTransfers.complete(record.offer.transferId); await session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from })); fileTrace('IBB_CLOSE', 'TX', { iqType: 'result', result: 'completed' }); }); }
-      pending.protocolQueue.catch(async (cause) => { await this.fileTransfers.fail(record.offer.transferId, 'storage_failed').catch(() => undefined); await sendFileError(stanza.attrs.id, stanza.attrs.from, cause?.message === 'NOT_ACCEPTED' ? 'not-acceptable' : 'resource-constraint').catch(() => undefined); fileTrace(open ? 'IBB_OPEN' : data ? 'IBB_DATA' : 'IBB_CLOSE', 'TX', { iqType: 'error', condition: 'resource-constraint' }); });
-    } catch { void sendFileError(stanza.attrs.id, stanza.attrs.from, 'bad-request').catch(() => undefined); }
+    if (!pending) { if (open) fileTrace('IBB_OPEN_UNMATCHED', 'RX', { iqType: 'set', condition: 'item-not-found' }); return errorElement('item-not-found'); }
+    if (stanza.attrs.from !== pending.record.offer.senderJid) return errorElement('item-not-found');
+    const enqueue = (operation) => { const task = pending.protocolQueue.then(operation); pending.protocolQueue = task.catch(() => undefined); return task; };
+    if (open) return enqueue(async () => { const record = pending.record; if (record.state !== 'accepted') throw new Error('NOT_ACCEPTED'); const blockSize = validateOpen(open, record.siSessionId, record.offer.senderJid); pending.sid = open.attrs.sid; pending.blockSize = blockSize; pending.seq = 0; record.state = 'transferring'; fileTrace('IBB_OPEN_MATCHED', 'RX', { iqType: 'set', blockSize, result: 'accepted', correlation: pending.attempt }); return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'cancelled_by_sender' : 'invalid_protocol').catch(() => undefined); fileTrace('IBB_OPEN_RESULT_TX_FAILED', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
+    if (data) return enqueue(async () => { const expectedSeq = pending.seq; const bytes = validateData(data, pending.sid, pending.record.offer.senderJid, pending.blockSize, expectedSeq); fileTrace('IBB_DATA', 'RX', { iqType: 'set', seq: expectedSeq, bytes: bytes.length, correlation: pending.attempt }); await this.fileTransfers.append(pending.record.offer.transferId, bytes); pending.seq = (expectedSeq + 1) % 65536; return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, 'storage_failed').catch(() => undefined); fileTrace('IBB_DATA', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
+    return enqueue(async () => { if (!pending.sid || pending.record.state !== 'transferring') throw new Error('NOT_ACCEPTED'); fileTrace('IBB_CLOSE', 'RX', { iqType: 'set', correlation: pending.attempt }); await this.fileTransfers.complete(pending.record.offer.transferId); fileTrace('IBB_CLOSE', 'TX', { iqType: 'result', result: 'completed', correlation: pending.attempt }); return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'invalid_protocol' : 'storage_failed').catch(() => undefined); fileTrace('IBB_CLOSE', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
+  }
+
+  handleFileStanza(accountId, stanza) {
+    if (!this.fileTransfers || !stanza?.is?.('iq')) return false;
+    const session = this.sessions.get(accountId);
+    const sendChild = (child) => {
+      if (!child || !session?.send) return undefined;
+      const type = child.is?.('error') ? 'error' : 'result';
+      return session.send(xml('iq', { type, id: stanza.attrs.id, to: stanza.attrs.from }, child));
+    };
+    const response = this.handleFileIq(accountId, stanza, { send: sendChild });
+    if (response === undefined) return false;
+    if (!response?.then) void Promise.resolve(sendChild(response)).catch(() => undefined);
+    else {
+      const child = stanza.getChild?.('open', IBB_NS) || stanza.getChild?.('data', IBB_NS) || stanza.getChild?.('close', IBB_NS);
+      const sid = child?.attrs?.sid;
+      const generation = this.sessionGenerations.get(accountId) || 0;
+      const pending = sid ? this.filePending.get(`${accountId}|${generation}|${stanza.attrs.from}|${sid}`) : undefined;
+      if (pending) pending.protocolQueue = response.catch(() => undefined);
+      else void response.catch(() => undefined);
+    }
     return true;
   }
 
