@@ -43,6 +43,7 @@
       <p class="certificate-intro">Atomic Chat detuvo el inicio de sesión antes de enviar tus credenciales.</p>
       <dl class="certificate-details">
         <dt>Servidor</dt><dd>{{ request.host }}:{{ request.port }}</dd>
+        <dt>Transporte</dt><dd>{{ request.transport === 'starttls' ? 'STARTTLS' : 'TLS directo' }}</dd>
         <dt>Motivo</dt><dd>{{ request.verificationError?.message || 'El certificado presentado cambió respecto al aprobado anteriormente.' }}</dd>
         <dt>Sujeto</dt><dd>{{ request.certificate.subject || 'No disponible' }}</dd>
         <dt>Emisor</dt><dd>{{ request.certificate.issuer || 'No disponible' }}</dd>

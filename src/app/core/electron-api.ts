@@ -1,7 +1,7 @@
-import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, HistoryPage, HistoryPageInput, Message, MessageSendInput, Presence, PresenceInput, Preferences, Result } from './domain';
+import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, HistoryPage, HistoryPageInput, Message, MessageSendInput, Presence, PresenceInput, Preferences, Result, XmppTransport } from './domain';
 
 export interface AtomicChatApi {
-  config: { accountId: string; endpoint: { host: string; domain: string; port: number; tls: boolean; allowInsecureTls: boolean } };
+  config: { accountId: string; endpoint: { host: string; domain: string; port: number; tls: boolean; transport: XmppTransport; allowInsecureTls: boolean } };
   account: {
     setSecret(input: { version: 1; requestId: string; credentialRef: string; secret: string }): Promise<Result<{ stored: true }>>;
     connect(input: ConnectInput): Promise<Result<ConnectionState>>;

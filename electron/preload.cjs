@@ -3,7 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 const service = process.env.ATOMIC_XMPP_SERVICE || '';
 const serviceUrl = service.includes('://') ? new URL(service) : null;
-const endpoint = Object.freeze({ host: serviceUrl?.hostname || service, domain: process.env.ATOMIC_XMPP_DOMAIN || '', port: Number(process.env.ATOMIC_XMPP_PORT || 0), tls: process.env.ATOMIC_XMPP_TLS !== 'false', allowInsecureTls: process.env.ATOMIC_XMPP_ALLOW_INSECURE_TLS === 'true' });
+const configuredTransport = process.env.ATOMIC_XMPP_TRANSPORT;
+const legacyTls = process.env.ATOMIC_XMPP_TLS !== 'false';
+const configuredPort = Number(process.env.ATOMIC_XMPP_PORT || 0);
+const transport = configuredTransport || (serviceUrl?.protocol === 'xmpps:' ? 'direct-tls' : legacyTls && configuredPort === 5223 ? 'direct-tls' : 'starttls');
+const endpoint = Object.freeze({ host: serviceUrl?.hostname || service, domain: process.env.ATOMIC_XMPP_DOMAIN || '', port: configuredPort, tls: true, transport, allowInsecureTls: process.env.ATOMIC_XMPP_ALLOW_INSECURE_TLS === 'true' });
 
 contextBridge.exposeInMainWorld('atomicChat', Object.freeze({
   config: Object.freeze({ accountId: process.env.ATOMIC_XMPP_USERNAME || '', endpoint }),

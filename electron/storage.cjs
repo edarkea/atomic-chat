@@ -23,6 +23,7 @@ class PersistenceStore {
         endpoint_host TEXT NOT NULL,
         endpoint_port INTEGER NOT NULL,
         tls INTEGER NOT NULL,
+        transport TEXT NOT NULL DEFAULT 'direct-tls',
         credential_ref TEXT,
         created_at TEXT NOT NULL
       );
@@ -67,6 +68,8 @@ class PersistenceStore {
       );
       UPDATE schema_meta SET version = 2 WHERE version < 2;
     `);
+    const accountColumns = this.database.prepare('PRAGMA table_info(accounts)').all();
+    if (!accountColumns.some((column) => column.name === 'transport')) this.database.exec("ALTER TABLE accounts ADD COLUMN transport TEXT NOT NULL DEFAULT 'direct-tls'");
     const columns = this.database.prepare('PRAGMA table_info(messages)').all();
     const hasAccount = columns.some((column) => column.name === 'account_id');
     if (!hasAccount) {
@@ -126,9 +129,10 @@ class PersistenceStore {
   }
 
   upsertAccount(account) {
-    this.database.prepare(`INSERT INTO accounts(account_id, endpoint_host, endpoint_port, tls, credential_ref, created_at)
-      VALUES (@accountId, @host, @port, @tls, @credentialRef, @createdAt)
-      ON CONFLICT(account_id) DO UPDATE SET endpoint_host=@host, endpoint_port=@port, tls=@tls, credential_ref=@credentialRef`).run(account);
+    const value = { ...account, transport: account.transport || (account.tls ? 'direct-tls' : 'starttls') };
+    this.database.prepare(`INSERT INTO accounts(account_id, endpoint_host, endpoint_port, tls, transport, credential_ref, created_at)
+      VALUES (@accountId, @host, @port, @tls, @transport, @credentialRef, @createdAt)
+      ON CONFLICT(account_id) DO UPDATE SET endpoint_host=@host, endpoint_port=@port, tls=@tls, transport=@transport, credential_ref=@credentialRef`).run(value);
   }
 
   getTrustedCertificate(accountId, host, port, transport) {

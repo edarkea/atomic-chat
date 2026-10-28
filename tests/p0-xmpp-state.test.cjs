@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
 const { xml } = require('@xmpp/client');
+const { validateXmppTransport } = require('../electron/security-policy.cjs');
 
 function incoming(from, body, id) { return xml('message', { from, to: 'a@example.invalid/resource', ...(id ? { id } : {}) }, xml('body', {}, body)); }
 
@@ -68,10 +69,18 @@ test('away, xa and dnd never become unavailable presence', async () => {
   assert.ok(sent.every((stanza) => stanza.attrs.type === undefined));
 });
 
-test('production rejects insecure XMPP TLS before opening a session', async () => {
+test('production rejects an unsupported cleartext transport before opening a session', async () => {
   const adapter = new XmppAdapter(true);
-  await assert.rejects(() => adapter.connect({ accountId: 'a@example.invalid', endpoint: { host: 'example.invalid', port: 5222, tls: false } }, 'synthetic'), /TLS_POLICY/);
+  await assert.rejects(() => adapter.connect({ accountId: 'a@example.invalid', endpoint: { host: 'example.invalid', port: 5222, tls: true, transport: 'plain' } }, 'synthetic'), /TRANSPORT_INCOMPATIBLE/);
   assert.equal(adapter.sessions.size, 0);
+});
+
+test('legacy tls=false configuration adapts to secure STARTTLS', () => {
+  const transport = validateXmppTransport({ host: 'example.invalid', port: 5222, tls: false }, true);
+  assert.equal(transport.transport, 'starttls');
+  assert.equal(transport.rejectUnauthorized, true);
+  assert.equal(validateXmppTransport({ host: 'example.invalid', port: 5222, tls: true }, true).transport, 'starttls');
+  assert.equal(validateXmppTransport({ host: 'example.invalid', port: 5223, tls: true }, true).transport, 'direct-tls');
 });
 
 test('disconnect reports a stable idle state after a failed or absent session', async () => {
