@@ -2,7 +2,7 @@ import { Component, computed, DestroyRef, ElementRef, effect, inject, signal, Vi
 import { FormsModule } from '@angular/forms';
 import { ChatFacade } from './core/chat.facade';
 import { MucFacade } from './core/muc.facade';
-import { CertificateTrustDecision, Contact, Message, RoomState } from './core/domain';
+import { CertificateTrustDecision, Contact, Message, RoomMessage, RoomState } from './core/domain';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -68,7 +68,11 @@ export class App {
   protected contactKind(contact: Contact): string { return contact.source === 'conversation' ? 'Conversación local' : this.contactGroups(contact).length ? this.contactGroups(contact).join(' · ') : 'Sin grupo'; }
   protected remotePresenceLabel(contact: Contact | undefined): string { const presence = contact?.presence; if (!presence) return 'Estado desconocido'; if (presence.availability === 'unavailable') return 'No disponible'; return ({ chat: 'Libre para chatear', away: 'Ausente', xa: 'Ausencia extendida', dnd: 'No molestar' } as Record<string, string>)[presence.mode || ''] || 'En línea'; }
   protected remotePresenceDot(contact: Contact | undefined): string { const presence = contact?.presence; if (!presence || presence.availability === 'unavailable') return 'unknown'; return presence.mode || 'online'; }
+  protected isMucMessageOutgoing(message: RoomMessage, roomState: RoomState): boolean { return message.accountId === roomState.accountId && message.roomJid === roomState.room.jid && message.occupantJid === roomState.selfOccupantJid; }
+  protected mucSenderLabel(message: RoomMessage, roomState: RoomState): string { const nickname = this.occupantNickname(message.occupantJid) || 'Participante desconocido'; return this.isMucMessageOutgoing(message, roomState) ? `Tú · ${nickname}` : nickname; }
+  protected directSenderLabel(message: Message): string { if (message.accountId !== this.chat.accountId()) return 'Remitente desconocido'; if (this.isOutgoing(message)) return 'Tú'; const senderJid = this.bareJid(message.senderJid); if (!senderJid) return 'Remitente desconocido'; const contact = this.chat.contacts().find((item) => this.bareJid(item.jid) === senderJid); return contact?.name?.trim() || senderJid; }
   private bareJid(jid: string): string { return jid.split('/')[0].toLowerCase(); }
+  private occupantNickname(occupantJid: string): string { const separator = occupantJid.indexOf('/'); return separator >= 0 ? occupantJid.slice(separator + 1).trim() : ''; }
   private scheduleScroll(conversation: string, force: boolean): void { const generation = ++this.scrollGeneration; if (this.frame !== undefined) cancelAnimationFrame(this.frame); if (!force && !this.followLatest) return; this.frame = requestAnimationFrame(() => { this.frame = undefined; if (generation !== this.scrollGeneration || this.bareJid(this.selectedJid()) !== conversation) return; const element = this.chatContent?.nativeElement; if (!element) return; element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight); this.renderedConversation = conversation; }); }
   private async scrollAfterConversationLoad(jid: string): Promise<void> { await this.chat.loadConversation(jid); if (this.bareJid(this.selectedJid()) !== this.bareJid(jid)) return; this.scheduleScroll(this.bareJid(jid), true); }
   protected onUserScrollIntent(): void { queueMicrotask(() => { const element = this.chatContent?.nativeElement; if (element) this.followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 48; }); }

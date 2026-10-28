@@ -42,3 +42,6 @@
 .muc-conversation-item { border-left:2px solid #42b866; }
 .muc-conversation-item .muc-avatar { background:#14552d; border-color:#42b866; color:#7cf28f; }
 .muc-conversation-item.active .muc-avatar { background:#267342; }
+.message .message-sender { color:#d2f1d5; font-size:9px; font-weight:700; margin:0 0 4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.message.incoming .message-sender { color:#8fe49b; }
+.message.outgoing .message-sender { color:#effff0; }
