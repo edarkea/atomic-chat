@@ -39,7 +39,7 @@
         <div class="sidebar-actions"><button type="button" aria-label="Preferencias" (click)="toggleSettings()">⚙</button><button type="button" aria-label="Actualizar roster" (click)="chat.refreshRoster()">↻</button><button type="button" aria-label="Desconectar" (click)="disconnect()">⇥</button></div>
       </aside>
       <section class="conversation-panel">
-        @if (chat.isConnected() && selectedJid()) {
+        @if (chat.isConnected() && selectedJid() && files.forConversation(chat.accountId(), selectedJid()).length) {
           <aside class="file-transfer-overlay" aria-label="Transferencias de archivos">
             @for (transfer of files.forConversation(chat.accountId(), selectedJid()); track transfer.offer.transferId) {
               <article class="file-transfer-card" role="status">
