@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ChatFacade } from './core/chat.facade';
 import { CertificateTrustDecision, Contact, Message } from './core/domain';
 
-@Component({ selector: 'app-root', imports: [FormsModule], templateUrl: './app.html', styleUrl: './app.scss' })
+@Component({ selector: 'app-root', imports: [FormsModule], templateUrl: './app.html', styleUrls: ['./app.scss', './certificate-dialog.scss'] })
 export class App {
   protected readonly chat = inject(ChatFacade);
   protected readonly draft = signal('');
@@ -27,13 +27,16 @@ export class App {
     { id: 'dnd', mode: 'dnd' as const, label: 'No molestar', dot: 'dnd' },
   ];
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
+  @ViewChild('certificateDialog') private certificateDialog?: ElementRef<HTMLElement>;
   private followLatest = true;
   private renderedConversation = '';
   private frame: number | undefined;
   private scrollGeneration = 0;
+  private certificateWasOpen = false;
+  private certificateReturnFocus?: HTMLElement;
   private readonly destroyRef = inject(DestroyRef);
   private readonly visibleMessageKey = computed(() => { const messages = this.visibleMessages(); const last = messages[messages.length - 1]; return `${this.bareJid(this.selectedJid())}|${messages.length}|${last?.id || ''}|${last?.clientMessageId || ''}|${last?.body.text || ''}`; });
-  constructor() { void this.chat.tryAutoLogin(); effect(() => { this.visibleMessageKey(); const conversation = this.bareJid(this.selectedJid()); if (conversation) this.scheduleScroll(conversation, conversation !== this.renderedConversation); }); this.destroyRef.onDestroy(() => { if (this.frame !== undefined) cancelAnimationFrame(this.frame); }); }
+  constructor() { void this.chat.tryAutoLogin(); effect(() => { this.visibleMessageKey(); const conversation = this.bareJid(this.selectedJid()); if (conversation) this.scheduleScroll(conversation, conversation !== this.renderedConversation); }); effect(() => { const request = this.certificateRequest(); if (request && !this.certificateWasOpen) { this.certificateWasOpen = true; const active = document.activeElement; this.certificateReturnFocus = active instanceof HTMLElement ? active : undefined; queueMicrotask(() => { const dialog = this.certificateDialog?.nativeElement; dialog?.focus(); dialog?.querySelector<HTMLElement>('button:not([disabled])')?.focus(); }); } else if (!request && this.certificateWasOpen) { this.certificateWasOpen = false; const returnFocus = this.certificateReturnFocus; this.certificateReturnFocus = undefined; queueMicrotask(() => { if (returnFocus?.isConnected) returnFocus.focus(); }); } }); this.destroyRef.onDestroy(() => { if (this.frame !== undefined) cancelAnimationFrame(this.frame); }); }
   protected contactName(contact: Contact): string { return contact.name?.trim() || contact.jid; }
   protected contactGroups(contact: Contact): string[] { return [...new Set((contact.groups || []).map((group) => group.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
   protected contactKind(contact: Contact): string { return contact.source === 'conversation' ? 'Conversación local' : this.contactGroups(contact).length ? this.contactGroups(contact).join(' · ') : 'Sin grupo'; }
@@ -56,6 +59,7 @@ export class App {
   protected useJid(): void { if (this.search().includes('@')) { this.followLatest = true; this.selectedContact.set(undefined); this.selectedJid.set(this.search().trim()); void this.scrollAfterConversationLoad(this.search().trim()); } }
   protected async connect(): Promise<void> { const connected = await this.chat.connect(this.login().accountId, this.login().password); if (connected) this.login.update((value) => ({ ...value, password: '' })); }
   protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> { await this.chat.decideCertificate(decision); }
+  protected onCertificateDialogKeydown(event: KeyboardEvent): void { const dialog = this.certificateDialog?.nativeElement; if (!dialog) return; if (event.key === 'Escape') { event.preventDefault(); void this.decideCertificate('cancel'); return; } if (event.key !== 'Tab') return; const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('hidden') && element.getClientRects().length > 0); if (!focusable.length) { event.preventDefault(); dialog.focus(); return; } const first = focusable[0]; const last = focusable[focusable.length - 1]; if (!dialog.contains(document.activeElement)) { event.preventDefault(); first.focus(); } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
   protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.chat.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.chat.error.set('No fue posible enviar el mensaje.'); } }
   protected toggleSettings(): void { this.settingsOpen.update((open) => !open); }
 }
