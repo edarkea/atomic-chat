@@ -2,6 +2,7 @@ import { Component, computed, DestroyRef, ElementRef, effect, inject, signal, Vi
 import { FormsModule } from '@angular/forms';
 import { ChatFacade } from './core/chat.facade';
 import { MucFacade } from './core/muc.facade';
+import { FileFacade } from './core/file.facade';
 import { CertificateTrustDecision, Contact, Message, RoomMessage, RoomState } from './core/domain';
 
 type ConversationSelection =
@@ -13,6 +14,7 @@ type ConversationSelection =
 export class App {
   protected readonly chat = inject(ChatFacade);
   protected readonly muc = inject(MucFacade);
+  protected readonly files = inject(FileFacade);
   protected readonly draft = signal('');
   protected readonly login = signal({ accountId: '', password: '' });
   protected readonly search = signal('');
@@ -91,8 +93,8 @@ export class App {
   protected selectRoomFromCatalog(roomJid: string): void { const room = this.joinedRoom(roomJid); if (room) { this.selectJoinedRoom(roomJid); return; } if (this.activeSelection().kind !== 'muc') this.muc.select(roomJid); }
   protected isDirectSelected(jid: string): boolean { const selection = this.activeSelection(); return selection.kind === 'direct' && this.bareJid(selection.jid) === this.bareJid(jid); }
   protected isMucSelected(roomJid: string): boolean { const selection = this.activeSelection(); return selection.kind === 'muc' && selection.roomJid === roomJid; }
-  protected async connect(): Promise<void> { this.resetConversationSelection(); this.muc.setAccount(this.login().accountId.trim()); const connected = await this.chat.connect(this.login().accountId, this.login().password); if (connected) this.login.update((value) => ({ ...value, password: '' })); }
-  protected async disconnect(): Promise<void> { this.resetConversationSelection(); await this.chat.disconnect(); }
+  protected async connect(): Promise<void> { this.resetConversationSelection(); this.muc.setAccount(this.login().accountId.trim()); const connected = await this.chat.connect(this.login().accountId, this.login().password); if (connected) { this.login.update((value) => ({ ...value, password: '' })); await this.files.setAccount(this.chat.accountId()); } }
+  protected async disconnect(): Promise<void> { this.resetConversationSelection(); await this.chat.disconnect(); await this.files.setAccount(''); }
   protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> { await this.chat.decideCertificate(decision); }
   protected onCertificateDialogKeydown(event: KeyboardEvent): void { const dialog = this.certificateDialog?.nativeElement; if (!dialog) return; if (event.key === 'Escape') { event.preventDefault(); void this.decideCertificate('cancel'); return; } if (event.key !== 'Tab') return; const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('hidden') && element.getClientRects().length > 0); if (!focusable.length) { event.preventDefault(); dialog.focus(); return; } const first = focusable[0]; const last = focusable[focusable.length - 1]; if (!dialog.contains(document.activeElement)) { event.preventDefault(); first.focus(); } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
   protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.chat.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.chat.error.set('No fue posible enviar el mensaje.'); } }

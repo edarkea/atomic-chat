@@ -48,6 +48,26 @@
   </main>
 }
 
+@if (chat.isConnected() && selectedJid()) {
+  <aside class="file-transfer-overlay" aria-label="Transferencias de archivos">
+    @for (transfer of files.forConversation(chat.accountId(), selectedJid()); track transfer.offer.transferId) {
+      <article class="file-transfer-card" role="status">
+        <strong>{{ transfer.offer.name }}</strong>
+        <small>{{ transfer.bytesTransferred }} / {{ transfer.offer.sizeBytes }} bytes · {{ transfer.offer.senderJid }}</small>
+        <p>IBB/XMPP no proporciona cifrado de extremo a extremo. Usa solo archivos ficticios de laboratorio.</p>
+        @if (transfer.state === 'offered') {
+          <button type="button" (click)="files.accept(transfer.offer.transferId)">Aceptar y guardar</button>
+          <button type="button" (click)="files.reject(transfer.offer.transferId)">Rechazar</button>
+        }
+        @if (transfer.state === 'accepted' || transfer.state === 'transferring') {
+          <button type="button" (click)="files.cancel(transfer.offer.transferId)">Cancelar</button>
+        }
+        <span aria-live="polite">{{ transfer.state }}</span>
+      </article>
+    }
+  </aside>
+}
+
 @if (certificateRequest(); as request) {
   <div class="certificate-backdrop">
     <section #certificateDialog class="certificate-dialog" role="dialog" aria-modal="true" aria-labelledby="certificate-title" aria-describedby="certificate-explanation" tabindex="-1" (keydown)="onCertificateDialogKeydown($event)">
