@@ -1,4 +1,7 @@
-.file-transfer-overlay { display: grid; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #294c32; }
-.file-transfer-card { display: grid; gap: 5px; border: 1px solid #3f8f52; background: #101b14; color: #d8f7d8; padding: 10px; }
-.file-transfer-card small, .file-transfer-card p { margin: 0; color: #a6c9aa; font-size: 11px; }
-.file-transfer-card button { background: #17291b; border: 1px solid #5ced79; color: #d8f7d8; padding: 5px 8px; margin-right: 5px; }
+.file-message { align-self: flex-start; background: #0e3a21; border: 1px solid #3f8f52; display: grid; gap: 5px; margin-right: auto; max-width: min(360px, 82%); overflow-wrap: anywhere; }
+.file-message p, .file-message small { margin: 0; }
+.file-title { color: #d8f7d8; font-weight: 700; }
+.file-security { color: #a6c9aa; font-size: 9px; }
+.file-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.file-actions button, .file-message > button { background: #17291b; border: 1px solid #5ced79; color: #d8f7d8; padding: 5px 8px; }
+.file-actions button:focus-visible, .file-message > button:focus-visible { outline: 2px solid #d8f7d8; outline-offset: 2px; }
