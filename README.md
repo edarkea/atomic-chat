@@ -38,6 +38,8 @@ The Renderer does not access Node.js, SQLite, credentials or the XMPP socket dir
 
 Atomic Chat expects XMPP TCP access, normally on port `5222`, with authentication, roster, presence and individual messaging enabled.
 
+`ATOMIC_XMPP_MUC_POLICY_JSON` is an operator-provided declaration that the account cannot create rooms; it is not an automatic verification of Openfire or another XMPP server.
+
 Copy `.env.example` to `.env` and configure it locally:
 
 ```env

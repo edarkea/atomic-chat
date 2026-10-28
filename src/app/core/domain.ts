@@ -49,8 +49,10 @@ export interface MucJoinInput extends MucRequest { roomJid: RoomId; nickname: st
 export interface MucLeaveInput extends MucRequest { roomJid: RoomId; }
 export interface MucSendInput extends MucRequest { roomJid: RoomId; clientMessageId: ClientMessageId; body: { kind: 'text'; text: string }; }
 export interface RoomMessage { id: string; accountId: string; roomJid: RoomId; occupantJid: OccupantId; body: { kind: 'text'; text: string }; receivedAt: string; clientMessageId?: ClientMessageId; source: 'live' | 'server-history'; sessionGeneration: number; }
+export type MucNoticeCode = 'IDENTITY_VISIBLE' | 'PUBLIC_LOGGING' | 'SERVER_NICKNAME';
+export interface MucNotice { accountId: string; roomJid: RoomId; code: MucNoticeCode; nickname?: string; sessionGeneration: number; }
 export interface RoomSendReceipt { accountId: string; roomJid: RoomId; clientMessageId: ClientMessageId; status: 'sent'; }
-export type DomainEventType = 'connection.stateChanged' | 'presence.changed' | 'roster.changed' | 'message.stateChanged' | 'message.received' | 'certificate.trustRequired' | 'muc.stateChanged' | 'muc.participantChanged' | 'muc.messageReceived';
+export type DomainEventType = 'connection.stateChanged' | 'presence.changed' | 'roster.changed' | 'message.stateChanged' | 'message.received' | 'certificate.trustRequired' | 'muc.stateChanged' | 'muc.participantChanged' | 'muc.messageReceived' | 'muc.notice';
 export interface DomainEvent<T> { version: ContractVersion; eventId: string; correlationId?: RequestId | ClientMessageId; type: DomainEventType; payload: T; }
 export interface ConnectInput { version: ContractVersion; requestId: RequestId; accountId: string; endpoint: { host: string; port: number; tls: boolean; transport?: XmppTransport; domain?: string; allowInsecureTls?: boolean }; credentialRef?: string; }
 export interface PresenceInput { version: ContractVersion; requestId: RequestId; accountId: string; availability: Availability; mode?: PresenceMode; status?: string; }
