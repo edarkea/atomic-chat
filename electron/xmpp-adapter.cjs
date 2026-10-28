@@ -19,8 +19,9 @@ const MUC_ROOM_LIMIT = 5;
 
 function fileTrace(phase, direction, details = {}) {
   if (process.env.ATOMIC_XMPP_FILE_TRACE !== 'true') return;
-  const safe = { phase, direction, at: new Date().toISOString(), ...details };
-  delete safe.jid; delete safe.name; delete safe.path; delete safe.xml; delete safe.base64; delete safe.sid;
+  const allowed = new Set(['phase', 'direction', 'at', 'iqType', 'condition', 'result', 'errorCode', 'blockSize', 'seq', 'bytes']);
+  const safe = { phase, direction, at: new Date().toISOString() };
+  for (const [key, value] of Object.entries(details)) if (allowed.has(key)) safe[key] = value;
   console.info('[XMPP_FILE_TRACE]', JSON.stringify(safe));
 }
 
@@ -145,6 +146,8 @@ class XmppAdapter {
 
   async disconnect(accountId) {
     this.cancelPendingDecision(accountId);
+    await this.fileTransfers?.cancelAccount(accountId).catch(() => undefined);
+    for (const [key, pending] of this.filePending) if (key.startsWith(`${accountId}|`)) this.filePending.delete(key);
     this.clearMucRooms(accountId);
     const session = this.sessions.get(accountId);
     this.states.set(accountId, { accountId, status: 'disconnecting', retryable: false, since: new Date().toISOString() });
@@ -387,7 +390,8 @@ class XmppAdapter {
   handleFileStanza(accountId, stanza) {
     if (!this.fileTransfers) return false;
     if (!stanza?.is?.('iq')) return false;
-    const session = this.sessions.get(accountId); const generation = this.sessionGenerations.get(accountId) || 0; const si = stanza.getChild?.('si', SI_NS); const open = stanza.getChild?.('open', IBB_NS); const data = stanza.getChild?.('data', IBB_NS); const close = stanza.getChild?.('close', IBB_NS);
+    const session = this.sessions.get(accountId); const generation = this.sessionGenerations.get(accountId) || 0; const si = stanza.getChild?.('si', SI_NS); const open = stanza.getChild?.('open', IBB_NS); const data = stanza.getChild?.('data', IBB_NS); const close = stanza.getChild?.('close', IBB_NS); const disco = stanza.getChild?.('query', DISCO_INFO_NS);
+    if (stanza.attrs?.type === 'get' && disco) { fileTrace('DISCO_INFO', 'RX', { iqType: 'get' }); void session?.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from }, xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: SI_NS }), xml('feature', { var: SI_FILE_NS }), xml('feature', { var: IBB_NS })))).then(() => fileTrace('DISCO_INFO', 'TX', { iqType: 'result', result: 'supported' })).catch(() => undefined); return true; }
     if (stanza.attrs?.type !== 'set' || (!si && !open && !data && !close)) return false;
     if (si) { fileTrace('SI_OFFER', 'RX', { iqType: stanza.attrs.type, result: 'received' }); try { const offer = parseOffer(stanza, accountId, generation); const publicOffer = { transferId: offer.transferId, accountId, conversationId: offer.conversationId, senderJid: offer.senderJid, name: offer.name, sizeBytes: offer.sizeBytes, ...(offer.description ? { description: offer.description } : {}), transport: 'ibb', offeredAt: new Date().toISOString() }; let replied = false; const replyError = async (reason) => { if (replied) return; replied = true; fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition: reason === 'user_rejected' ? 'forbidden' : 'not-acceptable' }); await session.send(xml('iq', { type: 'error', id: stanza.attrs.id, to: stanza.attrs.from }, xml('error', { type: 'cancel' }, xml(reason === 'user_rejected' ? 'forbidden' : 'not-acceptable', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))); }; const record = this.fileTransfers.add({ offer: publicOffer, iqOfferId: offer.iqId, siSessionId: offer.siSid, ownerSenderId: this.fileOwners.get(accountId), iq: stanza, session, onRejected: replyError, onAccepted: async () => { if (replied) throw new Error('SI_ALREADY_REPLIED'); replied = true; fileTrace('SI_RESULT', 'TX', { iqType: 'result', result: 'accepted' }); await session.send(xml('iq', { type: 'result', id: stanza.attrs.id, to: stanza.attrs.from }, xml('si', { xmlns: SI_NS }, xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS))))))); } }); this.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, { record, session, generation, protocolQueue: Promise.resolve() }); } catch (error) { fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition: 'bad-request' }); void session?.send(xml('iq', { type: 'error', id: stanza.attrs.id, to: stanza.attrs.from }, xml('error', { type: 'modify' }, xml('bad-request', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))).catch(() => undefined); } return true; }
     const sid = open?.attrs?.sid || data?.attrs?.sid || close?.attrs?.sid || '';
@@ -409,7 +413,7 @@ class XmppAdapter {
 
   require(accountId) { const session = this.sessions.get(accountId); if (!session) throw new Error('not_connected'); return session; }
   setState(accountId, status, retryable, reason) { const state = { accountId, status, retryable, since: new Date().toISOString(), ...(reason ? { reason } : {}) }; this.states.set(accountId, state); this.emit({ type: 'connection.stateChanged', payload: state }); }
-  handleSessionEvent(accountId, session, event, reason) { if (this.sessions.get(accountId) !== session) return false; if (event === 'offline') { this.clearMucRooms(accountId); this.sessions.delete(accountId); this.sessionGenerations.set(accountId, (this.sessionGenerations.get(accountId) || 0) + 1); this.setState(accountId, 'failed', true, 'offline'); } else if (event === 'error') this.setState(accountId, 'failed', true, reason || 'TRANSPORT_FAILED'); else if (event === 'online') this.setState(accountId, 'connected', false); return true; }
+  handleSessionEvent(accountId, session, event, reason) { if (this.sessions.get(accountId) !== session) return false; if (event === 'offline') { this.clearMucRooms(accountId); void this.fileTransfers?.cancelAccount(accountId).catch(() => undefined); for (const [key] of this.filePending) if (key.startsWith(`${accountId}|`)) this.filePending.delete(key); this.sessions.delete(accountId); this.sessionGenerations.set(accountId, (this.sessionGenerations.get(accountId) || 0) + 1); this.setState(accountId, 'failed', true, 'offline'); } else if (event === 'error') this.setState(accountId, 'failed', true, reason || 'TRANSPORT_FAILED'); else if (event === 'online') this.setState(accountId, 'connected', false); return true; }
 }
 
 module.exports = { XmppAdapter, negotiateStartTls };
