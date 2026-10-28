@@ -29,4 +29,11 @@ describe('MucFacade message isolation', () => {
     for (let index = 0; index < 201; index += 1) emit({ type: 'muc.messageReceived', payload: message('a@example.invalid', first.jid, index) }); emit({ type: 'muc.messageReceived', payload: message('a@example.invalid', second.jid, 1) });
     facade.select(first.jid); expect(facade.messages()).toHaveLength(200); expect(facade.messages()[0].body.text).toBe('1'); facade.select(second.jid); expect(facade.messages()).toHaveLength(1);
   });
+
+  it('shows notices only for the active room and clears them on leave', () => {
+    const facade = TestBed.inject(MucFacade); facade.setAccount('a@example.invalid'); const first = room('a@example.invalid', 'one'); const second = room('a@example.invalid', 'two');
+    emit({ type: 'muc.stateChanged', payload: { accountId: 'a@example.invalid', room: first, status: 'joined', participants: [], sessionGeneration: 1 } }); emit({ type: 'muc.stateChanged', payload: { accountId: 'a@example.invalid', room: second, status: 'joined', participants: [], sessionGeneration: 1 } });
+    emit({ type: 'muc.notice', payload: { accountId: 'a@example.invalid', roomJid: first.jid, code: 'IDENTITY_VISIBLE', sessionGeneration: 1 } }); emit({ type: 'muc.notice', payload: { accountId: 'b@example.invalid', roomJid: second.jid, code: 'PUBLIC_LOGGING', sessionGeneration: 1 } });
+    expect(facade.notices()).toHaveLength(1); expect(facade.notices()[0].roomJid).toBe(first.jid); emit({ type: 'muc.stateChanged', payload: { accountId: 'a@example.invalid', room: first, status: 'idle', participants: [], sessionGeneration: 1 } }); expect(facade.notices()).toEqual([]);
+  });
 });
