@@ -10,6 +10,7 @@ export class FileFacade {
   private unsubscribe: () => void = () => undefined;
   readonly transfers = computed(() => this.items());
   readonly error = signal<string | null>(null);
+  readonly activeCount = computed(() => this.items().filter((item) => !['completed', 'failed', 'cancelled'].includes(item.state)).length);
 
   constructor() {
     if (typeof window !== 'undefined' && window.atomicChat) {
@@ -49,4 +50,13 @@ export class FileFacade {
   }
 
   private upsert(transfer: FileTransfer): void { this.items.update((items) => items.some((item) => item.offer.transferId === transfer.offer.transferId) ? items.map((item) => item.offer.transferId === transfer.offer.transferId ? transfer : item) : [...items, transfer]); }
+
+  label(state: FileTransfer['state'], reason?: FileTransfer['endReason']): string {
+    if (state === 'offered') return 'Archivo ofrecido';
+    if (state === 'accepted') return 'Esperando datos del remitente';
+    if (state === 'transferring') return 'Recibiendo…';
+    if (state === 'completed') return 'Archivo recibido correctamente';
+    if (state === 'failed') return reason === 'storage_failed' ? 'No se pudo guardar el archivo' : 'Transferencia fallida';
+    return reason === 'user_rejected' ? 'Oferta rechazada' : 'Transferencia cancelada';
+  }
 }

@@ -3,12 +3,15 @@ import { FormsModule } from '@angular/forms';
 import { ChatFacade } from './core/chat.facade';
 import { MucFacade } from './core/muc.facade';
 import { FileFacade } from './core/file.facade';
-import { CertificateTrustDecision, Contact, Message, RoomMessage, RoomState } from './core/domain';
+import { CertificateTrustDecision, Contact, FileTransfer, Message, RoomMessage, RoomState } from './core/domain';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
   | { kind: 'direct'; accountId: string; jid: string }
   | { kind: 'muc'; accountId: string; roomJid: string };
+type ConversationTimelineItem =
+  | { kind: 'text'; id: string; sortAt: string; message: Message }
+  | { kind: 'incoming-file'; id: string; sortAt: string; transfer: FileTransfer };
 
 @Component({ selector: 'app-root', imports: [FormsModule], templateUrl: './app.html', styleUrls: ['./app.scss', './certificate-dialog.scss', './file-transfer.scss'] })
 export class App {
@@ -45,6 +48,11 @@ export class App {
   });
   protected readonly filteredContacts = computed(() => { const term = this.search().trim().toLowerCase(); return this.chat.contacts().filter((contact) => !term || contact.jid.toLowerCase().includes(term) || contact.name?.toLowerCase().includes(term)); });
   protected readonly visibleMessages = computed(() => { const jid = this.bareJid(this.selectedJid()); if (!jid) return []; const accountId = this.chat.accountId(); return this.chat.messages().filter((message) => message.accountId === accountId && (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid)); });
+  protected readonly conversationTimeline = computed<ReadonlyArray<ConversationTimelineItem>>(() => {
+    const messages: ConversationTimelineItem[] = this.visibleMessages().map((message) => ({ kind: 'text', id: `text:${message.clientMessageId || message.id}`, sortAt: message.createdAt, message }));
+    const files: ConversationTimelineItem[] = this.files.forConversation(this.chat.accountId(), this.selectedJid()).map((transfer) => ({ kind: 'incoming-file', id: `file:${transfer.offer.transferId}`, sortAt: transfer.offer.offeredAt, transfer }));
+    return [...messages, ...files].sort((left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id));
+  });
   protected readonly activeContact = computed(() => { const jid = this.bareJid(this.selectedJid()); return this.chat.contacts().find((contact) => this.bareJid(contact.jid) === jid); });
   protected readonly presenceOptions = [
     { id: 'chat', mode: 'chat' as const, label: 'Libre para chatear', dot: 'chat' },
@@ -63,7 +71,7 @@ export class App {
   private certificateWasOpen = false;
   private certificateReturnFocus?: HTMLElement;
   private readonly destroyRef = inject(DestroyRef);
-  private readonly visibleMessageKey = computed(() => { const messages = this.visibleMessages(); const last = messages[messages.length - 1]; return `${this.bareJid(this.selectedJid())}|${messages.length}|${last?.id || ''}|${last?.clientMessageId || ''}|${last?.body.text || ''}`; });
+  private readonly visibleMessageKey = computed(() => { const items = this.conversationTimeline(); const last = items[items.length - 1]; return `${this.bareJid(this.selectedJid())}|${items.length}|${last?.id || ''}|${last?.sortAt || ''}`; });
   constructor() { void this.chat.tryAutoLogin(); effect(() => { const account = this.chat.accountId(); if (this.chat.isConnected() && account) void this.files.setAccount(account); }); effect(() => { this.visibleMessageKey(); const conversation = this.bareJid(this.selectedJid()); if (conversation) this.scheduleScroll(conversation, conversation !== this.renderedConversation); }); effect(() => { const request = this.certificateRequest(); if (request && !this.certificateWasOpen) { this.certificateWasOpen = true; const active = document.activeElement; this.certificateReturnFocus = active instanceof HTMLElement ? active : undefined; queueMicrotask(() => { const dialog = this.certificateDialog?.nativeElement; dialog?.focus(); dialog?.querySelector<HTMLElement>('button:not([disabled])')?.focus(); }); } else if (!request && this.certificateWasOpen) { this.certificateWasOpen = false; const returnFocus = this.certificateReturnFocus; this.certificateReturnFocus = undefined; queueMicrotask(() => { if (returnFocus?.isConnected) returnFocus.focus(); }); } }); this.destroyRef.onDestroy(() => { if (this.frame !== undefined) cancelAnimationFrame(this.frame); }); }
   protected contactName(contact: Contact): string { return contact.name?.trim() || contact.jid; }
   protected contactGroups(contact: Contact): string[] { return [...new Set((contact.groups || []).map((group) => group.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
