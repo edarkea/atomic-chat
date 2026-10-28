@@ -67,6 +67,7 @@ test('C5-INT-01 SI acceptance and IBB IQ complete the real coordinator path', as
     assert.equal(ctx.sent.length, 0);
 
     await ctx.coordinator.accept(record.offer.transferId, 7);
+    const pending = ctx.adapter.filePending.get('account@example.invalid|1|spark@example.invalid/Spark|sid-01');
     assert.equal(ctx.sent.length, 1);
     assert.equal(ctx.sent[0].attrs.type, 'result');
     assert.equal(ctx.sent[0].attrs.id, 'offer-01');
@@ -75,7 +76,7 @@ test('C5-INT-01 SI acceptance and IBB IQ complete the real coordinator path', as
     ctx.adapter.handleStanza(ctx.accountId, stanza('open', 'open-01', 'sid-01'));
     ctx.adapter.handleStanza(ctx.accountId, stanza('data', 'data-01', 'sid-01', Buffer.from('abc'), 0));
     ctx.adapter.handleStanza(ctx.accountId, stanza('close', 'close-01', 'sid-01'));
-    await ctx.adapter.filePending.get('account@example.invalid|1|spark@example.invalid/Spark|sid-01').protocolQueue;
+    await pending.protocolQueue;
     assert.equal(record.state, 'completed');
     assert.deepEqual(await fs.readFile(ctx.destination), Buffer.from('abc'));
     const replies = ctx.sent.filter((value) => ['open-01', 'data-01', 'close-01'].includes(value.attrs.id));
@@ -108,11 +109,12 @@ test('C5-INT-03 84538-byte fixture preserves bytes and SHA-256', async () => {
     ctx.adapter.handleStanza(ctx.accountId, offer('offer-03', 'sid-03', String(source.length)));
     const record = [...ctx.coordinator.records.values()][0];
     await ctx.coordinator.accept(record.offer.transferId, 7);
+    const pending = ctx.adapter.filePending.get('account@example.invalid|1|spark@example.invalid/Spark|sid-03');
     ctx.adapter.handleStanza(ctx.accountId, stanza('open', 'open-03', 'sid-03', null, 0, 61440));
     ctx.adapter.handleStanza(ctx.accountId, stanza('data', 'data-03a', 'sid-03', source.subarray(0, 61440), 0, 61440));
     ctx.adapter.handleStanza(ctx.accountId, stanza('data', 'data-03b', 'sid-03', source.subarray(61440), 1, 61440));
     ctx.adapter.handleStanza(ctx.accountId, stanza('close', 'close-03', 'sid-03'));
-    await ctx.adapter.filePending.get('account@example.invalid|1|spark@example.invalid/Spark|sid-03').protocolQueue;
+    await pending.protocolQueue;
     assert.equal(record.state, 'completed');
     assert.equal(record.bytes.toString(), '84538');
     assert.equal((await crypto.createHash('sha256').update(await fs.readFile(ctx.destination)).digest('hex')), crypto.createHash('sha256').update(source).digest('hex'));
@@ -127,6 +129,7 @@ test('C5-INT-04 deferred write keeps data and close ACKs behind persistence', as
     ctx.adapter.handleStanza(ctx.accountId, offer('offer-04', 'sid-04', '3'));
     const record = [...ctx.coordinator.records.values()][0];
     await ctx.coordinator.accept(record.offer.transferId, 7);
+    const pending = ctx.adapter.filePending.get('account@example.invalid|1|spark@example.invalid/Spark|sid-04');
     ctx.adapter.handleStanza(ctx.accountId, stanza('open', 'open-04', 'sid-04'));
     const originalWrite = record.handle.write.bind(record.handle);
     let release;
@@ -136,7 +139,7 @@ test('C5-INT-04 deferred write keeps data and close ACKs behind persistence', as
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(ctx.sent.map((value) => value.attrs.id), ['offer-04', 'open-04']);
     release();
-    await ctx.adapter.filePending.get('account@example.invalid|1|spark@example.invalid/Spark|sid-04').protocolQueue;
+    await pending.protocolQueue;
     assert.equal(record.state, 'completed');
     assert.deepEqual(ctx.sent.filter((value) => value.attrs.type === 'result').map((value) => value.attrs.id), ['offer-04', 'open-04', 'data-04', 'close-04']);
   } finally {

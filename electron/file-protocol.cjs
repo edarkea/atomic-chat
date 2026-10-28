@@ -16,6 +16,7 @@ function strictBase64(value) {
   if (typeof value !== 'string' || value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw new Error('INVALID_BASE64');
   return Buffer.from(value, 'base64');
 }
+function protocolError(code) { const error = new Error(code); error.code = code; return error; }
 function child(node, name, namespace) { return node?.getChild?.(name, namespace); }
 function parseOffer(iq, accountId, generation) {
   const from = String(iq?.attrs?.from || '');
@@ -24,7 +25,8 @@ function parseOffer(iq, accountId, generation) {
   const file = child(si, 'file', SI_FILE_NS); const size = file?.attrs?.size; const name = file?.attrs?.name;
   const methods = child(si, 'feature', FEATURE_NEG_NS)?.getChild?.('x', DATAFORM_NS)?.getChildren?.('field') || [];
   const hasIbb = methods.some((field) => field.attrs?.var === 'stream-method' && [...(field.getChildren?.('value') || []), ...(field.getChildren?.('option') || []).flatMap((option) => option.getChildren?.('value') || [])].some((value) => value.getText?.() === IBB_NS));
-  if (!si?.attrs?.id || profile !== SI_FILE_NS || !file || !name || !canonicalDecimal(size) || !hasIbb) throw new Error('NOT_ACCEPTABLE');
+  if (!si?.attrs?.id || profile !== SI_FILE_NS || !file || !name || !canonicalDecimal(size)) throw protocolError('BAD_REQUEST');
+  if (!hasIbb) throw protocolError('UNSUPPORTED_METHOD');
   return { accountId, generation, iqId: String(iq.attrs.id || ''), siSid: String(si.attrs.id), senderJid: from, conversationId: from.split('/')[0].toLowerCase(), name: safeName(name), sizeBytes: size, description: file.getChildText?.('desc')?.slice(0, 1024), transferId: `file_${crypto.randomUUID()}` };
 }
 function validateOpen(open, expectedSid, senderJid) {
