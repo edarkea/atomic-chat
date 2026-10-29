@@ -45,6 +45,7 @@ class FileTransferCoordinator {
     this.cleanupRetryDelay = options.cleanupRetryDelay ?? 1000;
     this.unrefCleanupTimers = options.unrefCleanupTimers ?? true;
     this.cleanupJobs = new Map();
+    this.resourceLimiter = options.resourceLimiter;
   }
 
   onEvent(listener) {
@@ -210,8 +211,11 @@ class FileTransferCoordinator {
   async accept(id, ownerSenderId) {
     const record = this.get(id);
     if (record.ownerSenderId !== ownerSenderId || record.state !== 'offered' || record.accepting || record.terminalRequested) throw error('CONFLICT', 'transfer is not available');
-    const counts = this.counts(record.offer.accountId);
-    if (counts.account >= ACTIVE_PER_ACCOUNT || counts.global >= ACTIVE_GLOBAL) throw error('RESOURCE_CONSTRAINT', 'active transfer capacity exceeded');
+    if (this.resourceLimiter) this.resourceLimiter.reserve(record.offer.transferId, record.offer.accountId, 'incoming');
+    else {
+      const counts = this.counts(record.offer.accountId);
+      if (counts.account >= ACTIVE_PER_ACCOUNT || counts.global >= ACTIVE_GLOBAL) throw error('RESOURCE_CONSTRAINT', 'active transfer capacity exceeded');
+    }
     record.accepting = true;
     try {
       const destination = await this.selectDestination(record.offer);
@@ -479,6 +483,7 @@ class FileTransferCoordinator {
       record.temporary = undefined;
       record.ownerMarker = undefined;
     }
+    this.resourceLimiter?.release(record.offer.transferId);
   }
 }
 

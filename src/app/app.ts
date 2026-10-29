@@ -11,7 +11,7 @@ type ConversationSelection =
   | { kind: 'muc'; accountId: string; roomJid: string };
 type ConversationTimelineItem =
   | { kind: 'text'; id: string; sortAt: string; message: Message }
-  | { kind: 'incoming-file'; id: string; sortAt: string; transfer: FileTransfer };
+  | { kind: 'file'; id: string; sortAt: string; transfer: FileTransfer };
 
 @Component({ selector: 'app-root', imports: [FormsModule], templateUrl: './app.html', styleUrls: ['./app.scss', './certificate-dialog.scss', './file-transfer.scss'] })
 export class App {
@@ -50,7 +50,7 @@ export class App {
   protected readonly visibleMessages = computed(() => { const jid = this.bareJid(this.selectedJid()); if (!jid) return []; const accountId = this.chat.accountId(); return this.chat.messages().filter((message) => message.accountId === accountId && (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid)); });
   protected readonly conversationTimeline = computed<ReadonlyArray<ConversationTimelineItem>>(() => {
     const messages: ConversationTimelineItem[] = this.visibleMessages().map((message) => ({ kind: 'text', id: `text:${message.clientMessageId || message.id}`, sortAt: message.createdAt, message }));
-    const files: ConversationTimelineItem[] = this.files.forConversation(this.chat.accountId(), this.selectedJid()).map((transfer) => ({ kind: 'incoming-file', id: `file:${transfer.offer.transferId}`, sortAt: transfer.offer.offeredAt, transfer }));
+    const files: ConversationTimelineItem[] = this.files.forConversation(this.chat.accountId(), this.selectedJid()).map((transfer) => ({ kind: 'file', id: `file:${transfer.offer.transferId}`, sortAt: transfer.offer.offeredAt, transfer }));
     return [...messages, ...files].sort((left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id));
   });
   protected readonly activeContact = computed(() => { const jid = this.bareJid(this.selectedJid()); return this.chat.contacts().find((contact) => this.bareJid(contact.jid) === jid); });
@@ -106,6 +106,7 @@ export class App {
   protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> { await this.chat.decideCertificate(decision); }
   protected onCertificateDialogKeydown(event: KeyboardEvent): void { const dialog = this.certificateDialog?.nativeElement; if (!dialog) return; if (event.key === 'Escape') { event.preventDefault(); void this.decideCertificate('cancel'); return; } if (event.key !== 'Tab') return; const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('hidden') && element.getClientRects().length > 0); if (!focusable.length) { event.preventDefault(); dialog.focus(); return; } const first = focusable[0]; const last = focusable[focusable.length - 1]; if (!dialog.contains(document.activeElement)) { event.preventDefault(); first.focus(); } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
   protected async send(): Promise<void> { const sentDraft = this.draft(); try { const accepted = await this.chat.send(sentDraft, this.selectedJid()); if (accepted && this.draft() === sentDraft) this.draft.set(''); } catch { this.chat.error.set('No fue posible enviar el mensaje.'); } }
+  protected async attach(): Promise<void> { await this.files.send(this.selectedJid()); }
   protected async discoverRooms(): Promise<void> { this.mucDiscovering.set(true); try { await this.muc.discover(this.chat.accountId()); } finally { this.mucDiscovering.set(false); } }
   protected async joinRoom(roomJid: string): Promise<void> { const accountId = this.chat.accountId(); const nickname = this.mucNickname().trim() || accountId.split('@')[0] || 'operator'; await this.muc.join(accountId, roomJid, nickname); if (this.joinedRoom(roomJid)?.accountId === accountId) this.selectJoinedRoom(roomJid); }
   protected async leaveRoom(): Promise<void> { const selection = this.activeSelection(); if (selection.kind !== 'muc') return; await this.muc.leave(selection.accountId, selection.roomJid); if (!this.joinedRoom(selection.roomJid)) this.resetConversationSelection(); }

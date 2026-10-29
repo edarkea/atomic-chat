@@ -35,6 +35,11 @@ export class FileFacade {
   async accept(transferId: string): Promise<void> { await this.mutate('accept', transferId); }
   async reject(transferId: string): Promise<void> { await this.mutate('reject', transferId); }
   async cancel(transferId: string): Promise<void> { await this.mutate('cancel', transferId); }
+  async send(conversationId: string): Promise<void> {
+    if (!this.account || !conversationId || !window.atomicChat) return;
+    const result = await window.atomicChat.file.send({ version: 1, requestId: createOpaqueId('file-send'), accountId: this.account, conversationId });
+    if (result.ok && result.value) this.upsert(result.value); else if (!result.ok) this.error.set(result.error.message);
+  }
 
   forConversation(accountId: string, conversationId: string): ReadonlyArray<FileTransfer> {
     const jid = conversationId.split('/')[0].toLowerCase();
@@ -55,7 +60,17 @@ export class FileFacade {
 
   private upsert(transfer: FileTransfer): void { this.items.update((items) => items.some((item) => item.offer.transferId === transfer.offer.transferId) ? items.map((item) => item.offer.transferId === transfer.offer.transferId ? transfer : item) : [...items, transfer]); }
 
-  label(state: FileTransfer['state'], reason?: FileTransfer['endReason']): string {
+  label(state: FileTransfer['state'], reason?: FileTransfer['endReason'], direction: FileTransfer['direction'] = 'incoming'): string {
+    if (direction === 'outgoing') {
+      if (state === 'selecting') return 'Seleccionando archivo';
+      if (state === 'offering') return 'Enviando oferta…';
+      if (state === 'awaiting_acceptance') return 'Esperando aceptación de Spark';
+      if (state === 'accepted') return 'Preparando transferencia';
+      if (state === 'transferring') return 'Enviando…';
+      if (state === 'completed') return 'Archivo enviado';
+      if (state === 'failed') return reason === 'storage_failed' ? 'No se pudo leer el archivo' : 'Envío fallido';
+      return 'Envío cancelado';
+    }
     if (state === 'offered') return 'Archivo ofrecido';
     if (state === 'accepted') return 'Esperando datos del remitente';
     if (state === 'transferring') return 'Recibiendo…';
