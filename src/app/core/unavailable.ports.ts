@@ -4,6 +4,7 @@ import {
   FileActiveInput,
   FileRequest,
   FileSendInput,
+  FileDroppedSendInput,
   FileTransfer,
   HistoryPage,
   HistoryPageInput,
@@ -134,6 +135,9 @@ export class UnavailableCertificatePort implements CertificatePort {
 @Injectable({ providedIn: 'root' })
 export class UnavailableFileTransferPort implements FileTransferPort {
   send(input: FileSendInput): Promise<Result<FileTransfer | null>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>> {
     return Promise.resolve(unsupported(input.requestId));
   }
   accept(input: FileRequest): Promise<Result<FileTransfer>> {

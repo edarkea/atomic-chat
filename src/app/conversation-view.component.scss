@@ -5,6 +5,30 @@
   min-height: 0;
   min-width: 0;
 }
+.conversation-surface {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+.drop-overlay {
+  align-items: center;
+  background: color-mix(in srgb, var(--atomic-bg) 88%, transparent);
+  border: 2px dashed var(--atomic-green);
+  color: var(--atomic-green-soft);
+  display: flex;
+  font-size: 16px;
+  font-weight: 700;
+  inset: 10px;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  position: absolute;
+  text-transform: uppercase;
+  z-index: 2;
+}
 .chat-content {
   align-content: end;
   display: flex;

@@ -167,6 +167,11 @@ export class MucFacade {
     this.markConversationRead(roomJid);
   }
 
+  clearSelection(): void {
+    this.selectedRoomJid.set('');
+    this.participantPage.set(0);
+  }
+
   markConversationRead(roomJid: string): void {
     const accountId = this.accountId();
     const acknowledged = this.unread.markReadIfEligible(

@@ -6,6 +6,7 @@ import {
   FileActiveInput,
   FileRequest,
   FileSendInput,
+  FileDroppedSendInput,
   FileTransfer,
   HistoryPage,
   HistoryPageInput,
@@ -163,6 +164,11 @@ export class ElectronFileTransferPort implements FileTransferPort {
   send(input: FileSendInput): Promise<Result<FileTransfer | null>> {
     const api = getAtomicChatApi();
     return api ? api.file.send(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.sendDropped(input) : Promise.resolve(unavailable(input.requestId));
   }
 
   accept(input: FileRequest): Promise<Result<FileTransfer>> {

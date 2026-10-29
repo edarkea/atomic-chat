@@ -3,6 +3,8 @@ import { createOpaqueId } from './ids';
 import { FileTransfer, TypedDomainEvent } from './domain';
 import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
 
+const MAX_DROPPED_FILES = 8;
+
 @Injectable({ providedIn: 'root' })
 export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
@@ -77,6 +79,41 @@ export class FileFacade {
     if (this.account !== accountId) return;
     if (result.ok && result.value) this.upsert(result.value);
     else if (!result.ok) this.error.set(result.error.message);
+  }
+
+  async sendDropped(conversationId: string, files: ReadonlyArray<File>): Promise<void> {
+    if (!this.account || !conversationId) return;
+    if (files.length > MAX_DROPPED_FILES) {
+      this.error.set(`Puedes enviar hasta ${MAX_DROPPED_FILES} archivos por vez.`);
+      return;
+    }
+    if (!files.length || files.some((file) => !this.isValidDroppedFile(file))) {
+      this.error.set('El elemento arrastrado no es un archivo válido.');
+      return;
+    }
+
+    const accountId = this.account;
+    let failed = 0;
+    for (const file of files) {
+      const result = await this.port.sendDropped({
+        version: 1,
+        requestId: createOpaqueId('file-drop'),
+        accountId,
+        conversationId,
+        file,
+      });
+      if (this.account !== accountId) return;
+      if (result.ok) {
+        if (result.value) this.upsert(result.value);
+      } else failed += 1;
+    }
+    if (failed) {
+      this.error.set(
+        failed === files.length
+          ? 'No se pudo iniciar el envío de los archivos.'
+          : `No se pudo iniciar el envío de ${failed} archivo${failed === 1 ? '' : 's'}.`,
+      );
+    } else this.error.set(null);
   }
 
   forConversation(accountId: string, conversationId: string): ReadonlyArray<FileTransfer> {
@@ -190,6 +227,17 @@ export class FileFacade {
             item.offer.transferId === transfer.offer.transferId ? transfer : item,
           )
         : [...items, transfer],
+    );
+  }
+
+  private isValidDroppedFile(file: File): boolean {
+    return Boolean(
+      file &&
+        typeof file.name === 'string' &&
+        file.name.trim() &&
+        Number.isFinite(file.size) &&
+        file.size >= 0 &&
+        Number.isFinite(file.lastModified),
     );
   }
 }

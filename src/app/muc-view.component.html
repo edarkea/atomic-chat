@@ -4,7 +4,15 @@
     <strong>{{ roomState().room.room }}</strong
     ><small>Sala MUC · {{ roomState().participants.length }} participantes</small>
   </div>
-  <span class="more" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-more" /></svg></span>
+  <button
+    class="conversation-close"
+    type="button"
+    aria-label="Cerrar conversación"
+    title="Cerrar conversación"
+    (click)="closeRequested.emit()"
+  >
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-close" /></svg>
+  </button>
 </header>
 <section class="muc-room-view" aria-label="Sala MUC">
   <div class="muc-room-meta">

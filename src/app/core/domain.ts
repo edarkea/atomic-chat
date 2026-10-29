@@ -229,6 +229,9 @@ export interface FileSendInput {
   readonly accountId: string;
   readonly conversationId: string;
 }
+export interface FileDroppedSendInput extends FileSendInput {
+  readonly file: File;
+}
 export type Result<T> =
   | { ok: true; value: T; version: ContractVersion; requestId: RequestId }
   | { ok: false; error: AppError; version: ContractVersion };

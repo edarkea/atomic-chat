@@ -284,11 +284,45 @@ describe('extracted Angular presentation components', () => {
     fixture.componentRef.setInput('historyLoading', false);
     fixture.componentRef.setInput('hasOlderMessages', false);
     fixture.componentRef.setInput('hasNewerMessages', false);
+    const closed = vi.fn();
+    const dropped = vi.fn();
+    const rejected = vi.fn();
+    fixture.componentInstance.closeRequested.subscribe(closed);
+    fixture.componentInstance.filesDropped.subscribe(dropped);
+    fixture.componentInstance.dropRejected.subscribe(rejected);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.message-sender')?.textContent).toContain(
       'Contacto',
     );
     expect(fixture.nativeElement.querySelector('input[name="message"]')).toBeTruthy();
+    (fixture.nativeElement.querySelector('.conversation-close') as HTMLButtonElement).click();
+    expect(closed).toHaveBeenCalledOnce();
+    const dataTransfer = {
+      types: ['Files'],
+      items: [],
+      files: [new File(['fixture'], 'fixture.txt')],
+      dropEffect: 'none',
+    };
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer });
+    fixture.nativeElement.querySelector('.conversation-surface').dispatchEvent(drop);
+    expect(dropped).toHaveBeenCalledWith(dataTransfer.files);
+    const dragEnter = new Event('dragenter', { bubbles: true, cancelable: true });
+    Object.defineProperty(dragEnter, 'dataTransfer', { value: dataTransfer });
+    fixture.nativeElement.querySelector('.conversation-surface').dispatchEvent(dragEnter);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Suelta aquí tus archivos');
+    const directoryTransfer = {
+      types: ['Files'],
+      items: [{ kind: 'file', webkitGetAsEntry: () => ({ isDirectory: true }) }],
+      files: dataTransfer.files,
+      dropEffect: 'none',
+    };
+    const directoryDrop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(directoryDrop, 'dataTransfer', { value: directoryTransfer });
+    fixture.nativeElement.querySelector('.conversation-surface').dispatchEvent(directoryDrop);
+    expect(rejected).toHaveBeenCalledWith('No se pueden enviar carpetas.');
+    expect(dropped).toHaveBeenCalledOnce();
   });
 
   it('renders a MUC room and emits room actions', async () => {
@@ -313,11 +347,15 @@ describe('extracted Angular presentation components', () => {
     fixture.componentRef.setInput('messages', [message]);
     fixture.componentRef.setInput('draft', '');
     const leave = vi.fn();
+    const close = vi.fn();
     fixture.componentInstance.leave.subscribe(leave);
+    fixture.componentInstance.closeRequested.subscribe(close);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('mensaje');
     (fixture.nativeElement.querySelector('.muc-room-meta button') as HTMLButtonElement).click();
     expect(leave).toHaveBeenCalledOnce();
+    (fixture.nativeElement.querySelector('.conversation-close') as HTMLButtonElement).click();
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it('keeps transfer actions limited to the offered state', async () => {

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 const service = process.env.ATOMIC_XMPP_SERVICE || '';
@@ -60,6 +60,22 @@ contextBridge.exposeInMainWorld(
     }),
     file: Object.freeze({
       send: (input) => invoke('file.send', input),
+      sendDropped: (input) => {
+        let filePath = '';
+        try {
+          if (input?.file && typeof webUtils?.getPathForFile === 'function')
+            filePath = webUtils.getPathForFile(input.file) || '';
+        } catch {
+          filePath = '';
+        }
+        return invoke('file.sendDropped', {
+          version: input?.version,
+          requestId: input?.requestId,
+          accountId: input?.accountId,
+          conversationId: input?.conversationId,
+          filePath,
+        });
+      },
       accept: (input) => invoke('file.accept', input),
       reject: (input) => invoke('file.reject', input),
       cancel: (input) => invoke('file.cancel', input),

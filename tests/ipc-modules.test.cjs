@@ -30,6 +30,7 @@ const channels = [
   'muc.leave',
   'muc.sendMessage',
   'file.send',
+  'file.sendDropped',
   'file.accept',
   'file.reject',
   'file.cancel',
@@ -176,11 +177,11 @@ test('each domain registrar owns only its assigned channels', () => {
   const groups = [
     [registerAccountHandlers, channels.slice(0, 10)],
     [registerMucHandlers, channels.slice(10, 14)],
-    [registerFileHandlers, channels.slice(14, 21)],
-    [registerHistoryHandlers, channels.slice(21, 24)],
-    [registerPreferenceHandlers, channels.slice(24, 27)],
-    [registerConnectionProfileHandlers, channels.slice(27, 31)],
-    [registerAttentionHandlers, channels.slice(31, 33)],
+    [registerFileHandlers, channels.slice(14, 22)],
+    [registerHistoryHandlers, channels.slice(22, 25)],
+    [registerPreferenceHandlers, channels.slice(25, 28)],
+    [registerConnectionProfileHandlers, channels.slice(28, 32)],
+    [registerAttentionHandlers, channels.slice(32, 34)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();
@@ -268,6 +269,35 @@ test('keeps MUC, file ownership and history authorization checks', async () => {
   });
   assert.equal(historyResult.ok, false);
   assert.equal(historyResult.error.code, 'UNAUTHORIZED');
+});
+
+test('routes dropped files through the authorized sender and existing XMPP transfer path', async () => {
+  const harness = createHarness();
+  const calls = [];
+  harness.xmpp.sendFile = async (accountId, input) => {
+    calls.push([accountId, input]);
+    return { offer: { transferId: 'drop-1' } };
+  };
+  const result = await harness.handlers.get('file.sendDropped')(event(7), {
+    version: 1,
+    requestId: 'file-drop-1',
+    accountId: 'one@example.invalid',
+    conversationId: 'contact@example.invalid',
+    filePath: '/tmp/fixtures/theme.html',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.requestId, 'file-drop-1');
+  assert.deepEqual(calls, [
+    [
+      'one@example.invalid',
+      {
+        filePath: '/tmp/fixtures/theme.html',
+        fileName: 'theme.html',
+        conversationId: 'contact@example.invalid',
+        ownerSenderId: 7,
+      },
+    ],
+  ]);
 });
 
 test('file actions reject an unauthorized origin before account or owner checks', async () => {

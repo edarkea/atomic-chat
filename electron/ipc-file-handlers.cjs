@@ -13,6 +13,40 @@ function registerFileHandlers({
 }) {
   const { requestId, validVersion, authorizeFileInput, fileResultError } = helpers;
 
+  const authorizeSendInput = (event, input) => {
+    assertSender(event);
+    if (
+      !validVersion(input) ||
+      typeof input.requestId !== 'string' ||
+      !input.requestId.trim() ||
+      typeof input.accountId !== 'string' ||
+      !input.accountId.trim() ||
+      typeof input.conversationId !== 'string' ||
+      !input.conversationId.trim()
+    )
+      throw new Error('INVALID_INPUT');
+    if (!historySecurity.authorize(event.sender.id, input.accountId))
+      throw new Error('UNAUTHORIZED');
+  };
+
+  const sendFileFromPath = async (event, input, filePath) => {
+    authorizeSendInput(event, input);
+    if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('INVALID_INPUT');
+    const { xmpp } = getRuntime();
+    if (
+      !xmpp.sessions.has(input.accountId) ||
+      xmpp.states.get(input.accountId)?.status !== 'connected'
+    )
+      throw new Error('NOT_CONNECTED');
+    const value = await xmpp.sendFile(input.accountId, {
+      filePath,
+      fileName: path.basename(filePath),
+      conversationId: input.conversationId,
+      ownerSenderId: event.sender.id,
+    });
+    return { ok: true, value, version: 1, requestId: input.requestId };
+  };
+
   const authorizeLocalAction = (event, input) => {
     assertSender(event);
     if (
@@ -33,34 +67,17 @@ function registerFileHandlers({
 
   ipcMain.handle('file.send', async (event, input) => {
     try {
-      assertSender(event);
-      if (
-        !validVersion(input) ||
-        typeof input.requestId !== 'string' ||
-        !input.requestId.trim() ||
-        typeof input.accountId !== 'string' ||
-        !input.accountId.trim() ||
-        typeof input.conversationId !== 'string' ||
-        !input.conversationId.trim()
-      )
-        throw new Error('INVALID_INPUT');
-      if (!historySecurity.authorize(event.sender.id, input.accountId))
-        throw new Error('UNAUTHORIZED');
-      const { xmpp } = getRuntime();
-      if (
-        !xmpp.sessions.has(input.accountId) ||
-        xmpp.states.get(input.accountId)?.status !== 'connected'
-      )
-        throw new Error('NOT_CONNECTED');
+      authorizeSendInput(event, input);
       const filePath = await selectFileSource();
       if (!filePath) return { ok: true, value: null, version: 1, requestId: input.requestId };
-      const value = await xmpp.sendFile(input.accountId, {
-        filePath,
-        fileName: path.basename(filePath),
-        conversationId: input.conversationId,
-        ownerSenderId: event.sender.id,
-      });
-      return { ok: true, value, version: 1, requestId: input.requestId };
+      return await sendFileFromPath(event, input, filePath);
+    } catch (error) {
+      return fileResultError(error, event, input);
+    }
+  });
+  ipcMain.handle('file.sendDropped', async (event, input) => {
+    try {
+      return await sendFileFromPath(event, input, input?.filePath);
     } catch (error) {
       return fileResultError(error, event, input);
     }

@@ -8,6 +8,7 @@ import {
   inject,
   input,
   output,
+  signal,
   ViewChild,
 } from '@angular/core';
 import { Contact, FileTransfer, Message } from './core/domain';
@@ -60,6 +61,9 @@ export class ConversationViewComponent {
   readonly hasNewerMessages = input.required<boolean>();
   readonly typing = input(false);
 
+  readonly closeRequested = output<void>();
+  readonly filesDropped = output<ReadonlyArray<File>>();
+  readonly dropRejected = output<string>();
   readonly draftChange = output<string>();
   readonly typingFocus = output<void>();
   readonly typingBlur = output<void>();
@@ -79,6 +83,8 @@ export class ConversationViewComponent {
   private renderedConversation = '';
   private frame: number | undefined;
   private scrollGeneration = 0;
+  protected readonly dropActive = signal(false);
+  private dragDepth = 0;
   private readonly destroyRef = inject(DestroyRef);
   private readonly visibleMessageKey = computed(() => {
     const items = this.timeline();
@@ -100,6 +106,50 @@ export class ConversationViewComponent {
 
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
+  }
+
+  protected onDragEnter(event: DragEvent): void {
+    if (!this.isFileDrag(event)) return;
+    event.preventDefault();
+    if (!this.isSelected()) return;
+    this.dragDepth += 1;
+    this.dropActive.set(true);
+  }
+
+  protected onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    const fileDrag = this.isFileDrag(event);
+    if (event.dataTransfer) event.dataTransfer.dropEffect = fileDrag && this.isSelected() ? 'copy' : 'none';
+  }
+
+  protected onDragLeave(event: DragEvent): void {
+    if (!this.isFileDrag(event)) return;
+    event.preventDefault();
+    this.dragDepth = Math.max(0, this.dragDepth - 1);
+    if (!this.dragDepth) this.dropActive.set(false);
+  }
+
+  protected onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragDepth = 0;
+    this.dropActive.set(false);
+    if (!this.isFileDrag(event) || !this.isSelected()) return;
+    const items = Array.from(event.dataTransfer?.items ?? []);
+    const hasDirectory = items.some((item) => {
+      const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => { isDirectory?: boolean } | null })
+        .webkitGetAsEntry?.();
+      return entry?.isDirectory === true;
+    });
+    if (hasDirectory) {
+      this.dropRejected.emit('No se pueden enviar carpetas.');
+      return;
+    }
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (!files.length) {
+      this.dropRejected.emit('El elemento arrastrado no es un archivo válido.');
+      return;
+    }
+    this.filesDropped.emit(files);
   }
 
   public onUserScrollIntent(): void {
@@ -159,5 +209,9 @@ export class ConversationViewComponent {
 
   private bareJid(jid: string): string {
     return jid.split('/')[0].toLowerCase();
+  }
+
+  private isFileDrag(event: DragEvent): boolean {
+    return event.dataTransfer?.types.includes('Files') ?? false;
   }
 }

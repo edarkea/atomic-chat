@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   effect,
+  HostListener,
   inject,
   signal,
   ViewChild,
@@ -631,6 +632,8 @@ export class App {
   protected selectContact(contact: Contact): void {
     this.directoryOpen.set(false);
     this.followLatest();
+    this.draft.set('');
+    this.mucDraft.set('');
     this.selectedContact.set(contact);
     this.conversationSelection.set({
       kind: 'direct',
@@ -644,6 +647,8 @@ export class App {
       this.followLatest();
       const jid = this.bareJid(this.search().trim());
       this.directoryOpen.set(false);
+      this.draft.set('');
+      this.mucDraft.set('');
       this.selectedContact.set(undefined);
       this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid });
       void this.scrollAfterConversationLoad(jid);
@@ -653,6 +658,8 @@ export class App {
     if (!this.joinedRoom(roomJid)) return;
     this.muc.select(roomJid);
     this.directoryOpen.set(false);
+    this.draft.set('');
+    this.mucDraft.set('');
     this.selectedContact.set(undefined);
     this.conversationSelection.set({ kind: 'muc', accountId: this.chat.accountId(), roomJid });
     this.followLatest();
@@ -690,6 +697,17 @@ export class App {
   protected async attach(): Promise<void> {
     await this.files.send(this.selectedJid());
   }
+  protected dropFiles(files: ReadonlyArray<File>): void {
+    const selection = this.activeSelection();
+    if (selection.kind !== 'direct' || !this.selectedJid()) {
+      this.files.error.set('Selecciona una conversación individual para enviar archivos.');
+      return;
+    }
+    void this.files.sendDropped(selection.jid, files);
+  }
+  protected dropRejected(message: string): void {
+    this.files.error.set(message);
+  }
   protected async discoverRooms(): Promise<void> {
     this.mucDiscovering.set(true);
     try {
@@ -712,6 +730,13 @@ export class App {
     if (selection.kind !== 'muc') return;
     await this.muc.leave(selection.accountId, selection.roomJid);
     if (!this.joinedRoom(selection.roomJid)) this.resetConversationSelection();
+  }
+  protected closeActiveConversation(): void {
+    if (this.activeSelection().kind === 'muc') this.muc.clearSelection();
+    this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() });
+    this.selectedContact.set(undefined);
+    this.draft.set('');
+    this.mucDraft.set('');
   }
   protected async sendRoom(): Promise<void> {
     const selection = this.activeSelection();
@@ -791,8 +816,27 @@ export class App {
     this.conversationView?.scrollToLatest(this.selectedJid());
   }
   private resetConversationSelection(): void {
-    this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() });
-    this.selectedContact.set(undefined);
-    this.mucDraft.set('');
+    this.closeActiveConversation();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  protected onDocumentKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+    if (
+      this.certificateRequest() ||
+      this.settingsOpen() ||
+      this.directoryOpen() ||
+      this.presenceOpen()
+    )
+      return;
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest('[role="dialog"], [role="menu"], [aria-modal="true"]')
+    )
+      return;
+    if (this.activeSelection().kind === 'none') return;
+    event.preventDefault();
+    this.closeActiveConversation();
   }
 }

@@ -21,6 +21,7 @@ export class MucViewComponent {
   readonly draft = input.required<string>();
 
   readonly leave = output<void>();
+  readonly closeRequested = output<void>();
   readonly previousParticipantPage = output<void>();
   readonly nextParticipantPage = output<void>();
   readonly draftChange = output<string>();

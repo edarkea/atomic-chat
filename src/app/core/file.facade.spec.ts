@@ -31,6 +31,7 @@ describe('FileFacade injected transfer port', () => {
     unsubscribeCalled = false;
     port = {
       send: vi.fn(async () => ok<FileTransfer | null>(null)),
+      sendDropped: vi.fn(async () => ok<FileTransfer | null>(null)),
       accept: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
       reject: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
       cancel: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
@@ -93,6 +94,34 @@ describe('FileFacade injected transfer port', () => {
     release(ok([transfer('a@example.invalid', 'late')]));
     await first;
     expect(facade.transfers()).toEqual([]);
+  });
+
+  it('sends dropped files sequentially and rejects oversized drops', async () => {
+    let active = 0;
+    let maximumActive = 0;
+    (port.sendDropped as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return ok<FileTransfer | null>(null);
+    });
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const files = [
+      new File(['one'], 'one.txt'),
+      new File(['two'], 'two.txt'),
+      new File(['three'], 'three.txt'),
+    ];
+    await facade.sendDropped('contact@example.invalid', files);
+    expect(port.sendDropped).toHaveBeenCalledTimes(3);
+    expect(maximumActive).toBe(1);
+    await facade.sendDropped(
+      'contact@example.invalid',
+      Array.from({ length: 9 }, (_, index) => new File(['x'], `file-${index}.txt`)),
+    );
+    expect(port.sendDropped).toHaveBeenCalledTimes(3);
+    expect(facade.error()).toContain('hasta 8');
   });
 
   it('ignores transfer events belonging to another account', async () => {

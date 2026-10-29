@@ -214,6 +214,22 @@ select:focus-visible {
   display: inline-flex;
   margin-left: auto;
 }
+.conversation-close {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  margin-left: auto;
+  padding: 6px;
+}
+.conversation-close:hover,
+.conversation-close:focus-visible {
+  border-color: var(--atomic-border);
+  color: var(--atomic-green);
+}
 
 .message {
   background: #267342;

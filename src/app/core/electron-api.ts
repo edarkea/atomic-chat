@@ -9,6 +9,7 @@ import {
   FileActiveInput,
   FileRequest,
   FileSendInput,
+  FileDroppedSendInput,
   FileTransfer,
   HistoryPage,
   HistoryPageInput,
@@ -88,6 +89,7 @@ export interface AtomicChatApi {
   };
   file: {
     send(input: FileSendInput): Promise<Result<FileTransfer | null>>;
+    sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>>;
     accept(input: FileRequest): Promise<Result<FileTransfer>>;
     reject(input: FileRequest): Promise<Result<FileTransfer>>;
     cancel(input: FileRequest): Promise<Result<FileTransfer>>;

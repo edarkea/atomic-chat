@@ -1,67 +1,86 @@
-<header class="chat-header">
-  <span class="avatar header-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
-  <div>
-    <strong>{{
-      activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
-    }}</strong>
-    <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
-  </div>
-  <span class="more" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-more" /></svg></span>
-</header>
 <div
-  #chatContent
-  class="chat-content"
-  tabindex="0"
-  (scroll)="onChatScroll()"
-  (wheel)="onUserScrollIntent()"
-  (touchmove)="onUserScrollIntent()"
-  (pointerdown)="onUserScrollIntent()"
-  (keydown)="onUserScrollIntent()"
-  aria-live="polite"
+  class="conversation-surface"
+  (dragenter)="onDragEnter($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
 >
-  @if (!isSelected()) {
-    <div class="reference-message incoming">Selecciona una conversación para comenzar.</div>
-  } @else if (!timeline().length) {
-    <div class="reference-message incoming">No hay mensajes todavía.</div>
-  }
-  @for (item of timeline(); track item.id) {
-    @if (item.kind === 'text') {
-      <app-message-item
-        [sender]="item.senderLabel"
-        [body]="item.message.body.text"
-        [outgoing]="item.outgoing"
-        [metadata]="item.outgoing ? item.message.status : 'recibido'"
-      />
-    } @else {
-      <app-file-transfer-card
-        [transfer]="item.transfer"
-        [label]="item.label"
-        (accepted)="accept.emit($event)"
-        (rejected)="reject.emit($event)"
-        (cancelled)="fileCancel.emit($event)"
-        (opened)="fileOpen.emit($event)"
-        (revealed)="fileReveal.emit($event)"
-        [actionBusy]="fileActionPending()(item.transfer.offer.transferId)"
-      />
+  <header class="chat-header">
+    <span class="avatar header-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
+    <div>
+      <strong>{{
+        activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
+      }}</strong>
+      <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
+    </div>
+    <button
+      class="conversation-close"
+      type="button"
+      aria-label="Cerrar conversación"
+      title="Cerrar conversación"
+      (click)="closeRequested.emit()"
+    >
+      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-close" /></svg>
+    </button>
+  </header>
+  <div
+    #chatContent
+    class="chat-content"
+    tabindex="0"
+    (scroll)="onChatScroll()"
+    (wheel)="onUserScrollIntent()"
+    (touchmove)="onUserScrollIntent()"
+    (pointerdown)="onUserScrollIntent()"
+    (keydown)="onUserScrollIntent()"
+    aria-live="polite"
+  >
+    @if (!isSelected()) {
+      <div class="reference-message incoming">Selecciona una conversación para comenzar.</div>
+    } @else if (!timeline().length) {
+      <div class="reference-message incoming">No hay mensajes todavía.</div>
     }
+    @for (item of timeline(); track item.id) {
+      @if (item.kind === 'text') {
+        <app-message-item
+          [sender]="item.senderLabel"
+          [body]="item.message.body.text"
+          [outgoing]="item.outgoing"
+          [metadata]="item.outgoing ? item.message.status : 'recibido'"
+        />
+      } @else {
+        <app-file-transfer-card
+          [transfer]="item.transfer"
+          [label]="item.label"
+          (accepted)="accept.emit($event)"
+          (rejected)="reject.emit($event)"
+          (cancelled)="fileCancel.emit($event)"
+          (opened)="fileOpen.emit($event)"
+          (revealed)="fileReveal.emit($event)"
+          [actionBusy]="fileActionPending()(item.transfer.offer.transferId)"
+        />
+      }
+    }
+  </div>
+  @if (typing()) {
+    <p class="typing-indicator" role="status">Está escribiendo…</p>
+  }
+  @if (error()) {
+    <p class="composer-error" role="alert">{{ error() }}</p>
+  }
+  <app-message-composer
+    [inputName]="'message'"
+    [placeholder]="'Escribir mensaje...'"
+    [draft]="draft()"
+    [disabled]="!selectedJid()"
+    [showAttach]="true"
+    [showEmoji]="true"
+    (draftChange)="draftChange.emit($event)"
+    (inputFocus)="typingFocus.emit()"
+    (inputBlur)="typingBlur.emit()"
+    (messageSubmitted)="messageSend.emit()"
+    (attach)="attach.emit()"
+  />
+  @if (dropActive()) {
+    <div class="drop-overlay" aria-hidden="true">Suelta aquí tus archivos</div>
   }
 </div>
-@if (typing()) {
-  <p class="typing-indicator" role="status">Está escribiendo…</p>
-}
-@if (error()) {
-  <p class="composer-error" role="alert">{{ error() }}</p>
-}
-<app-message-composer
-  [inputName]="'message'"
-  [placeholder]="'Escribir mensaje...'"
-  [draft]="draft()"
-  [disabled]="!selectedJid()"
-  [showAttach]="true"
-  [showEmoji]="true"
-  (draftChange)="draftChange.emit($event)"
-  (inputFocus)="typingFocus.emit()"
-  (inputBlur)="typingBlur.emit()"
-  (messageSubmitted)="messageSend.emit()"
-  (attach)="attach.emit()"
-/>

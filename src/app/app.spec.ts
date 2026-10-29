@@ -63,6 +63,10 @@ function fakeMucFacade() {
     selectedRoomJid.set(roomJid);
     selectedState.set(states().find((state) => state.room.jid === roomJid));
   });
+  const clearSelection = vi.fn(() => {
+    selectedRoomJid.set('');
+    selectedState.set(undefined);
+  });
   return {
     services,
     states,
@@ -78,6 +82,7 @@ function fakeMucFacade() {
     discover: vi.fn(async () => undefined),
     setAccount: vi.fn(),
     select,
+    clearSelection,
     join: vi.fn(async () => undefined),
     leave: vi.fn(async () => undefined),
     send: vi.fn(async () => true),
@@ -303,6 +308,23 @@ describe('App composer integration', () => {
     expect(muc.join).not.toHaveBeenCalled();
     expect(muc.select).toHaveBeenCalledWith(second.jid);
   });
+  it('closes a MUC view without leaving the joined room', () => {
+    const room = {
+      service: 'conference.example.invalid',
+      room: 'sala-pro',
+      jid: 'sala-pro@conference.example.invalid',
+    };
+    muc.states.set([joinedRoom(room)]);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.muc-conversation-item') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.conversation-close') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.muc-room-view')).toBeNull();
+    expect(muc.selectedRoomJid()).toBe('');
+    expect(muc.leave).not.toHaveBeenCalled();
+    expect(muc.states()[0].status).toBe('joined');
+  });
   it('leaves one room while keeping another joined and navigable', async () => {
     const first = {
       service: 'conference.example.invalid',
@@ -491,6 +513,49 @@ describe('App composer integration', () => {
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
     fixture.detectChanges();
     expect((fixture.componentInstance as any).draft()).toBe('');
+  });
+  it('closes the active conversation without leaving a MUC or preserving its draft', () => {
+    const app = fixture.componentInstance as any;
+    app.draft.set('borrador directo');
+    app.closeActiveConversation();
+    fixture.detectChanges();
+    expect(app.selectedJid()).toBe('');
+    expect(app.draft()).toBe('');
+    expect(app.mucDraft()).toBe('');
+    expect(muc.leave).not.toHaveBeenCalled();
+  });
+  it('closes the active conversation on Escape and leaves modal priority intact', () => {
+    const close = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(close);
+    fixture.detectChanges();
+    expect((fixture.componentInstance as any).selectedJid()).toBe('');
+
+    (fixture.componentInstance as any).conversationSelection.set({
+      kind: 'direct',
+      accountId: 'a@example.invalid',
+      jid: 'contact@example.invalid',
+    });
+    facade.certificateRequest.set({
+      requestId: 'cert-priority',
+      accountId: 'a@example.invalid',
+      host: 'xmpp.example.invalid',
+      port: 5222,
+      transport: 'starttls',
+      certificate: {
+        fingerprintSha256: 'AA:BB',
+        subject: 'CN=xmpp.example.invalid',
+        issuer: 'CN=issuer',
+        validFrom: '2026-01-01',
+        validTo: '2027-01-01',
+        subjectAltNames: ['DNS:xmpp.example.invalid'],
+        chain: [{ fingerprintSha256: 'AA:BB', subject: 'CN=xmpp.example.invalid', issuer: 'CN=issuer' }],
+        pem: 'pem',
+      },
+    });
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    expect((fixture.componentInstance as any).selectedJid()).toBe('contact@example.invalid');
   });
   it('shows one certificate dialog with the selected transport and fingerprint', () => {
     facade.certificateRequest.set({
