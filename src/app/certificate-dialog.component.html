@@ -55,6 +55,13 @@
         </ul>
       </dd>
     </dl>
+    @if (request().verificationError?.code === 'CERTIFICATE_IDENTITY_MISMATCH') {
+      <p class="certificate-change">
+        <strong>Riesgo:</strong> el nombre presentado por el servidor no coincide con la dirección
+        configurada. Solo acepta si confirmaste esta identidad por un canal independiente; la
+        decisión quedará limitada a esta cuenta, endpoint, transporte y huella SHA-256 exacta.
+      </p>
+    }
     @if (request().previous; as previous) {
       <p class="certificate-change">
         <strong>Certificado anterior:</strong> {{ previous.fingerprintSha256 }}<br /><strong

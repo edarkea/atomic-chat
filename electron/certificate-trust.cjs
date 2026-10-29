@@ -68,9 +68,18 @@ function assessCertificate(host, certificate, authorized, authorizationError, no
   const expires = Date.parse(info.validTo);
   if (Number.isFinite(starts) && now < starts) return { info, trustable: false, error: { code: 'CERTIFICATE_NOT_YET_VALID', message: 'El certificado todavía no está vigente.' } };
   if (Number.isFinite(expires) && now > expires) return { info, trustable: false, error: { code: 'CERTIFICATE_EXPIRED', message: 'El certificado está expirado.' } };
-  const identityError = tls.checkServerIdentity(host, certificate);
-  if (identityError) return { info, trustable: false, error: { code: 'CERTIFICATE_IDENTITY_MISMATCH', message: 'El certificado no corresponde con la identidad del servidor.' } };
   if (INSECURE_SIGNATURES.test(info.signatureAlgorithm || '')) return { info, trustable: false, error: { code: 'CERTIFICATE_INSECURE_ALGORITHM', message: 'El certificado usa un algoritmo criptográfico inseguro.' } };
+  const identityError = tls.checkServerIdentity(host, certificate);
+  if (identityError)
+    return {
+      info,
+      trustable: true,
+      error: {
+        code: 'CERTIFICATE_IDENTITY_MISMATCH',
+        message:
+          'La identidad del certificado no coincide con el servidor. Aceptarlo permite confiar explícitamente en esta huella aunque el nombre no coincida.',
+      },
+    };
   if (authorized && !authorizationError) return { info, trustable: false, error: undefined };
   if (SELF_SIGNED_ERRORS.has(authorizationError)) return { info, trustable: true, error: { code: 'CERTIFICATE_UNTRUSTED', message: 'El certificado autofirmado no está reconocido por el sistema.' } };
   return { info, trustable: false, error: { code: 'CERTIFICATE_UNTRUSTED', message: 'La cadena del certificado no pudo verificarse.' } };
@@ -78,4 +87,10 @@ function assessCertificate(host, certificate, authorized, authorizationError, no
 
 function isSelfSignedError(code) { return SELF_SIGNED_ERRORS.has(code); }
 
-module.exports = { CertificateVerificationFailure, assessCertificate, describeCertificate, isSelfSignedError };
+module.exports = {
+  CertificateVerificationFailure,
+  assessCertificate,
+  certificateFingerprint,
+  describeCertificate,
+  isSelfSignedError,
+};

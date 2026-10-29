@@ -73,6 +73,7 @@ class PersistenceStore {
         transport TEXT NOT NULL,
         fingerprint_sha256 TEXT NOT NULL,
         certificate_pem TEXT NOT NULL,
+        identity_mismatch INTEGER NOT NULL DEFAULT 0,
         approved_at TEXT NOT NULL,
         PRIMARY KEY (account_id, endpoint_host, endpoint_port, transport),
         FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
@@ -172,6 +173,14 @@ class PersistenceStore {
         'CREATE TABLE IF NOT EXISTS deleted_connection_profiles (account_id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);',
       );
       this.database.prepare('UPDATE schema_meta SET version = 5').run();
+      const trustedCertificateColumns = this.database
+        .prepare('PRAGMA table_info(trusted_certificates)')
+        .all();
+      if (!trustedCertificateColumns.some((column) => column.name === 'identity_mismatch'))
+        this.database.exec(
+          'ALTER TABLE trusted_certificates ADD COLUMN identity_mismatch INTEGER NOT NULL DEFAULT 0',
+        );
+      this.database.prepare('UPDATE schema_meta SET version = 6').run();
     });
     migrate();
   }
@@ -306,22 +315,24 @@ class PersistenceStore {
     const row = this.database
       .prepare(
         `SELECT account_id AS accountId, endpoint_host AS host, endpoint_port AS port,
-      transport, fingerprint_sha256 AS fingerprintSha256, certificate_pem AS certificatePem, approved_at AS approvedAt
+      transport, fingerprint_sha256 AS fingerprintSha256, certificate_pem AS certificatePem,
+      identity_mismatch AS identityMismatchAuthorized, approved_at AS approvedAt
       FROM trusted_certificates WHERE account_id = ? AND endpoint_host = ? AND endpoint_port = ? AND transport = ?`,
       )
       .get(accountId, host, port, transport);
-    return row || null;
+    return row ? { ...row, identityMismatchAuthorized: Boolean(row.identityMismatchAuthorized) } : null;
   }
 
   upsertTrustedCertificate(record) {
     this.database
       .prepare(
-        `INSERT INTO trusted_certificates(account_id, endpoint_host, endpoint_port, transport, fingerprint_sha256, certificate_pem, approved_at)
-      VALUES (@accountId, @host, @port, @transport, @fingerprintSha256, @certificatePem, @approvedAt)
+        `INSERT INTO trusted_certificates(account_id, endpoint_host, endpoint_port, transport, fingerprint_sha256, certificate_pem, identity_mismatch, approved_at)
+      VALUES (@accountId, @host, @port, @transport, @fingerprintSha256, @certificatePem, @identityMismatchAuthorized, @approvedAt)
       ON CONFLICT(account_id, endpoint_host, endpoint_port, transport) DO UPDATE SET
-        fingerprint_sha256=@fingerprintSha256, certificate_pem=@certificatePem, approved_at=@approvedAt`,
+        fingerprint_sha256=@fingerprintSha256, certificate_pem=@certificatePem,
+        identity_mismatch=@identityMismatchAuthorized, approved_at=@approvedAt`,
       )
-      .run(record);
+      .run({ ...record, identityMismatchAuthorized: record.identityMismatchAuthorized ? 1 : 0 });
   }
 
   saveMessage(message) {

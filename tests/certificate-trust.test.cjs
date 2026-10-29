@@ -7,6 +7,7 @@ const net = require('node:net');
 const { PersistenceStore } = require('../electron/storage.cjs');
 const { XmppAdapter, negotiateStartTls } = require('../electron/xmpp-adapter.cjs');
 const { assessCertificate } = require('../electron/certificate-trust.cjs');
+const { tlsIdentityCheck } = require('../electron/xmpp-transport.cjs');
 
 function syntheticCertificate(overrides = {}) {
   const certificate = {
@@ -38,7 +39,7 @@ test('classifies a self-signed certificate without trusting it automatically', (
   assert.deepEqual(result.info.subjectAltNames, ['DNS:xmpp.example.invalid']);
 });
 
-test('blocks expired, identity-mismatched, and insecure certificates', () => {
+test('blocks expired and insecure certificates but allows explicit identity review', () => {
   assert.equal(
     assessCertificate(
       'xmpp.example.invalid',
@@ -48,15 +49,16 @@ test('blocks expired, identity-mismatched, and insecure certificates', () => {
     ).error.code,
     'CERTIFICATE_EXPIRED',
   );
-  assert.equal(
-    assessCertificate(
-      'xmpp.example.invalid',
-      syntheticCertificate({ subjectaltname: 'DNS:other.example.invalid' }),
-      true,
-      undefined,
-    ).error.code,
-    'CERTIFICATE_IDENTITY_MISMATCH',
+  const identityMismatch = assessCertificate(
+    '132.150.10.113',
+    syntheticCertificate({
+      subjectaltname: 'DNS:132.150.10.113, DNS:*.132.150.10.113',
+    }),
+    true,
+    undefined,
   );
+  assert.equal(identityMismatch.trustable, true);
+  assert.equal(identityMismatch.error.code, 'CERTIFICATE_IDENTITY_MISMATCH');
   assert.equal(
     assessCertificate(
       'xmpp.example.invalid',
@@ -65,6 +67,25 @@ test('blocks expired, identity-mismatched, and insecure certificates', () => {
       'DEPTH_ZERO_SELF_SIGNED_CERT',
     ).error.code,
     'CERTIFICATE_INSECURE_ALGORITHM',
+  );
+});
+
+test('accepts a reviewed identity mismatch only for the exact approved fingerprint', () => {
+  const certificate = syntheticCertificate({ subjectaltname: 'DNS:other.example.invalid' });
+  const allowMismatch = tlsIdentityCheck({
+    identityHost: 'xmpp.example.invalid',
+    expectedFingerprint: certificate.fingerprint256,
+    allowIdentityMismatch: true,
+  });
+  assert.equal(allowMismatch('xmpp.example.invalid', certificate), undefined);
+
+  const changedCertificate = syntheticCertificate({
+    subjectaltname: 'DNS:other.example.invalid',
+    fingerprint256: '11:22:33:44',
+  });
+  assert.equal(
+    allowMismatch('xmpp.example.invalid', changedCertificate).code,
+    'CERTIFICATE_PIN_MISMATCH',
   );
 });
 
@@ -136,6 +157,38 @@ test('reuses an approved certificate without showing a second warning', async ()
   assert.equal(adapter.pendingDecisions.size, 0);
 });
 
+test('reuses an approved identity-mismatch certificate only with its recorded exception', async () => {
+  const certificate = syntheticCertificate({ subjectaltname: 'DNS:other.example.invalid' });
+  const adapter = new XmppAdapter(false, {
+    getTrustedCertificate: () => ({
+      accountId: 'a@example.invalid',
+      host: 'xmpp.example.invalid',
+      port: 5222,
+      transport: 'direct-tls',
+      fingerprintSha256: certificate.fingerprint256,
+      certificatePem: 'approved-pem',
+      identityMismatchAuthorized: true,
+      approvedAt: new Date().toISOString(),
+    }),
+  });
+  adapter.probeDirectCertificate = async () => ({
+    certificate,
+    authorized: false,
+    authorizationError: 'ERR_TLS_CERT_ALTNAME_INVALID',
+  });
+  const options = await adapter.resolveTlsOptions(
+    {
+      requestId: 'req-cert-identity-reuse',
+      accountId: 'a@example.invalid',
+      endpoint: { host: 'xmpp.example.invalid', port: 5222 },
+    },
+    7,
+    { transport: 'direct-tls' },
+  );
+  assert.equal(options.allowIdentityMismatch, true);
+  assert.equal(adapter.pendingDecisions.size, 0);
+});
+
 test('STARTTLS certificate approval emits the same single trust dialog event', async () => {
   const certificate = syntheticCertificate();
   const adapter = new XmppAdapter(false, { getTrustedCertificate: () => null });
@@ -192,6 +245,7 @@ test('persistent trust is scoped to account, endpoint, transport, and fingerprin
     transport: 'starttls',
     fingerprintSha256: 'CC:DD',
     certificatePem: 'pem-starttls',
+    identityMismatchAuthorized: true,
     approvedAt: new Date().toISOString(),
   });
   assert.equal(
@@ -203,6 +257,11 @@ test('persistent trust is scoped to account, endpoint, transport, and fingerprin
     store.getTrustedCertificate('a@example.invalid', 'xmpp.example.invalid', 5222, 'starttls')
       .fingerprintSha256,
     'CC:DD',
+  );
+  assert.equal(
+    store.getTrustedCertificate('a@example.invalid', 'xmpp.example.invalid', 5222, 'starttls')
+      .identityMismatchAuthorized,
+    true,
   );
   assert.equal(
     store.getTrustedCertificate('b@example.invalid', 'xmpp.example.invalid', 5222, 'direct-tls'),

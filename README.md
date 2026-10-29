@@ -106,6 +106,7 @@ P0 has been validated in the observed Openfire/Spark environment for connection,
 ## Known limitations
 
 - A self-signed certificate is never accepted automatically. Electron Main performs an unauthenticated probe (direct TLS or TCP/XMPP STARTTLS), shows the certificate details in Angular, and keeps the operational connection at `rejectUnauthorized: true`. Trust is scoped to the XMPP account, endpoint, selected transport and exact SHA-256 certificate.
+- A reviewed identity mismatch is a separate explicit exception: it is allowed only after `trust_once` or `trust_and_remember`, and the live TLS check still requires the exact approved SHA-256 fingerprint. Expired, not-yet-valid and explicitly prohibited signature algorithms remain blocked.
 - Set `ATOMIC_XMPP_TRANSPORT=starttls` for the usual port `5222`, or `direct-tls` for `xmpps:`/port `5223`. The legacy `ATOMIC_XMPP_TLS` boolean is adapted when no explicit transport is present: a host-only endpoint on port `5222` maps to STARTTLS, while port `5223` maps to direct TLS; explicit `transport` always wins. The selected transport is persisted and never shares trust with the other transport.
 - Migration failure/recovery testing and a complete automatic retry policy remain limited.
 - Notification preference persistence exists; system notification behavior is not complete.
@@ -115,6 +116,10 @@ P0 has been validated in the observed Openfire/Spark environment for connection,
 ## Certificate trust implementation references
 
 The implementation maps the audit plan areas as follows: A1.3 (TLS transport and certificate classification) is in `electron/certificate-trust.cjs` and `electron/xmpp-adapter.cjs`; B1 (restricted Main/Preload/Renderer IPC and explicit decisions) is in `electron/main.cjs`, `electron/preload.cjs`, `src/app/core/electron-api.ts`, and `src/app/core/chat.facade.ts`; D1 (persistent, endpoint/transport-scoped trust) is in `electron/storage.cjs` and the `trusted_certificates` table migration. The Angular warning is in `src/app/app.html` and uses the existing Wasteland Terminal styles.
+
+### Migración del almacenamiento de certificados
+
+La migración SQLite 6 añade `trusted_certificates.identity_mismatch` con valor predeterminado `0`. Es aditiva y no elimina certificados aprobados ni copia secretos. Los registros existentes no contienen autorización histórica para discrepancias de identidad; si el certificado vuelve a presentar esa discrepancia, Atomic Chat exige una nueva decisión explícita. La migración se ejecuta en Electron Main y conserva la separación por cuenta, host, puerto y transporte.
 
 ## Project structure
 

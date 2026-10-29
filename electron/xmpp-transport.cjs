@@ -1,7 +1,11 @@
 const net = require('node:net');
 const tls = require('node:tls');
 const { EventEmitter } = require('node:events');
-const { CertificateVerificationFailure, assessCertificate } = require('./certificate-trust.cjs');
+const {
+  CertificateVerificationFailure,
+  assessCertificate,
+  certificateFingerprint,
+} = require('./certificate-trust.cjs');
 
 const STARTTLS_NS = 'urn:ietf:params:xml:ns:xmpp-tls';
 
@@ -15,11 +19,9 @@ function taggedError(code, message, phase, cause) {
 
 function tlsIdentityCheck(tlsOptions) {
   return (host, certificate) => {
-    const identityError = tls.checkServerIdentity(tlsOptions.identityHost || host, certificate);
-    if (identityError) return identityError;
     if (
       tlsOptions.expectedFingerprint &&
-      certificate.fingerprint256 !== tlsOptions.expectedFingerprint
+      certificateFingerprint(certificate) !== tlsOptions.expectedFingerprint
     ) {
       return taggedError(
         'CERTIFICATE_PIN_MISMATCH',
@@ -27,6 +29,9 @@ function tlsIdentityCheck(tlsOptions) {
         'tls.verify',
       );
     }
+    const identityError = tls.checkServerIdentity(tlsOptions.identityHost || host, certificate);
+    if (identityError && !(tlsOptions.allowIdentityMismatch && tlsOptions.expectedFingerprint))
+      return identityError;
     return undefined;
   };
 }
@@ -359,10 +364,24 @@ function createXmppTransport(adapter) {
           assessment.error,
         );
       const changed = previous && previous.fingerprintSha256 !== assessment.info.fingerprintSha256;
-      if (previous && !changed)
+      const identityMismatch = assessment.error?.code === 'CERTIFICATE_IDENTITY_MISMATCH';
+      const approvedIdentityMismatch = Boolean(previous?.identityMismatchAuthorized);
+      const previousForDialog = previous
+        ? {
+            accountId: previous.accountId,
+            host: previous.host,
+            port: previous.port,
+            transport: previous.transport,
+            fingerprintSha256: previous.fingerprintSha256,
+            certificatePem: previous.certificatePem,
+            approvedAt: previous.approvedAt,
+          }
+        : null;
+      if (previous && !changed && (!identityMismatch || approvedIdentityMismatch))
         return {
           ca: previous.certificatePem,
           expectedFingerprint: previous.fingerprintSha256,
+          allowIdentityMismatch: approvedIdentityMismatch,
           servername: logicalDomain,
           identityHost: logicalDomain,
         };
@@ -372,7 +391,7 @@ function createXmppTransport(adapter) {
           transportName,
           assessment.info,
           assessment.error,
-          changed ? previous : null,
+          changed ? previousForDialog : null,
           senderId,
         );
         if (decision === 'cancel')
@@ -391,6 +410,7 @@ function createXmppTransport(adapter) {
               transport: transportName,
               fingerprintSha256: assessment.info.fingerprintSha256,
               certificatePem: assessment.info.pem,
+              identityMismatchAuthorized: identityMismatch,
               approvedAt: new Date().toISOString(),
             });
           } catch {
@@ -400,6 +420,7 @@ function createXmppTransport(adapter) {
         return {
           ca: assessment.error ? assessment.info.pem : undefined,
           expectedFingerprint: assessment.info.fingerprintSha256,
+          allowIdentityMismatch: identityMismatch,
           servername: logicalDomain,
           identityHost: logicalDomain,
         };
@@ -476,4 +497,4 @@ function createXmppTransport(adapter) {
   };
 }
 
-module.exports = { createXmppTransport, negotiateStartTls };
+module.exports = { createXmppTransport, negotiateStartTls, tlsIdentityCheck };
