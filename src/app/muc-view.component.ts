@@ -7,6 +7,7 @@ import { MessageItemComponent } from './message-item.component';
   selector: 'app-muc-view',
   imports: [MessageComposerComponent, MessageItemComponent],
   templateUrl: './muc-view.component.html',
+  styleUrls: ['./muc-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MucViewComponent {

@@ -1,0 +1,17 @@
+:host {
+  display: contents;
+}
+.sidebar {
+  background: var(--atomic-surface-raised);
+  border-right: 1px solid var(--atomic-border-soft);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 14px 12px;
+}
+@media (max-width: 760px) {
+  .sidebar {
+    padding-inline: 11px;
+  }
+}

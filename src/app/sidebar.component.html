@@ -2,6 +2,7 @@
   <app-operator-presence
     [model]="model().operator"
     (presenceToggle)="presenceToggle.emit()"
+    (presenceClose)="presenceClose.emit()"
     (presenceSelected)="presenceSelected.emit($event)"
     (presenceStatusChange)="presenceStatusChange.emit($event)"
     (settingsToggle)="settingsToggle.emit()"

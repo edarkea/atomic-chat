@@ -1,0 +1,214 @@
+.muc-panel {
+  background: var(--atomic-surface);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-md);
+  margin-top: 12px;
+  padding: 10px;
+}
+.muc-heading {
+  align-items: center;
+  display: flex;
+  gap: var(--atomic-space-2);
+  justify-content: space-between;
+  min-height: 42px;
+}
+.muc-heading > div {
+  min-width: 0;
+}
+.muc-heading .section-label {
+  color: var(--atomic-green);
+  font-size: 12px;
+  margin: 0;
+}
+.muc-subtitle {
+  color: var(--atomic-text-secondary);
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.muc-discover,
+.leave-room {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  min-height: 36px;
+  padding: 6px 9px;
+}
+.muc-discover {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  min-width: 92px;
+}
+.muc-discover span:first-child {
+  font-size: 18px;
+  line-height: 1;
+}
+.muc-discover:hover,
+.leave-room:hover {
+  background: var(--atomic-surface-active);
+}
+.muc-discover:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.muc-nickname {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+}
+.muc-nickname label {
+  color: var(--atomic-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.muc-nickname input {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  font: inherit;
+  font-size: 13px;
+  min-height: 40px;
+  min-width: 0;
+  outline: 0;
+  padding: 7px 9px;
+  width: 100%;
+}
+.muc-nickname input::placeholder {
+  color: var(--atomic-text-muted);
+}
+.muc-nickname small {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+}
+.muc-error,
+.muc-loading,
+.muc-empty {
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 10px 2px 2px;
+}
+.muc-error {
+  color: var(--atomic-danger);
+}
+.muc-loading {
+  color: var(--atomic-text);
+}
+.muc-loading span {
+  color: var(--atomic-green);
+  font-size: 18px;
+  margin-right: 4px;
+}
+.muc-empty {
+  background: var(--atomic-bg);
+  border: 1px dashed var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  padding: 10px;
+  text-align: center;
+}
+.room-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.room-item {
+  align-items: stretch;
+  background: var(--atomic-surface-soft);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0;
+}
+.room-item:hover,
+.room-item.active {
+  background: var(--atomic-surface-hover);
+  border-color: var(--atomic-border);
+}
+.room-select {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--atomic-text);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 9px 8px;
+  text-align: left;
+}
+.room-symbol {
+  color: var(--atomic-green);
+  font-size: 18px;
+}
+.room-copy {
+  min-width: 0;
+}
+.room-copy strong,
+.room-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-copy strong {
+  color: var(--atomic-text);
+  font-size: 13px;
+}
+.room-copy small {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  margin-top: 3px;
+}
+.room-status {
+  color: var(--atomic-green-muted);
+  font-size: 12px;
+  text-transform: lowercase;
+}
+.room-join {
+  background: var(--atomic-surface-hover);
+  border: 0;
+  border-left: 1px solid var(--atomic-border-soft);
+  border-radius: 0 var(--atomic-radius-sm) var(--atomic-radius-sm) 0;
+  color: var(--atomic-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  min-width: 62px;
+  padding: 7px 8px;
+}
+.room-join:hover:not(:disabled) {
+  background: #267342;
+  color: #effff0;
+}
+.room-join:disabled {
+  color: var(--atomic-text-secondary);
+  cursor: default;
+  opacity: 0.65;
+}
+.leave-room {
+  font-size: 12px;
+  margin-top: 7px;
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .muc-subtitle {
+    font-size: 11px;
+  }
+  .room-copy strong {
+    font-size: 12px;
+  }
+}

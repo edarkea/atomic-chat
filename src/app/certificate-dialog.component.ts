@@ -14,6 +14,7 @@ import { CertificateTrustDecision, CertificateTrustRequest } from './core/domain
 @Component({
   selector: 'app-certificate-dialog',
   templateUrl: './certificate-dialog.component.html',
+  styleUrls: ['./certificate-dialog.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CertificateDialogComponent {

@@ -1,0 +1,52 @@
+:host {
+  display: contents;
+}
+.file-message {
+  align-self: flex-start;
+  background: #0e3a21;
+  border: 1px solid #3f8f52;
+  display: grid;
+  gap: 6px;
+  max-width: min(420px, 82%);
+  overflow-wrap: anywhere;
+}
+.file-message.outgoing {
+  background: #214f2f;
+  border-color: #74b85e;
+  margin-left: auto;
+  margin-right: 0;
+}
+.file-message p,
+.file-message small {
+  margin: 0;
+}
+.file-title {
+  color: var(--atomic-text);
+  font-weight: 700;
+}
+.file-security {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.file-actions button,
+.file-message > button {
+  background: #17291b;
+  border: 1px solid var(--atomic-green);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  min-height: 34px;
+  padding: 5px 8px;
+}
+.file-actions button:hover,
+.file-message > button:hover {
+  background: var(--atomic-surface-active);
+}

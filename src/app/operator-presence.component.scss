@@ -1,0 +1,141 @@
+.operator-card {
+  align-items: center;
+  background: var(--atomic-surface-soft);
+  border-radius: var(--atomic-radius-sm);
+  display: flex;
+  gap: var(--atomic-space-2);
+  padding: 10px;
+  position: relative;
+}
+.operator-card strong {
+  color: var(--atomic-text);
+  display: block;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.operator-card small {
+  color: var(--atomic-text-secondary);
+  display: block;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.presence-control {
+  color: var(--atomic-text-secondary);
+  display: grid;
+  font-size: 12px;
+  gap: var(--atomic-space-1);
+  margin: 12px 2px 0;
+  position: relative;
+}
+.presence-trigger {
+  align-items: center;
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--atomic-space-2);
+  justify-content: flex-start;
+  min-height: 40px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.presence-trigger:hover,
+.presence-trigger[aria-expanded='true'] {
+  background: var(--atomic-surface-hover);
+  border-color: var(--atomic-border);
+}
+.presence-arrow {
+  margin-left: auto;
+}
+.presence-menu {
+  background: var(--atomic-surface-raised);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-sm);
+  box-shadow: 0 8px 20px #0008;
+  display: grid;
+  gap: 3px;
+  left: 0;
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 4px);
+  width: 100%;
+  z-index: 10;
+}
+.presence-menu button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--atomic-space-2);
+  min-height: 36px;
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+.presence-menu button:hover,
+.presence-menu button[aria-checked='true'] {
+  background: var(--atomic-surface-active);
+}
+.presence-menu input {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  color: var(--atomic-text);
+  font: inherit;
+  min-height: 36px;
+  padding: 6px 8px;
+  width: 100%;
+}
+.preferences-panel {
+  background: var(--atomic-surface-raised);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  display: grid;
+  font-size: 12px;
+  gap: var(--atomic-space-2);
+  margin-top: 12px;
+  padding: 10px;
+}
+.preferences-panel strong {
+  color: var(--atomic-text);
+  font-size: 14px;
+}
+.preferences-panel select {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  display: block;
+  font: inherit;
+  margin-top: 4px;
+  min-height: 34px;
+  padding: 4px 6px;
+  width: 100%;
+}
+.check-preference {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+.check-preference input {
+  accent-color: var(--atomic-green);
+}
+.preferences-panel button {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  font: inherit;
+  min-height: 34px;
+  padding: 5px;
+}

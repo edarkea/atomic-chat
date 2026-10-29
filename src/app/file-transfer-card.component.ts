@@ -4,7 +4,7 @@ import { FileTransfer } from './core/domain';
 @Component({
   selector: 'app-file-transfer-card',
   templateUrl: './file-transfer-card.component.html',
-  styles: [':host { display: contents; }'],
+  styleUrls: ['./file-transfer-card.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class FileTransferCardComponent {

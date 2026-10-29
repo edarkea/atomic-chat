@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 @Component({
   selector: 'app-message-item',
   templateUrl: './message-item.component.html',
-  styles: [':host { display: contents; }'],
+  styleUrls: ['./message-item.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MessageItemComponent {

@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
   selector: 'app-login-panel',
   imports: [FormsModule],
   templateUrl: './login-panel.component.html',
+  styleUrls: ['./login-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginPanelComponent {

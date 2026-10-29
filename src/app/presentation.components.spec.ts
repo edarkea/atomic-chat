@@ -14,6 +14,7 @@ import { FileTransferCardComponent } from './file-transfer-card.component';
 import { LoginPanelComponent } from './login-panel.component';
 import { MessageComposerComponent } from './message-composer.component';
 import { MucViewComponent } from './muc-view.component';
+import { OperatorPresenceComponent } from './operator-presence.component';
 import { SidebarComponent } from './sidebar.component';
 import { PresenceOption } from './sidebar.models';
 
@@ -273,15 +274,62 @@ describe('extracted Angular presentation components', () => {
     expect(fixture.nativeElement.querySelector('.composer-icon')).toBeNull();
   });
 
+  it('provides a keyboard-complete presence menu with a radio pattern', async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperatorPresenceComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(OperatorPresenceComponent);
+    const options: ReadonlyArray<PresenceOption> = [
+      { id: 'online', mode: undefined, label: 'En línea', dot: 'online' },
+      { id: 'away', mode: 'away', label: 'Ausente', dot: 'away' },
+    ];
+    fixture.componentRef.setInput('model', {
+      accountId: 'operator@example.invalid',
+      connectionLabel: 'Conectado',
+      presenceLabel: 'En línea',
+      presenceDot: 'online',
+      presenceOpen: true,
+      presenceOptions: options,
+      presenceOptionId: 'online',
+      presenceStatus: '',
+      settingsOpen: false,
+      preferences: { theme: 'atomic', notifications: true, autoLogin: false },
+    });
+    const selected = vi.fn();
+    const closed = vi.fn();
+    fixture.componentInstance.presenceSelected.subscribe(selected);
+    fixture.componentInstance.presenceClose.subscribe(closed);
+    fixture.detectChanges();
+    const menu = fixture.nativeElement.querySelector('[role="menu"]') as HTMLElement;
+    const buttons = menu.querySelectorAll(
+      '[role="menuitemradio"]',
+    ) as NodeListOf<HTMLButtonElement>;
+    expect(menu).toBeTruthy();
+    expect(buttons[0].getAttribute('aria-checked')).toBe('true');
+    expect(buttons[0].tabIndex).toBe(0);
+    expect(buttons[1].tabIndex).toBe(-1);
+    buttons[0].focus();
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(buttons[1]);
+    buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(selected).toHaveBeenCalledWith(options[1]);
+    expect(closed).toHaveBeenCalledOnce();
+  });
+
   it('renders the certificate decisions and emits the selected policy', async () => {
     await TestBed.configureTestingModule({
       imports: [CertificateDialogComponent],
     }).compileComponents();
+    const previousFocus = document.createElement('button');
+    document.body.append(previousFocus);
+    previousFocus.focus();
     const fixture = TestBed.createComponent(CertificateDialogComponent);
     fixture.componentRef.setInput('request', certificateRequest);
     const decision = vi.fn();
     fixture.componentInstance.decision.subscribe(decision);
     fixture.detectChanges();
+    await Promise.resolve();
     expect(fixture.nativeElement.querySelectorAll('.certificate-actions button')).toHaveLength(3);
     (
       fixture.nativeElement.querySelector(
@@ -289,5 +337,9 @@ describe('extracted Angular presentation components', () => {
       ) as HTMLButtonElement
     ).click();
     expect(decision).toHaveBeenCalledWith('trust_and_remember');
+    fixture.destroy();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(previousFocus);
+    previousFocus.remove();
   });
 });

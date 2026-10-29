@@ -19,6 +19,7 @@
       <app-sidebar
         [model]="sidebarModel()"
         (presenceToggle)="presenceOpen.update((value) => !value)"
+        (presenceClose)="presenceOpen.set(false)"
         (presenceSelected)="choosePresence($event)"
         (presenceStatusChange)="presenceStatus.set($event)"
         (settingsToggle)="settingsOpen.update((value) => !value)"

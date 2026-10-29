@@ -16,6 +16,7 @@ export interface MucNavigationModel {
   selector: 'app-muc-navigation',
   imports: [FormsModule],
   templateUrl: './muc-navigation.component.html',
+  styleUrls: ['./muc-navigation.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MucNavigationComponent {

@@ -14,12 +14,14 @@ export interface SidebarModel {
   selector: 'app-sidebar',
   imports: [ConversationListComponent, MucNavigationComponent, OperatorPresenceComponent],
   templateUrl: './sidebar.component.html',
+  styleUrls: ['./sidebar.component.scss'],
   styles: [':host { display: contents; }'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SidebarComponent {
   readonly model = input.required<SidebarModel>();
   readonly presenceToggle = output<void>();
+  readonly presenceClose = output<void>();
   readonly presenceSelected = output<OperatorPresenceModel['presenceOptions'][number]>();
   readonly presenceStatusChange = output<string>();
   readonly settingsToggle = output<void>();

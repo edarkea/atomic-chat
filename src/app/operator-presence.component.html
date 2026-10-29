@@ -11,24 +11,30 @@
   ><button
     type="button"
     class="presence-trigger"
-    aria-haspopup="listbox"
+    aria-haspopup="menu"
     [attr.aria-expanded]="model().presenceOpen"
     (click)="presenceToggle.emit()"
+    (keydown)="onTriggerKeydown($event)"
   >
     <i class="presence-dot" [class]="'presence-dot ' + model().presenceDot"></i
     ><span>{{ model().presenceLabel }}</span
     ><span class="presence-arrow" aria-hidden="true">⌄</span>
   </button>
   @if (model().presenceOpen) {
-    <div class="presence-menu" role="listbox" aria-label="Estado de presencia">
+    <div
+      class="presence-menu"
+      role="menu"
+      aria-label="Estado de presencia"
+      tabindex="-1"
+      (keydown)="onMenuKeydown($event)"
+    >
       @for (option of model().presenceOptions; track option.id) {
         <button
           type="button"
-          role="option"
-          [attr.aria-selected]="model().presenceOptionId === option.id"
-          (click)="presenceSelected.emit(option)"
-          (keydown.enter)="presenceSelected.emit(option)"
-          (keydown.space)="presenceSelected.emit(option)"
+          role="menuitemradio"
+          [attr.aria-checked]="model().presenceOptionId === option.id"
+          [attr.tabindex]="optionTabIndex(option)"
+          (click)="selectPresence(option)"
         >
           <i class="presence-dot" [class]="'presence-dot ' + option.dot"></i>{{ option.label }}
         </button>

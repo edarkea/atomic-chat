@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
   selector: 'app-message-composer',
   imports: [FormsModule],
   templateUrl: './message-composer.component.html',
-  styles: [':host { display: contents; }'],
+  styleUrls: ['./message-composer.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MessageComposerComponent {

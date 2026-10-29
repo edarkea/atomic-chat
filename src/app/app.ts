@@ -6,7 +6,6 @@ import {
   inject,
   signal,
   ViewChild,
-  ViewEncapsulation,
 } from '@angular/core';
 import { ChatFacade } from './core/chat.facade';
 import { MucFacade } from './core/muc.facade';
@@ -38,8 +37,7 @@ type ConversationSelection =
     SidebarComponent,
   ],
   templateUrl: './app.html',
-  styleUrls: ['./app.scss', './certificate-dialog.scss', './file-transfer.scss'],
-  encapsulation: ViewEncapsulation.None,
+  styleUrls: ['./app.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {

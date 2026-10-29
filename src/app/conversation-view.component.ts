@@ -45,6 +45,7 @@ export interface OlderMessagesRequest {
   selector: 'app-conversation-view',
   imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent],
   templateUrl: './conversation-view.component.html',
+  styleUrls: ['./conversation-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConversationViewComponent {

@@ -14,6 +14,7 @@ export interface ConversationListModel {
   selector: 'app-conversation-list',
   imports: [FormsModule],
   templateUrl: './conversation-list.component.html',
+  styleUrls: ['./conversation-list.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConversationListComponent {

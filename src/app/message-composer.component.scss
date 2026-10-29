@@ -1,0 +1,59 @@
+:host {
+  display: contents;
+}
+.composer {
+  align-items: center;
+  border: 1px solid #388b50;
+  border-radius: var(--atomic-radius-md);
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--atomic-space-2);
+  margin: 0 16px 14px;
+  min-height: 48px;
+  padding: 0 11px;
+}
+.composer:focus-within {
+  border-color: var(--atomic-focus);
+  box-shadow: 0 0 0 3px #8dffa026;
+}
+.composer input {
+  background: transparent;
+  border: 0;
+  color: var(--atomic-text);
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  min-width: 0;
+  outline: 0;
+}
+.composer input::placeholder {
+  color: var(--atomic-text-muted);
+}
+.composer button {
+  background: transparent;
+  border: 0;
+  color: var(--atomic-green);
+  cursor: pointer;
+  font-size: 18px;
+  min-height: 34px;
+  min-width: 34px;
+  padding: 3px;
+}
+.composer button:hover:not(:disabled) {
+  background: var(--atomic-surface-active);
+  border-radius: var(--atomic-radius-sm);
+}
+.composer button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+.composer-icon {
+  font-size: 22px !important;
+}
+.emoji {
+  color: var(--atomic-text-secondary);
+  font-size: 17px;
+}
+.send {
+  transform: rotate(-25deg);
+}

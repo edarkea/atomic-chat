@@ -20,7 +20,7 @@
     [disabled]="disabled()"
   />
   @if (showEmoji()) {
-    <button class="emoji" type="button" aria-label="Emoji">☺</button>
+    <span class="emoji" aria-hidden="true">☺</span>
   }
   <button class="send" type="submit" aria-label="Enviar" [disabled]="disabled() || !draft().trim()">
     ➤
