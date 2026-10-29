@@ -16,6 +16,7 @@ const LEGACY_DELAY_NS = 'jabber:x:delay';
 const MUC_TEXT_LIMIT_BYTES = 4096;
 const MUC_MESSAGE_BUFFER_LIMIT = 200;
 const MUC_ROOM_LIMIT = 5;
+const MAX_PENDING_BINARY_BYTES = 256 * 1024;
 
 function fileTrace(phase, direction, details = {}) {
   if (process.env.ATOMIC_XMPP_FILE_TRACE !== 'true') return;
@@ -440,7 +441,7 @@ class XmppAdapter {
         const reply = async (child) => { if (replied) return; replied = true; try { await deliver(child); resolveResponse(child); } catch (cause) { rejectResponse(cause); throw cause; } };
         const replyError = async (reason) => { if (replied) return; const condition = reason === 'user_rejected' ? 'forbidden' : 'not-acceptable'; fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition, correlation: attempt }); await reply(errorElement(condition)); };
         const record = this.fileTransfers.add({ offer: publicOffer, iqOfferId: offer.iqId, siSessionId: offer.siSid, ownerSenderId: this.fileOwners.get(accountId), iq: stanza, session, onRejected: replyError, onAccepted: async () => { if (replied) throw new Error('SI_ALREADY_REPLIED'); fileTrace('SI_RESULT_TX_ATTEMPT', 'TX', { iqType: 'result', correlation: attempt }); try { await reply(xml('si', { xmlns: SI_NS }, xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS)))))); if (options.send) fileTrace('SI_RESULT_TX_FULFILLED', 'TX', { iqType: 'result', correlation: attempt }); } catch (cause) { if (options.send) fileTrace('SI_RESULT_TX_FAILED', 'TX', { iqType: 'result', errorCode: 'TRANSPORT_FAILED', correlation: attempt }); throw cause; } } });
-        this.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, { record, session, generation, attempt, protocolQueue: Promise.resolve() }); fileTrace('SI_OFFER_REGISTERED', 'RX', { result: 'offered', correlation: attempt }); return response;
+        this.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, { record, session, generation, attempt, protocolQueue: Promise.resolve(), pendingBinaryBytes: 0 }); fileTrace('SI_OFFER_REGISTERED', 'RX', { result: 'offered', correlation: attempt }); return response;
       } catch (cause) { const condition = cause?.code === 'UNSUPPORTED_METHOD' ? 'not-acceptable' : cause?.code === 'RESOURCE_CONSTRAINT' ? 'resource-constraint' : cause?.code === 'BAD_REQUEST' ? 'bad-request' : 'undefined-condition'; fileTrace('SI_PARSE_REJECTED', 'RX', { iqType: 'set', condition, correlation: this.fileTraceAttempts.get(stanza) }); return errorElement(condition); }
     }
     const sid = open?.attrs?.sid || data?.attrs?.sid || close?.attrs?.sid || ''; const pending = this.filePending.get(`${accountId}|${generation}|${stanza.attrs.from}|${sid}`);
@@ -449,7 +450,17 @@ class XmppAdapter {
     if (stanza.attrs.from !== pending.record.offer.senderJid) return errorElement('item-not-found');
     const enqueue = (operation) => { const task = pending.protocolQueue.then(operation); pending.protocolQueue = task.catch(() => undefined); return task; };
     if (open) return enqueue(async () => { const record = pending.record; if (record.state !== 'accepted') throw new Error('NOT_ACCEPTED'); const blockSize = validateOpen(open, record.siSessionId, record.offer.senderJid); pending.sid = open.attrs.sid; pending.blockSize = blockSize; pending.seq = 0; await this.fileTransfers.open(record.offer.transferId); fileTrace('IBB_OPEN_MATCHED', 'RX', { iqType: 'set', blockSize, result: 'accepted', correlation: pending.attempt }); return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'cancelled_by_sender' : 'invalid_protocol').catch(() => undefined); fileTrace('IBB_OPEN_RESULT_TX_FAILED', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
-    if (data) return enqueue(async () => { const expectedSeq = pending.seq; const bytes = validateData(data, pending.sid, pending.record.offer.senderJid, pending.blockSize, expectedSeq); fileTrace('IBB_DATA', 'RX', { iqType: 'set', seq: expectedSeq, bytes: bytes.length, correlation: pending.attempt }); await this.fileTransfers.append(pending.record.offer.transferId, bytes); pending.seq = (expectedSeq + 1) % 65536; return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, 'storage_failed').catch(() => undefined); fileTrace('IBB_DATA', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
+    if (data) {
+      const reservation = pending.blockSize || 0;
+      const overLimit = reservation > 0 && pending.pendingBinaryBytes + reservation > MAX_PENDING_BINARY_BYTES;
+      if (!overLimit) pending.pendingBinaryBytes += reservation;
+      return enqueue(async () => {
+        if (overLimit) { const cause = new Error('RESOURCE_CONSTRAINT'); cause.code = 'RESOURCE_CONSTRAINT'; throw cause; }
+        try {
+          const expectedSeq = pending.seq; const bytes = validateData(data, pending.sid, pending.record.offer.senderJid, pending.blockSize, expectedSeq); fileTrace('IBB_DATA', 'RX', { iqType: 'set', seq: expectedSeq, bytes: bytes.length, correlation: pending.attempt }); await this.fileTransfers.append(pending.record.offer.transferId, bytes); pending.seq = (expectedSeq + 1) % 65536; return {};
+        } finally { pending.pendingBinaryBytes -= reservation; }
+      }).then(deliver).catch(async (cause) => { if (cause?.code !== 'RESOURCE_CONSTRAINT') await this.fileTransfers.fail(pending.record.offer.transferId, 'storage_failed').catch(() => undefined); fileTrace('IBB_DATA', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
+    }
     return enqueue(async () => { if (!pending.sid || pending.record.state !== 'transferring') throw new Error('NOT_ACCEPTED'); fileTrace('IBB_CLOSE', 'RX', { iqType: 'set', correlation: pending.attempt }); await this.fileTransfers.complete(pending.record.offer.transferId); fileTrace('IBB_CLOSE', 'TX', { iqType: 'result', result: 'completed', correlation: pending.attempt }); return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'invalid_protocol' : 'storage_failed').catch(() => undefined); fileTrace('IBB_CLOSE', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
   }
 
