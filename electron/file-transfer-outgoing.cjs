@@ -1,28 +1,17 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {
+  TERMINAL_STATES: TERMINAL,
+  transferError,
+  transferView: buildTransferView,
+} = require('./file-transfer-utils.cjs');
 
 const PROGRESS_INTERVAL_MS = 250;
 const DEFAULT_BLOCK_SIZE = 61440;
 const MAX_BLOCK_SIZE = 65535;
-const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
-
-function transferError(code, message) {
-  const error = new Error(message);
-  error.code = code;
-  return error;
-}
-
 function transferView(record) {
-  return {
-    offer: record.offer,
-    direction: 'outgoing',
-    state: record.state,
-    bytesTransferred: record.bytes.toString(),
-    ...(record.endReason ? { endReason: record.endReason } : {}),
-    ...(record.errorCode ? { errorCode: record.errorCode } : {}),
-    updatedAt: record.updatedAt,
-  };
+  return buildTransferView(record, 'outgoing');
 }
 
 class OutgoingFileTransferCoordinator {
@@ -30,21 +19,31 @@ class OutgoingFileTransferCoordinator {
     this.records = new Map();
     this.listeners = new Set();
     this.resourceLimiter = options.resourceLimiter;
-    this.scheduleTimeout = options.scheduleTimeout || ((callback, milliseconds) => setTimeout(callback, milliseconds));
+    this.scheduleTimeout =
+      options.scheduleTimeout || ((callback, milliseconds) => setTimeout(callback, milliseconds));
     this.cancelTimeout = options.cancelTimeout || ((timer) => clearTimeout(timer));
     this.scheduleProgressTimeout = options.scheduleProgressTimeout || this.scheduleTimeout;
     this.cancelProgressTimeout = options.cancelProgressTimeout || this.cancelTimeout;
     this.now = options.now || (() => Date.now());
     this.blockSize = Math.max(1, Math.min(options.blockSize ?? DEFAULT_BLOCK_SIZE, MAX_BLOCK_SIZE));
-    this.initialSequence = ((options.initialSequence ?? 0) % 65536 + 65536) % 65536;
+    this.initialSequence = (((options.initialSequence ?? 0) % 65536) + 65536) % 65536;
     this.siTimeout = options.siTimeout ?? 30000;
     this.iqTimeout = options.iqTimeout ?? 30000;
   }
 
-  onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  onEvent(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 
   emit(record) {
-    this.listeners.forEach((listener) => listener({ type: 'file.stateChanged', payload: transferView(record), targetSenderId: record.ownerSenderId }));
+    this.listeners.forEach((listener) =>
+      listener({
+        type: 'file.stateChanged',
+        payload: transferView(record),
+        targetSenderId: record.ownerSenderId,
+      }),
+    );
   }
 
   get(id) {
@@ -54,18 +53,26 @@ class OutgoingFileTransferCoordinator {
   }
 
   list(accountId) {
-    return [...this.records.values()].filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state)).map(transferView);
+    return [...this.records.values()]
+      .filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state))
+      .map(transferView);
   }
 
   async inspectSource(filePath) {
-    if (typeof filePath !== 'string' || !filePath.trim()) throw transferError('INVALID_INPUT', 'file path is unavailable');
+    if (typeof filePath !== 'string' || !filePath.trim())
+      throw transferError('INVALID_INPUT', 'file path is unavailable');
     const sourcePath = path.resolve(filePath);
     let handle;
-    try { handle = await fsp.open(sourcePath, 'r'); } catch { throw transferError('STORAGE_FAILED', 'cannot open source file'); }
+    try {
+      handle = await fsp.open(sourcePath, 'r');
+    } catch {
+      throw transferError('STORAGE_FAILED', 'cannot open source file');
+    }
     try {
       const stats = await handle.stat({ bigint: true });
       if (!stats.isFile()) throw transferError('INVALID_INPUT', 'source is not a regular file');
-      if (stats.size > BigInt(Number.MAX_SAFE_INTEGER)) throw transferError('INVALID_INPUT', 'source file is too large');
+      if (stats.size > BigInt(Number.MAX_SAFE_INTEGER))
+        throw transferError('INVALID_INPUT', 'source file is too large');
       return { sourcePath, handle, stats };
     } catch (cause) {
       await handle.close().catch(() => undefined);
@@ -115,12 +122,20 @@ class OutgoingFileTransferCoordinator {
 
   async run(record) {
     try {
-      await this.withTimeout(() => record.transport.sendOffer(record), this.siTimeout, 'SI acceptance timed out');
+      await this.withTimeout(
+        () => record.transport.sendOffer(record),
+        this.siTimeout,
+        'SI acceptance timed out',
+      );
       if (record.terminalRequested) return transferView(record);
       record.state = 'accepted';
       record.updatedAt = new Date().toISOString();
       this.emit(record);
-      await this.withTimeout(() => record.transport.sendOpen(record, this.blockSize), this.iqTimeout, 'IBB open timed out');
+      await this.withTimeout(
+        () => record.transport.sendOpen(record, this.blockSize),
+        this.iqTimeout,
+        'IBB open timed out',
+      );
       if (record.terminalRequested) return transferView(record);
       record.state = 'transferring';
       record.updatedAt = new Date().toISOString();
@@ -132,10 +147,19 @@ class OutgoingFileTransferCoordinator {
         const remaining = BigInt(record.offer.sizeBytes) - record.bytes;
         const requested = Math.min(this.blockSize, Number(remaining));
         let read;
-        try { read = await record.handle.read(buffer, 0, requested, Number(record.bytes)); } catch { throw transferError('STORAGE_FAILED', 'source read failed'); }
-        if (!read || read.bytesRead !== requested) throw transferError('STORAGE_FAILED', 'source changed while reading');
+        try {
+          read = await record.handle.read(buffer, 0, requested, Number(record.bytes));
+        } catch {
+          throw transferError('STORAGE_FAILED', 'source read failed');
+        }
+        if (!read || read.bytesRead !== requested)
+          throw transferError('STORAGE_FAILED', 'source changed while reading');
         const block = buffer.subarray(0, read.bytesRead);
-        await this.withTimeout(() => record.transport.sendData(record, block, sequence), this.iqTimeout, 'IBB data acknowledgement timed out');
+        await this.withTimeout(
+          () => record.transport.sendData(record, block, sequence),
+          this.iqTimeout,
+          'IBB data acknowledgement timed out',
+        );
         if (record.terminalRequested) return transferView(record);
         record.bytes += BigInt(read.bytesRead);
         record.updatedAt = new Date().toISOString();
@@ -143,8 +167,18 @@ class OutgoingFileTransferCoordinator {
         sequence = (sequence + 1) % 65536;
       }
       const finalStats = await record.handle.stat({ bigint: true });
-      if (finalStats.size !== record.sourceStats.size || finalStats.mtimeNs !== record.sourceStats.mtimeNs || finalStats.dev !== record.sourceStats.dev || finalStats.ino !== record.sourceStats.ino) throw transferError('INTEGRITY_FAILED', 'source changed while sending');
-      await this.withTimeout(() => record.transport.sendClose(record), this.iqTimeout, 'IBB close acknowledgement timed out');
+      if (
+        finalStats.size !== record.sourceStats.size ||
+        finalStats.mtimeNs !== record.sourceStats.mtimeNs ||
+        finalStats.dev !== record.sourceStats.dev ||
+        finalStats.ino !== record.sourceStats.ino
+      )
+        throw transferError('INTEGRITY_FAILED', 'source changed while sending');
+      await this.withTimeout(
+        () => record.transport.sendClose(record),
+        this.iqTimeout,
+        'IBB close acknowledgement timed out',
+      );
       if (record.terminalRequested) return transferView(record);
       record.state = 'completed';
       record.terminalRequested = true;
@@ -165,7 +199,8 @@ class OutgoingFileTransferCoordinator {
     if (cause?.code === 'INTEGRITY_FAILED') return 'integrity_failed';
     if (cause?.code === 'STORAGE_FAILED') return 'storage_failed';
     if (cause?.code === 'UNSUPPORTED_METHOD') return 'unsupported_method';
-    if (cause?.code === 'NOT_CONNECTED' || cause?.code === 'RECIPIENT_UNAVAILABLE') return 'network_lost';
+    if (cause?.code === 'NOT_CONNECTED' || cause?.code === 'RECIPIENT_UNAVAILABLE')
+      return 'network_lost';
     if (cause?.code === 'REMOTE_REJECTED') return 'cancelled_by_sender';
     return 'network_lost';
   }
@@ -176,7 +211,11 @@ class OutgoingFileTransferCoordinator {
     record.terminalRequested = true;
     record.state = reason === 'cancelled_by_sender' ? 'cancelled' : 'failed';
     record.endReason = reason;
-    if (record.state === 'failed') record.errorCode = reason === 'storage_failed' || reason === 'integrity_failed' ? 'STORAGE_FAILED' : 'TRANSPORT_FAILED';
+    if (record.state === 'failed')
+      record.errorCode =
+        reason === 'storage_failed' || reason === 'integrity_failed'
+          ? 'STORAGE_FAILED'
+          : 'TRANSPORT_FAILED';
     record.failureMessage = cause?.message;
     record.updatedAt = new Date().toISOString();
     this.emit(record);
@@ -190,13 +229,20 @@ class OutgoingFileTransferCoordinator {
   }
 
   async cancelAccount(accountId) {
-    await Promise.all([...this.records.values()].filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state)).map((record) => this.cancel(record.offer.transferId)));
+    await Promise.all(
+      [...this.records.values()]
+        .filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state))
+        .map((record) => this.cancel(record.offer.transferId)),
+    );
   }
 
   requestProgress(record) {
     record.progressPending = true;
     if (record.progressTimer !== undefined) return;
-    const elapsed = record.progressLastEmittedAt === undefined ? 0 : Math.max(0, this.now() - record.progressLastEmittedAt);
+    const elapsed =
+      record.progressLastEmittedAt === undefined
+        ? 0
+        : Math.max(0, this.now() - record.progressLastEmittedAt);
     const delay = Math.max(0, PROGRESS_INTERVAL_MS - elapsed);
     const token = Symbol('progress');
     record.progressTimerToken = token;
@@ -204,7 +250,10 @@ class OutgoingFileTransferCoordinator {
       if (record.progressTimerToken !== token) return;
       record.progressTimer = undefined;
       record.progressTimerToken = undefined;
-      if (!record.progressPending || record.terminalRequested) { record.progressPending = false; return; }
+      if (!record.progressPending || record.terminalRequested) {
+        record.progressPending = false;
+        return;
+      }
       record.progressPending = false;
       record.progressLastEmittedAt = this.now();
       this.emit(record);
@@ -221,7 +270,11 @@ class OutgoingFileTransferCoordinator {
 
   async cleanup(record) {
     this.clearProgressTimer(record);
-    try { await record.handle?.close(); } catch { /* descriptor cleanup is best effort */ }
+    try {
+      await record.handle?.close();
+    } catch {
+      /* descriptor cleanup is best effort */
+    }
     record.handle = undefined;
     record.cleanupReady = true;
     this.records.delete(record.offer.transferId);
@@ -235,9 +288,28 @@ class OutgoingFileTransferCoordinator {
   withTimeout(operation, milliseconds, message) {
     return new Promise((resolve, reject) => {
       let settled = false;
-      const timer = this.scheduleTimeout(() => { if (settled) return; settled = true; reject(transferError('TIMEOUT', message)); }, milliseconds);
+      const timer = this.scheduleTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(transferError('TIMEOUT', message));
+      }, milliseconds);
       timer?.unref?.();
-      Promise.resolve().then(operation).then((value) => { if (settled) return; settled = true; this.cancelTimeout(timer); resolve(value); }, (cause) => { if (settled) return; settled = true; this.cancelTimeout(timer); reject(cause); });
+      Promise.resolve()
+        .then(operation)
+        .then(
+          (value) => {
+            if (settled) return;
+            settled = true;
+            this.cancelTimeout(timer);
+            resolve(value);
+          },
+          (cause) => {
+            if (settled) return;
+            settled = true;
+            this.cancelTimeout(timer);
+            reject(cause);
+          },
+        );
     });
   }
 }

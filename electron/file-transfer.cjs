@@ -2,29 +2,19 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {
+  TERMINAL_STATES: TERMINAL,
+  transferError,
+  transferView: buildTransferView,
+} = require('./file-transfer-utils.cjs');
+const error = transferError;
 
 const ACTIVE_PER_ACCOUNT = 2;
 const ACTIVE_GLOBAL = 4;
 const OFFER_LIMIT = 8;
 const PROGRESS_INTERVAL_MS = 250;
-const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
-
-function error(code, message) {
-  const result = new Error(message);
-  result.code = code;
-  return result;
-}
-
 function transferView(record) {
-  return {
-    offer: record.offer,
-    direction: 'incoming',
-    state: record.state,
-    bytesTransferred: record.bytes.toString(),
-    ...(record.endReason ? { endReason: record.endReason } : {}),
-    ...(record.errorCode ? { errorCode: record.errorCode } : {}),
-    updatedAt: record.updatedAt,
-  };
+  return buildTransferView(record, 'incoming');
 }
 
 class FileTransferCoordinator {
@@ -36,9 +26,12 @@ class FileTransferCoordinator {
     this.listeners = new Set();
     this.selectDestination = options.selectDestination || (async () => null);
     this.beforePublish = options.beforePublish;
-    this.publish = options.publish || ((temporary, destination) => fsp.link(temporary, destination));
-    this.removeTemporary = options.removeTemporary || ((record) => this.removeTemporaryFiles(record));
-    this.scheduleTimeout = options.scheduleTimeout || ((callback, milliseconds) => setTimeout(callback, milliseconds));
+    this.publish =
+      options.publish || ((temporary, destination) => fsp.link(temporary, destination));
+    this.removeTemporary =
+      options.removeTemporary || ((record) => this.removeTemporaryFiles(record));
+    this.scheduleTimeout =
+      options.scheduleTimeout || ((callback, milliseconds) => setTimeout(callback, milliseconds));
     this.cancelTimeout = options.cancelTimeout || ((timer) => clearTimeout(timer));
     this.now = options.now || (() => Date.now());
     this.cleanupRetryLimit = options.cleanupRetryLimit ?? 3;
@@ -55,21 +48,33 @@ class FileTransferCoordinator {
 
   emit(record, type = 'file.stateChanged') {
     const payload = type === 'file.offerReceived' ? record.offer : transferView(record);
-    this.listeners.forEach((listener) => listener({ type, payload, targetSenderId: record.ownerSenderId }));
+    this.listeners.forEach((listener) =>
+      listener({ type, payload, targetSenderId: record.ownerSenderId }),
+    );
   }
 
   counts(accountId) {
     const values = [...this.records.values()];
     return {
-      account: values.filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state) && (record.state !== 'offered' || record.accepting)).length,
-      global: values.filter((record) => !TERMINAL.has(record.state) && (record.state !== 'offered' || record.accepting)).length,
-      offers: values.filter((record) => record.offer.accountId === accountId && record.state === 'offered').length,
+      account: values.filter(
+        (record) =>
+          record.offer.accountId === accountId &&
+          !TERMINAL.has(record.state) &&
+          (record.state !== 'offered' || record.accepting),
+      ).length,
+      global: values.filter(
+        (record) => !TERMINAL.has(record.state) && (record.state !== 'offered' || record.accepting),
+      ).length,
+      offers: values.filter(
+        (record) => record.offer.accountId === accountId && record.state === 'offered',
+      ).length,
     };
   }
 
   add(input) {
     const counts = this.counts(input.offer.accountId);
-    if (counts.offers >= OFFER_LIMIT) throw error('RESOURCE_CONSTRAINT', 'pending offer capacity exceeded');
+    if (counts.offers >= OFFER_LIMIT)
+      throw error('RESOURCE_CONSTRAINT', 'pending offer capacity exceeded');
     const record = {
       ...input,
       state: 'offered',
@@ -92,7 +97,11 @@ class FileTransferCoordinator {
 
   enqueue(id, operation) {
     let record;
-    try { record = this.get(id); } catch (cause) { return Promise.reject(cause); }
+    try {
+      record = this.get(id);
+    } catch (cause) {
+      return Promise.reject(cause);
+    }
     const task = record.queue.then(() => operation(record));
     record.queue = task.catch(() => undefined);
     return task;
@@ -105,7 +114,9 @@ class FileTransferCoordinator {
   }
 
   list(accountId) {
-    return [...this.records.values()].filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state)).map(transferView);
+    return [...this.records.values()]
+      .filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state))
+      .map(transferView);
   }
 
   async ensureTemporaryRoot(destinationDirectory) {
@@ -113,7 +124,8 @@ class FileTransferCoordinator {
     try {
       await fsp.mkdir(temporaryRoot, { mode: 0o700 });
     } catch (cause) {
-      if (cause.code !== 'EEXIST') throw error('STORAGE_FAILED', 'cannot prepare private transfer directory');
+      if (cause.code !== 'EEXIST')
+        throw error('STORAGE_FAILED', 'cannot prepare private transfer directory');
     }
     let information;
     try {
@@ -121,8 +133,10 @@ class FileTransferCoordinator {
     } catch {
       throw error('STORAGE_FAILED', 'cannot inspect private transfer directory');
     }
-    if (!information.isDirectory() || information.isSymbolicLink()) throw error('STORAGE_FAILED', 'private transfer directory is not trusted');
-    if (process.platform !== 'win32' && (information.mode & 0o077) !== 0) throw error('STORAGE_FAILED', 'private transfer directory permissions are too broad');
+    if (!information.isDirectory() || information.isSymbolicLink())
+      throw error('STORAGE_FAILED', 'private transfer directory is not trusted');
+    if (process.platform !== 'win32' && (information.mode & 0o077) !== 0)
+      throw error('STORAGE_FAILED', 'private transfer directory permissions are too broad');
     return temporaryRoot;
   }
 
@@ -143,7 +157,8 @@ class FileTransferCoordinator {
       if (cause.code === 'ENOENT') return;
       throw error('STORAGE_FAILED', 'cannot inspect transfer cleanup directory');
     }
-    if (!rootInformation.isDirectory() || rootInformation.isSymbolicLink()) throw error('STORAGE_FAILED', 'private transfer directory is not trusted');
+    if (!rootInformation.isDirectory() || rootInformation.isSymbolicLink())
+      throw error('STORAGE_FAILED', 'private transfer directory is not trusted');
     let entries;
     try {
       entries = await fsp.readdir(temporaryRoot, { withFileTypes: true });
@@ -151,28 +166,53 @@ class FileTransferCoordinator {
       if (cause.code === 'ENOENT') return;
       throw error('STORAGE_FAILED', 'cannot inspect transfer cleanup directory');
     }
-    const active = new Set([...this.ownedTemporaries, ...this.records.values()].map((record) => typeof record === 'string' ? record : record.temporary).filter(Boolean));
-    await Promise.all(entries.filter((entry) => entry.name.endsWith('.part') && entry.name.startsWith('atomic-')).map(async (entry) => {
-      const candidate = path.join(temporaryRoot, entry.name);
-      if (active.has(candidate)) return;
-      const marker = `${candidate}.owner`;
-      try {
-        const [partInformation, markerInformation, metadata] = await Promise.all([
-          fsp.lstat(candidate),
-          fsp.lstat(marker),
-          fsp.readFile(marker, 'utf8'),
-        ]);
-        if (!partInformation.isFile() || partInformation.isSymbolicLink() || !markerInformation.isFile() || markerInformation.isSymbolicLink()) return;
-        const owner = JSON.parse(metadata);
-        if (owner.file !== entry.name || !Number.isInteger(owner.pid) || await this.processExists(owner.pid)) return;
-        const latestRootInformation = await fsp.lstat(temporaryRoot);
-        if (!latestRootInformation.isDirectory() || latestRootInformation.isSymbolicLink() || latestRootInformation.dev !== rootInformation.dev || latestRootInformation.ino !== rootInformation.ino) return;
-        await fsp.rm(candidate, { force: true });
-        await fsp.rm(marker, { force: true });
-      } catch {
-        // Unknown, malformed, active, or racing files are preserved fail-closed.
-      }
-    }));
+    const active = new Set(
+      [...this.ownedTemporaries, ...this.records.values()]
+        .map((record) => (typeof record === 'string' ? record : record.temporary))
+        .filter(Boolean),
+    );
+    await Promise.all(
+      entries
+        .filter((entry) => entry.name.endsWith('.part') && entry.name.startsWith('atomic-'))
+        .map(async (entry) => {
+          const candidate = path.join(temporaryRoot, entry.name);
+          if (active.has(candidate)) return;
+          const marker = `${candidate}.owner`;
+          try {
+            const [partInformation, markerInformation, metadata] = await Promise.all([
+              fsp.lstat(candidate),
+              fsp.lstat(marker),
+              fsp.readFile(marker, 'utf8'),
+            ]);
+            if (
+              !partInformation.isFile() ||
+              partInformation.isSymbolicLink() ||
+              !markerInformation.isFile() ||
+              markerInformation.isSymbolicLink()
+            )
+              return;
+            const owner = JSON.parse(metadata);
+            if (
+              owner.file !== entry.name ||
+              !Number.isInteger(owner.pid) ||
+              (await this.processExists(owner.pid))
+            )
+              return;
+            const latestRootInformation = await fsp.lstat(temporaryRoot);
+            if (
+              !latestRootInformation.isDirectory() ||
+              latestRootInformation.isSymbolicLink() ||
+              latestRootInformation.dev !== rootInformation.dev ||
+              latestRootInformation.ino !== rootInformation.ino
+            )
+              return;
+            await fsp.rm(candidate, { force: true });
+            await fsp.rm(marker, { force: true });
+          } catch {
+            // Unknown, malformed, active, or racing files are preserved fail-closed.
+          }
+        }),
+    );
   }
 
   markTerminal(record, state, reason) {
@@ -182,7 +222,8 @@ class FileTransferCoordinator {
     record.terminalRequested = true;
     record.state = state;
     record.endReason = reason;
-    if (state === 'failed') record.errorCode = reason === 'storage_failed' ? 'STORAGE_FAILED' : 'TRANSPORT_FAILED';
+    if (state === 'failed')
+      record.errorCode = reason === 'storage_failed' ? 'STORAGE_FAILED' : 'TRANSPORT_FAILED';
     record.updatedAt = new Date().toISOString();
     this.emit(record);
     return true;
@@ -210,11 +251,19 @@ class FileTransferCoordinator {
 
   async accept(id, ownerSenderId) {
     const record = this.get(id);
-    if (record.ownerSenderId !== ownerSenderId || record.state !== 'offered' || record.accepting || record.terminalRequested) throw error('CONFLICT', 'transfer is not available');
-    if (this.resourceLimiter) this.resourceLimiter.reserve(record.offer.transferId, record.offer.accountId, 'incoming');
+    if (
+      record.ownerSenderId !== ownerSenderId ||
+      record.state !== 'offered' ||
+      record.accepting ||
+      record.terminalRequested
+    )
+      throw error('CONFLICT', 'transfer is not available');
+    if (this.resourceLimiter)
+      this.resourceLimiter.reserve(record.offer.transferId, record.offer.accountId, 'incoming');
     else {
       const counts = this.counts(record.offer.accountId);
-      if (counts.account >= ACTIVE_PER_ACCOUNT || counts.global >= ACTIVE_GLOBAL) throw error('RESOURCE_CONSTRAINT', 'active transfer capacity exceeded');
+      if (counts.account >= ACTIVE_PER_ACCOUNT || counts.global >= ACTIVE_GLOBAL)
+        throw error('RESOURCE_CONSTRAINT', 'active transfer capacity exceeded');
     }
     record.accepting = true;
     try {
@@ -226,7 +275,10 @@ class FileTransferCoordinator {
       const temporaryRoot = await this.ensureTemporaryRoot(destinationDirectory);
       await this.cleanupAbandoned(temporaryRoot);
       if (record.terminalRequested || record.state !== 'offered') return transferView(record);
-      const temporary = path.join(temporaryRoot, `atomic-${process.pid}-${this.instanceId}-${crypto.randomUUID()}.part`);
+      const temporary = path.join(
+        temporaryRoot,
+        `atomic-${process.pid}-${this.instanceId}-${crypto.randomUUID()}.part`,
+      );
       const handle = await fsp.open(temporary, 'wx', 0o600);
       if (record.terminalRequested || record.state !== 'offered') {
         await handle.close().catch(() => undefined);
@@ -235,7 +287,15 @@ class FileTransferCoordinator {
       }
       const ownerMarker = `${temporary}.owner`;
       try {
-        await fsp.writeFile(ownerMarker, JSON.stringify({ file: path.basename(temporary), pid: process.pid, instanceId: this.instanceId }), { flag: 'wx', mode: 0o600 });
+        await fsp.writeFile(
+          ownerMarker,
+          JSON.stringify({
+            file: path.basename(temporary),
+            pid: process.pid,
+            instanceId: this.instanceId,
+          }),
+          { flag: 'wx', mode: 0o600 },
+        );
       } catch (cause) {
         await handle.close().catch(() => undefined);
         await fsp.rm(temporary, { force: true }).catch(() => undefined);
@@ -258,7 +318,12 @@ class FileTransferCoordinator {
       }
       return transferView(record);
     } catch (cause) {
-      if (!TERMINAL.has(record.state) && !record.terminalRequested && !['CONFLICT', 'RESOURCE_CONSTRAINT'].includes(cause?.code)) await this.fail(id, 'storage_failed').catch(() => undefined);
+      if (
+        !TERMINAL.has(record.state) &&
+        !record.terminalRequested &&
+        !['CONFLICT', 'RESOURCE_CONSTRAINT'].includes(cause?.code)
+      )
+        await this.fail(id, 'storage_failed').catch(() => undefined);
       throw cause;
     } finally {
       record.accepting = false;
@@ -271,8 +336,11 @@ class FileTransferCoordinator {
     const onRejected = record.onRejected;
     if (onRejected) record.terminalResponsePending += 1;
     const result = await this.terminate(id, 'cancelled', reason);
-    try { await onRejected?.(reason); } catch { /* terminal state and cleanup are already committed */ }
-    finally {
+    try {
+      await onRejected?.(reason);
+    } catch {
+      /* terminal state and cleanup are already committed */
+    } finally {
       if (onRejected) record.terminalResponsePending -= 1;
       this.releaseTerminalRecord(record);
     }
@@ -290,7 +358,11 @@ class FileTransferCoordinator {
   }
 
   async cleanup(record) {
-    try { await record.handle?.close(); } catch { /* cleanup remains best effort */ }
+    try {
+      await record.handle?.close();
+    } catch {
+      /* cleanup remains best effort */
+    }
     record.handle = undefined;
     await this.requestTemporaryCleanup(record);
   }
@@ -299,7 +371,11 @@ class FileTransferCoordinator {
     const failures = [];
     for (const candidate of [record.temporary, record.ownerMarker]) {
       if (!candidate) continue;
-      try { await fsp.rm(candidate, { force: true }); } catch (cause) { failures.push(cause); }
+      try {
+        await fsp.rm(candidate, { force: true });
+      } catch (cause) {
+        failures.push(cause);
+      }
     }
     if (failures.length) throw failures[0];
   }
@@ -344,7 +420,10 @@ class FileTransferCoordinator {
   requestProgress(record) {
     record.progressPending = true;
     if (record.progressTimer !== undefined) return;
-    const elapsed = record.progressLastEmittedAt === undefined ? 0 : Math.max(0, this.now() - record.progressLastEmittedAt);
+    const elapsed =
+      record.progressLastEmittedAt === undefined
+        ? 0
+        : Math.max(0, this.now() - record.progressLastEmittedAt);
     const delay = Math.max(0, PROGRESS_INTERVAL_MS - elapsed);
     const token = Symbol('progress');
     record.progressTimerToken = token;
@@ -372,41 +451,59 @@ class FileTransferCoordinator {
       record.timer = undefined;
       record.timerPhase = undefined;
       record.timerToken = undefined;
-      void (terminalState === 'cancelled' ? this.reject(record.offer.transferId, reason) : this.fail(record.offer.transferId, reason)).catch(() => undefined);
+      void (
+        terminalState === 'cancelled'
+          ? this.reject(record.offer.transferId, reason)
+          : this.fail(record.offer.transferId, reason)
+      ).catch(() => undefined);
     }, milliseconds);
     record.timerToken = token;
     record.timer?.unref?.();
   }
 
   async cancelAccount(accountId) {
-    await Promise.all([...this.records.values()].filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state)).map((record) => this.reject(record.offer.transferId, 'network_lost')));
+    await Promise.all(
+      [...this.records.values()]
+        .filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state))
+        .map((record) => this.reject(record.offer.transferId, 'network_lost')),
+    );
   }
 
   append(id, bytes) {
     return this.enqueue(id, async (record) => {
       try {
-        if (record.terminalRequested || TERMINAL.has(record.state)) throw error('CONFLICT', 'transfer is terminal');
-        if (!record.handle || !['accepted', 'transferring'].includes(record.state)) throw error('CONFLICT', 'transfer is not writable');
+        if (record.terminalRequested || TERMINAL.has(record.state))
+          throw error('CONFLICT', 'transfer is terminal');
+        if (!record.handle || !['accepted', 'transferring'].includes(record.state))
+          throw error('CONFLICT', 'transfer is not writable');
         const next = record.bytes + BigInt(bytes.length);
-        if (next > BigInt(record.offer.sizeBytes)) throw error('INVALID_INPUT', 'received bytes exceed offer');
+        if (next > BigInt(record.offer.sizeBytes))
+          throw error('INVALID_INPUT', 'received bytes exceed offer');
         let offset = 0;
         while (offset < bytes.length) {
           if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
           const result = await record.handle.write(bytes, offset, bytes.length - offset);
           if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
-          if (!result || result.bytesWritten <= 0 || result.bytesWritten > bytes.length - offset) throw error('STORAGE_FAILED', 'incomplete file write');
+          if (!result || result.bytesWritten <= 0 || result.bytesWritten > bytes.length - offset)
+            throw error('STORAGE_FAILED', 'incomplete file write');
           offset += result.bytesWritten;
         }
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
         record.bytes = next;
         record.state = 'transferring';
         this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
-        if (next < BigInt(record.offer.sizeBytes)) this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
+        if (next < BigInt(record.offer.sizeBytes))
+          this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
         record.updatedAt = new Date().toISOString();
         this.requestProgress(record);
         return transferView(record);
       } catch (cause) {
-        if (!record.terminalRequested && !TERMINAL.has(record.state) && cause?.code === 'STORAGE_FAILED') await this.failCurrent(record, 'storage_failed');
+        if (
+          !record.terminalRequested &&
+          !TERMINAL.has(record.state) &&
+          cause?.code === 'STORAGE_FAILED'
+        )
+          await this.failCurrent(record, 'storage_failed');
         throw cause;
       }
     });
@@ -422,8 +519,14 @@ class FileTransferCoordinator {
   complete(id) {
     return this.enqueue(id, async (record) => {
       try {
-        if (record.terminalRequested || TERMINAL.has(record.state) || record.state !== 'transferring') throw error('CONFLICT', 'transfer is not ready to close');
-        if (!record.handle || record.bytes !== BigInt(record.offer.sizeBytes)) throw error('INVALID_INPUT', 'size mismatch');
+        if (
+          record.terminalRequested ||
+          TERMINAL.has(record.state) ||
+          record.state !== 'transferring'
+        )
+          throw error('CONFLICT', 'transfer is not ready to close');
+        if (!record.handle || record.bytes !== BigInt(record.offer.sizeBytes))
+          throw error('INVALID_INPUT', 'size mismatch');
         this.clearTimer(record);
         await record.handle.sync();
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
@@ -447,7 +550,11 @@ class FileTransferCoordinator {
         return result;
       } catch (cause) {
         if (record.publicationState === 'publishing') record.publicationState = undefined;
-        if (!record.publicationState && !record.terminalRequested && !TERMINAL.has(record.state)) await this.failCurrent(record, cause?.code === 'INVALID_INPUT' ? 'integrity_failed' : 'storage_failed');
+        if (!record.publicationState && !record.terminalRequested && !TERMINAL.has(record.state))
+          await this.failCurrent(
+            record,
+            cause?.code === 'INVALID_INPUT' ? 'integrity_failed' : 'storage_failed',
+          );
         throw cause;
       }
     });
@@ -455,10 +562,12 @@ class FileTransferCoordinator {
 
   open(id) {
     return this.enqueue(id, async (record) => {
-      if (record.terminalRequested || record.state !== 'accepted') throw error('CONFLICT', 'transfer is not accepted');
+      if (record.terminalRequested || record.state !== 'accepted')
+        throw error('CONFLICT', 'transfer is not accepted');
       record.state = 'transferring';
       this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
-      if (record.bytes === BigInt(record.offer.sizeBytes)) this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
+      if (record.bytes === BigInt(record.offer.sizeBytes))
+        this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
       record.updatedAt = new Date().toISOString();
       this.emit(record);
       return transferView(record);
@@ -466,8 +575,16 @@ class FileTransferCoordinator {
   }
 
   releaseTerminalRecord(record) {
-    if (!record || !record.offer || !TERMINAL.has(record.state) || !record.cleanupReady || record.terminalResponsePending > 0) return;
-    if (this.records.get(record.offer.transferId) === record) this.records.delete(record.offer.transferId);
+    if (
+      !record ||
+      !record.offer ||
+      !TERMINAL.has(record.state) ||
+      !record.cleanupReady ||
+      record.terminalResponsePending > 0
+    )
+      return;
+    if (this.records.get(record.offer.transferId) === record)
+      this.records.delete(record.offer.transferId);
     this.clearTimer(record);
     this.clearProgressTimer(record);
     record.handle = undefined;
