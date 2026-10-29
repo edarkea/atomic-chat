@@ -1,0 +1,37 @@
+<main class="login-window">
+  <div class="login-brand">
+    <span class="brand-mark">⌁</span><strong>ATOMIC CHAT</strong><span class="concept">P0</span>
+  </div>
+  <div class="login-symbol">◉</div>
+  <p class="eyebrow">CONEXIÓN XMPP</p>
+  <h1>Iniciar sesión</h1>
+  <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
+  <form class="login-form" (ngSubmit)="submitted.emit()">
+    <label
+      >Usuario XMPP<input
+        name="account"
+        [ngModel]="accountId()"
+        (ngModelChange)="accountIdChange.emit($event)"
+        autocomplete="username"
+        placeholder="usuario"
+    /></label>
+    <label
+      >Contraseña<input
+        name="password"
+        type="password"
+        [ngModel]="password()"
+        (ngModelChange)="passwordChange.emit($event)"
+        autocomplete="current-password"
+        placeholder="••••••••"
+    /></label>
+    @if (error()) {
+      <p class="login-error" role="alert">{{ error() }}</p>
+    }
+    <button class="primary login-button" type="submit" [disabled]="!accountId() || !password()">
+      Entrar
+    </button>
+  </form>
+  <small class="login-footnote"
+    >Servidor XMPP configurado · conexión protegida por la política del entorno</small
+  >
+</main>

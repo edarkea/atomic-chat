@@ -1,0 +1,79 @@
+<header class="chat-header">
+  <span class="avatar header-avatar muc-avatar" aria-hidden="true">⌂</span>
+  <div>
+    <strong>{{ roomState().room.room }}</strong
+    ><small>Sala MUC · {{ roomState().participants.length }} participantes</small>
+  </div>
+  <button class="more" type="button" aria-label="Opciones de sala">•••</button>
+</header>
+<section class="muc-room-view" aria-label="Sala MUC">
+  <div class="muc-room-meta">
+    <div>
+      <strong>{{ roomState().room.room }}</strong
+      ><small>{{ roomState().participants.length }} participantes · estado joined</small>
+    </div>
+    <button type="button" (click)="leave.emit()">Salir</button>
+  </div>
+  <div class="muc-notices" aria-live="polite">
+    @for (notice of notices(); track notice.code) {
+      <p>
+        {{
+          notice.code === 'IDENTITY_VISIBLE'
+            ? 'La identidad real puede ser visible en esta sala.'
+            : notice.code === 'PUBLIC_LOGGING'
+              ? 'Esta sala informa que registra conversaciones públicamente.'
+              : 'El servidor asignó el nickname ' + notice.nickname + '.'
+        }}
+      </p>
+    }
+  </div>
+  <div class="muc-participants">
+    @for (participant of participants(); track participant.occupantJid) {
+      <span [title]="participant.role + ' / ' + participant.affiliation"
+        ><i class="presence-dot"></i>{{ participant.nick }}</span
+      >
+    }
+    @if (allParticipantCount() > 100) {
+      <button
+        type="button"
+        (click)="previousParticipantPage.emit()"
+        [disabled]="!participantPage()"
+      >
+        Anterior</button
+      ><button
+        type="button"
+        (click)="nextParticipantPage.emit()"
+        [disabled]="!hasMoreParticipants()"
+      >
+        Siguiente
+      </button>
+    }
+  </div>
+  <div class="muc-messages" aria-live="polite">
+    @for (message of messages(); track message.id) {
+      <article
+        class="message"
+        [class.outgoing]="isOutgoing(message)"
+        [class.incoming]="!isOutgoing(message)"
+      >
+        <p class="message-sender">{{ senderLabel(message) }}</p>
+        <p>{{ message.body.text }}</p>
+        <small>{{ message.source === 'live' ? 'recibido' : 'histórico' }}</small>
+      </article>
+    }
+    @if (!messages().length) {
+      <p class="reference-message incoming">No hay mensajes todavía.</p>
+    }
+  </div>
+  <form class="composer" (ngSubmit)="send.emit()">
+    <input
+      name="muc-message"
+      [ngModel]="draft()"
+      (ngModelChange)="draftChange.emit($event)"
+      placeholder="Escribir en la sala..."
+      autocomplete="off"
+    /><button class="send" type="submit" aria-label="Enviar a la sala" [disabled]="!draft().trim()">
+      ➤
+    </button>
+  </form>
+</section>

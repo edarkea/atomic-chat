@@ -1,82 +1,102 @@
 @if (!chat.isConnected()) {
-  <main class="login-window">
-    <div class="login-brand"><span class="brand-mark">⌁</span><strong>ATOMIC CHAT</strong><span class="concept">P0</span></div>
-    <div class="login-symbol">◉</div>
-    <p class="eyebrow">CONEXIÓN XMPP</p>
-    <h1>Iniciar sesión</h1>
-    <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
-    <form class="login-form" (ngSubmit)="connect()">
-      <label>Usuario XMPP<input name="account" [ngModel]="login().accountId" (ngModelChange)="login.update(v => ({ ...v, accountId: $event }))" autocomplete="username" placeholder="usuario" /></label>
-      <label>Contraseña<input name="password" type="password" [ngModel]="login().password" (ngModelChange)="login.update(v => ({ ...v, password: $event }))" autocomplete="current-password" placeholder="••••••••" /></label>
-      @if (chat.error()) { <p class="login-error" role="alert">{{ chat.error() }}</p> }
-      <button class="primary login-button" type="submit" [disabled]="!login().accountId || !login().password">Entrar</button>
-    </form>
-    <small class="login-footnote">Servidor XMPP configurado · conexión protegida por la política del entorno</small>
-  </main>
+  <app-login-panel
+    [accountId]="login().accountId"
+    [password]="login().password"
+    [error]="chat.error()"
+    (accountIdChange)="setLoginAccount($event)"
+    (passwordChange)="setLoginPassword($event)"
+    (submitted)="connect()"
+  />
 } @else {
   <main class="app-window">
-    <header class="titlebar"><div class="brand"><span class="brand-mark">⌁</span><strong>ATOMIC CHAT</strong><span class="concept">Concepto</span></div></header>
+    <header class="titlebar">
+      <div class="brand">
+        <span class="brand-mark">⌁</span><strong>ATOMIC CHAT</strong
+        ><span class="concept">Concepto</span>
+      </div>
+    </header>
     <section class="workspace">
-      <aside class="sidebar">
-        <div class="operator-card"><span class="avatar operator-avatar">♙</span><div><strong>{{ chat.accountId() }}</strong><small>{{ connectionLabel() }} · {{ presenceLabel() }}</small></div><span class="online-dot" [class]="'online-dot ' + presenceDot()" aria-hidden="true"></span></div>
-        <div class="presence-control"><span>Estado</span><button type="button" class="presence-trigger" aria-haspopup="listbox" [attr.aria-expanded]="presenceOpen()" (click)="togglePresence()"><i class="presence-dot" [class]="'presence-dot ' + presenceDot()"></i><span>{{ presenceLabel() }}</span><span class="presence-arrow" aria-hidden="true">⌄</span></button>@if (presenceOpen()) { <div class="presence-menu" role="listbox" aria-label="Estado de presencia">@for (option of presenceOptions; track option.id) { <button type="button" role="option" [attr.aria-selected]="isPresenceSelected(option.id)" (click)="choosePresence(option)" (keydown.enter)="choosePresence(option)" (keydown.space)="choosePresence(option)"><i class="presence-dot" [class]="'presence-dot ' + option.dot"></i>{{ option.label }}</button> }<input aria-label="Mensaje de estado" placeholder="Mensaje opcional" [ngModel]="presenceStatus()" (ngModelChange)="presenceStatus.set($event)" /></div> }</div>
-        @if (settingsOpen()) { <section class="preferences-panel" aria-label="Preferencias"><strong>Preferencias</strong><label>Tema<select [ngModel]="chat.preferences().theme" disabled><option value="atomic">Atomic</option></select></label><label class="check-preference"><input type="checkbox" [ngModel]="chat.preferences().notifications" (ngModelChange)="chat.updatePreferences({ notifications: $event })" /> Notificaciones</label><label class="check-preference"><input type="checkbox" [ngModel]="chat.preferences().autoLogin" (ngModelChange)="chat.updatePreferences({ autoLogin: $event })" /> Inicio automático</label><button type="button" (click)="chat.resetPreferences()">Restablecer</button></section> }
-        <label class="search-box"><span>⌕</span><input placeholder="Buscar usuario o JID..." aria-label="Buscar conversaciones" [ngModel]="search()" (ngModelChange)="search.set($event)" (keyup.enter)="useJid()" /></label>
-        <section class="muc-panel" aria-labelledby="muc-panel-title">
-          <header class="muc-heading">
-            <div><p id="muc-panel-title" class="section-label">SALAS</p><span class="muc-subtitle">Conferencias disponibles</span></div>
-            <button class="muc-discover" type="button" (click)="discoverRooms()" [disabled]="mucDiscovering()" [attr.aria-label]="mucDiscovering() ? 'Actualizando salas' : 'Actualizar salas'"><span aria-hidden="true">↻</span><span>{{ mucDiscovering() ? 'Actualizando…' : 'Actualizar' }}</span></button>
-          </header>
-          <div class="muc-nickname"><label for="muc-nickname">Apodo en salas</label><input id="muc-nickname" name="muc-nickname" placeholder="Ej. operador" [ngModel]="mucNickname()" (ngModelChange)="mucNickname.set($event)" /><small>Se usará al entrar en una sala.</small></div>
-          @if (muc.error()) { <p class="muc-error" role="alert">{{ muc.error() }}</p> }
-          @if (mucDiscovering()) { <p class="muc-loading" role="status"><span aria-hidden="true">◌</span> Consultando salas…</p> }
-          @if (!mucDiscovering() && !muc.services().length) { <p class="muc-empty">No hay salas descubiertas todavía.</p> }
-          @if (muc.services().length) { <nav class="room-list" aria-label="Salas disponibles">@for (room of muc.services(); track room.jid) { <article class="room-item" [class.active]="muc.selectedRoomJid() === room.jid"><button class="room-select" type="button" [class.active]="muc.selectedRoomJid() === room.jid" (click)="selectRoomFromCatalog(room.jid)" [attr.aria-pressed]="muc.selectedRoomJid() === room.jid" [attr.aria-label]="'Seleccionar sala ' + room.room"><span class="room-symbol" aria-hidden="true">⌂</span><span class="room-copy"><strong>{{ room.room }}</strong><small>{{ room.service }}</small></span><span class="room-status">{{ roomStatus(room.jid) }}</span></button><button class="room-join" type="button" (click)="joinRoom(room.jid)" [disabled]="roomStatus(room.jid) === 'joined' || roomStatus(room.jid) === 'joining' || roomStatus(room.jid) === 'leaving'" [attr.aria-label]="roomStatus(room.jid) === 'joined' ? 'Ya estás dentro de ' + room.room : 'Entrar en ' + room.room">{{ roomStatus(room.jid) === 'joined' ? 'Dentro' : roomStatus(room.jid) === 'joining' ? 'Entrando…' : roomStatus(room.jid) === 'leaving' ? 'Saliendo…' : 'Entrar' }}</button></article> }</nav> }
-          @if (activeRoomState(); as roomState) { <button class="leave-room" type="button" (click)="leaveRoom()">Salir de {{ roomState.room.room }}</button> }
-        </section>
-        <p class="section-label">CONVERSACIONES</p>
-        <nav class="conversation-list" aria-label="Conversaciones">@for (roomState of joinedRooms(); track roomState.room.jid) { <button class="conversation-item muc-conversation-item" [class.active]="isMucSelected(roomState.room.jid)" type="button" (click)="selectJoinedRoom(roomState.room.jid)" [attr.aria-label]="'Abrir sala ' + roomState.room.room"><span class="avatar muc-avatar" aria-hidden="true">⌂</span><span class="contact-copy"><strong>{{ roomState.room.room }}</strong><small>{{ roomState.room.service }}</small><small class="contact-groups">Sala MUC · {{ roomState.participants.length }} participantes</small></span></button> } @for (contact of filteredContacts(); track contact.jid) { <button class="conversation-item" [class.active]="isDirectSelected(contact.jid)" type="button" (click)="selectContact(contact)"><span class="avatar">♙</span><span class="contact-copy"><strong><i class="contact-presence" [class]="'contact-presence ' + remotePresenceDot(contact)" aria-hidden="true"></i>{{ contactName(contact) }}</strong><small>{{ contact.jid }}</small><small class="contact-groups">{{ contactKind(contact) }} · {{ remotePresenceLabel(contact) }}</small></span></button> } @if (filteredContacts().length === 0 && search().includes('@')) { <button class="conversation-item" [class.active]="isDirectSelected(search())" type="button" (click)="useJid()"><span class="avatar">＋</span><span><strong>Nuevo chat</strong><small>{{ search() }}</small></span></button> } @if (filteredContacts().length === 0 && !search()) { <p class="empty">No hay contactos cargados.</p> }</nav>
-        <div class="sidebar-actions"><button type="button" aria-label="Preferencias" (click)="toggleSettings()">⚙</button><button type="button" aria-label="Actualizar roster" (click)="chat.refreshRoster()">↻</button><button type="button" aria-label="Desconectar" (click)="disconnect()">⇥</button></div>
-      </aside>
+      <app-sidebar
+        [accountId]="chat.accountId()"
+        [connectionLabel]="connectionLabel()"
+        [presenceLabel]="presenceLabel()"
+        [presenceDot]="presenceDot()"
+        [presenceOpen]="presenceOpen()"
+        [presenceOptions]="presenceOptions"
+        [presenceStatus]="presenceStatus()"
+        [settingsOpen]="settingsOpen()"
+        [preferences]="chat.preferences()"
+        [search]="search()"
+        [mucNickname]="mucNickname()"
+        [mucDiscovering]="mucDiscovering()"
+        [mucError]="muc.error()"
+        [mucServices]="muc.services()"
+        [mucStates]="muc.states()"
+        [selectedRoomJid]="muc.selectedRoomJid()"
+        [joinedRooms]="joinedRooms()"
+        [filteredContacts]="filteredContacts()"
+        [selectedJid]="selectedJid()"
+        [activeRoomState]="activeRoomState()"
+        (togglePresence)="presenceOpen.update((value) => !value)"
+        (presenceSelected)="choosePresence($event)"
+        (presenceStatusChange)="presenceStatus.set($event)"
+        (toggleSettings)="settingsOpen.update((value) => !value)"
+        (preferencesChange)="updatePreferences($event)"
+        (resetPreferences)="chat.resetPreferences()"
+        (searchChange)="search.set($event)"
+        (useJid)="useJid()"
+        (mucNicknameChange)="mucNickname.set($event)"
+        (discoverRooms)="discoverRooms()"
+        (selectRoom)="selectRoomFromCatalog($event)"
+        (joinRoom)="joinRoom($event)"
+        (leaveRoom)="leaveRoom()"
+        (selectJoinedRoom)="selectJoinedRoom($event)"
+        (selectContact)="selectContact($event)"
+        (refreshRoster)="chat.refreshRoster()"
+        (disconnect)="disconnect()"
+      />
       <section class="conversation-panel">
-        @if (activeRoomState(); as roomState) { <header class="chat-header"><span class="avatar header-avatar muc-avatar" aria-hidden="true">⌂</span><div><strong>{{ roomState.room.room }}</strong><small>Sala MUC · {{ roomState.participants.length }} participantes</small></div><button class="more" type="button" aria-label="Opciones de sala">•••</button></header><section class="muc-room-view" aria-label="Sala MUC"><div class="muc-room-meta"><div><strong>{{ roomState.room.room }}</strong><small>{{ roomState.participants.length }} participantes · estado joined</small></div><button type="button" (click)="leaveRoom()">Salir</button></div><div class="muc-notices" aria-live="polite">@for (notice of muc.visibleNotices(); track notice.code) { <p>{{ notice.code === 'IDENTITY_VISIBLE' ? 'La identidad real puede ser visible en esta sala.' : notice.code === 'PUBLIC_LOGGING' ? 'Esta sala informa que registra conversaciones públicamente.' : 'El servidor asignó el nickname ' + notice.nickname + '.' }}</p> }</div><div class="muc-participants">@for (participant of muc.visibleParticipants(); track participant.occupantJid) { <span title="{{ participant.role }} / {{ participant.affiliation }}"><i class="presence-dot"></i>{{ participant.nick }}</span> } @if (muc.participants().length > 100) { <button type="button" (click)="muc.previousParticipantPage()" [disabled]="!muc.participantPage()">Anterior</button><button type="button" (click)="muc.nextParticipantPage()" [disabled]="!muc.hasMoreParticipants()">Siguiente</button> }</div><div class="muc-messages" aria-live="polite">@for (message of muc.messages(); track message.id) { <article class="message" [class.outgoing]="isMucMessageOutgoing(message, roomState)" [class.incoming]="!isMucMessageOutgoing(message, roomState)"><p class="message-sender">{{ mucSenderLabel(message, roomState) }}</p><p>{{ message.body.text }}</p><small>{{ message.source === 'live' ? 'recibido' : 'histórico' }}</small></article> } @if (!muc.messages().length) { <p class="reference-message incoming">No hay mensajes todavía.</p> }</div><form class="composer" (ngSubmit)="sendRoom()"><input name="muc-message" [ngModel]="mucDraft()" (ngModelChange)="mucDraft.set($event)" placeholder="Escribir en la sala..." autocomplete="off" /><button class="send" type="submit" aria-label="Enviar a la sala" [disabled]="!mucDraft().trim()">➤</button></form></section> } @else {
-        <header class="chat-header"><span class="avatar header-avatar">♙</span><div><strong>{{ activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto' }}</strong><small>{{ selectedJid() ? 'Conversación individual' : 'Sin destinatario' }}</small></div><button class="more" type="button">•••</button></header>
-        <div #chatContent class="chat-content" (scroll)="onChatScroll()" (wheel)="onUserScrollIntent()" (touchmove)="onUserScrollIntent()" (pointerdown)="onUserScrollIntent()" (keydown)="onUserScrollIntent()" aria-live="polite">@if (!selectedJid()) { <div class="reference-message incoming">Selecciona una conversación para comenzar.</div> } @else if (!conversationTimeline().length) { <div class="reference-message incoming">No hay mensajes todavía.</div> } @for (item of conversationTimeline(); track item.id) { @if (item.kind === 'text') { <article class="message" [class.outgoing]="isOutgoing(item.message)" [class.incoming]="!isOutgoing(item.message)"><p class="message-sender">{{ directSenderLabel(item.message) }}</p><p>{{ item.message.body.text }}</p><small>{{ isOutgoing(item.message) ? item.message.status : 'recibido' }}</small></article> } @else { <article class="message file-message" [class.outgoing]="item.transfer.direction === 'outgoing'" [class.incoming]="item.transfer.direction === 'incoming'" role="group" [attr.aria-label]="(item.transfer.direction === 'outgoing' ? 'Archivo saliente ' : 'Archivo entrante ') + item.transfer.offer.name"><p class="message-sender">{{ item.transfer.direction === 'outgoing' ? 'Tú' : item.transfer.offer.senderJid }}</p><p class="file-title">▤ {{ item.transfer.offer.name }}</p><small>{{ item.transfer.offer.sizeBytes }} bytes · {{ files.label(item.transfer.state, item.transfer.endReason, item.transfer.direction) }}</small>@if (item.transfer.direction === 'incoming' && item.transfer.state === 'offered') { <p class="file-security">Sin cifrado de extremo a extremo. Solo archivos ficticios de laboratorio.</p><div class="file-actions"><button type="button" (click)="files.accept(item.transfer.offer.transferId)">Aceptar y guardar</button><button type="button" (click)="files.reject(item.transfer.offer.transferId)">Rechazar</button></div> } @if (['accepted', 'offering', 'awaiting_acceptance', 'transferring'].includes(item.transfer.state)) { <p aria-live="polite">{{ files.label(item.transfer.state, item.transfer.endReason, item.transfer.direction) }} · {{ item.transfer.bytesTransferred }} / {{ item.transfer.offer.sizeBytes }} bytes</p><button type="button" (click)="files.cancel(item.transfer.offer.transferId)">Cancelar</button> } @if (['completed', 'failed', 'cancelled'].includes(item.transfer.state)) { <p aria-live="polite">{{ files.label(item.transfer.state, item.transfer.endReason, item.transfer.direction) }}</p> }</article> } }</div>
-        @if (chat.error()) { <p class="composer-error" role="alert">{{ chat.error() }}</p> }<form class="composer" (ngSubmit)="send()"><button class="composer-icon" type="button" aria-label="Adjuntar" (click)="attach()" [disabled]="!selectedJid()">＋</button><input name="message" [ngModel]="draft()" (ngModelChange)="draft.set($event)" placeholder="Escribir mensaje..." autocomplete="off" [disabled]="!selectedJid()"/><button class="emoji" type="button" aria-label="Emoji">☺</button><button class="send" type="submit" aria-label="Enviar" [disabled]="!selectedJid() || !draft().trim()">➤</button></form> }
+        @if (activeRoomState(); as roomState) {
+          <app-muc-view
+            [roomState]="roomState"
+            [notices]="muc.visibleNotices()"
+            [participants]="muc.visibleParticipants()"
+            [allParticipantCount]="muc.participants().length"
+            [participantPage]="muc.participantPage()"
+            [hasMoreParticipants]="muc.hasMoreParticipants()"
+            [messages]="muc.messages()"
+            [draft]="mucDraft()"
+            (leave)="leaveRoom()"
+            (previousParticipantPage)="muc.previousParticipantPage()"
+            (nextParticipantPage)="muc.nextParticipantPage()"
+            (draftChange)="mucDraft.set($event)"
+            (send)="sendRoom()"
+          />
+        } @else {
+          <app-conversation-view
+            [activeContact]="activeContact()"
+            [selectedJid]="selectedJid()"
+            [accountId]="chat.accountId()"
+            [timeline]="conversationTimeline()"
+            [error]="chat.error()"
+            [draft]="draft()"
+            [historyLoading]="chat.historyLoading()"
+            [hasOlderMessages]="chat.hasOlderMessages()"
+            [hasNewerMessages]="chat.hasNewerMessages()"
+            (draftChange)="draft.set($event)"
+            (messageSend)="send()"
+            (attach)="attach()"
+            (accept)="files.accept($event)"
+            (reject)="files.reject($event)"
+            (fileCancel)="files.cancel($event)"
+            (loadOlder)="loadOlderMessages($event)"
+            (loadNewer)="loadNewerMessages($event)"
+          />
+        }
       </section>
     </section>
   </main>
 }
 @if (certificateRequest(); as request) {
-  <div class="certificate-backdrop">
-    <section #certificateDialog class="certificate-dialog" role="dialog" aria-modal="true" aria-labelledby="certificate-title" aria-describedby="certificate-explanation" tabindex="-1" (keydown)="onCertificateDialogKeydown($event)">
-      <header class="certificate-header">
-        <span class="certificate-warning" aria-hidden="true">!</span>
-        <div><p class="eyebrow">ADVERTENCIA TLS</p>
-        <h2 id="certificate-title">Verifica el certificado del servidor</h2></div>
-      </header>
-      <p id="certificate-explanation" class="certificate-intro">Atomic Chat detuvo el inicio de sesión antes de enviar tus credenciales. Revisa la identidad del servidor antes de confiar en esta conexión TLS.</p>
-      <dl class="certificate-details">
-        <dt>Servidor</dt><dd>{{ request.host }}:{{ request.port }}</dd>
-        <dt>Transporte</dt><dd>{{ request.transport === 'starttls' ? 'STARTTLS' : 'TLS directo' }}</dd>
-        <dt>Motivo</dt><dd>{{ request.verificationError?.message || 'El certificado presentado cambió respecto al aprobado anteriormente.' }}</dd>
-        <dt>Sujeto</dt><dd>{{ request.certificate.subject || 'No disponible' }}</dd>
-        <dt>Emisor</dt><dd>{{ request.certificate.issuer || 'No disponible' }}</dd>
-        <dt>Vigencia</dt><dd>{{ request.certificate.validFrom }} — {{ request.certificate.validTo }}</dd>
-        <dt>Nombres</dt><dd>{{ request.certificate.subjectAltNames.join(', ') || 'No disponibles' }}</dd>
-        <dt>Huella SHA-256</dt><dd class="certificate-fingerprint">{{ request.certificate.fingerprintSha256 }}</dd>
-        <dt>Cadena</dt><dd>{{ request.certificate.chain.length }} certificado(s) inspeccionado(s)<ul>@for (chainCertificate of request.certificate.chain; track chainCertificate.fingerprintSha256) { <li>{{ chainCertificate.subject }} · {{ chainCertificate.fingerprintSha256 }}</li> }</ul></dd>
-      </dl>
-      @if (request.previous) {
-        <p class="certificate-change"><strong>Certificado anterior:</strong> {{ request.previous.fingerprintSha256 }}<br /><strong>Certificado nuevo:</strong> {{ request.certificate.fingerprintSha256 }}</p>
-      }
-      <div class="certificate-actions">
-        <button type="button" (click)="decideCertificate('cancel')">Cancelar</button>
-        <button type="button" (click)="decideCertificate('trust_once')">Confiar una vez</button>
-        <button class="primary" type="button" (click)="decideCertificate('trust_and_remember')">Confiar y recordar</button>
-      </div>
-    </section>
-  </div>
+  <app-certificate-dialog [request]="request" (decision)="decideCertificate($event)" />
 }
-
-
