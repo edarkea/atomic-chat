@@ -1,0 +1,132 @@
+const crypto = require('node:crypto');
+const { xml } = require('@xmpp/client');
+
+function createRosterMessaging(adapter) {
+  return {
+    async setPresence(accountId, presence) {
+      const session = adapter.require(accountId);
+      const show = presence.mode ? xml('show', {}, presence.mode) : undefined;
+      const status = presence.status ? xml('status', {}, presence.status) : undefined;
+      await session.send(
+        xml(
+          'presence',
+          { type: presence.availability === 'unavailable' ? 'unavailable' : undefined },
+          show,
+          status,
+        ),
+      );
+      return { jid: accountId, ...presence, updatedAt: new Date().toISOString() };
+    },
+    async listRoster(accountId) {
+      const session = adapter.require(accountId);
+      const result = await session.iqCaller.request(
+        xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' })),
+      );
+      const contacts =
+        result
+          .getChild('query', 'jabber:iq:roster')
+          ?.getChildren('item')
+          .map((item) => ({
+            jid: adapter.bareJid(item.attrs.jid),
+            name: item.attrs.name,
+            groups: item.getChildren('group').map((group) => group.getText()),
+            subscription: ['none', 'to', 'from', 'both'].includes(item.attrs.subscription)
+              ? item.attrs.subscription
+              : 'none',
+            ...(item.attrs.ask === 'subscribe' ? { ask: 'subscribe' } : {}),
+            source: 'roster',
+          })) || [];
+      const normalized = [
+        ...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values(),
+      ];
+      adapter.rosters.set(accountId, new Map(normalized.map((contact) => [contact.jid, contact])));
+      const resources = adapter.remoteResources.get(accountId) || new Map();
+      for (const key of resources.keys())
+        if (
+          !adapter.rosters.get(accountId).has(key.split('/')[0]) ||
+          !['to', 'both'].includes(
+            adapter.rosters.get(accountId).get(key.split('/')[0]).subscription,
+          )
+        )
+          resources.delete(key);
+      adapter.remoteResources.set(accountId, resources);
+      if (!adapter.initialPresencePublished.has(accountId)) {
+        await session.send(xml('presence'));
+        adapter.initialPresencePublished.add(accountId);
+      }
+      return normalized;
+    },
+    async sendMessage(accountId, input) {
+      if (adapter.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
+      const session = adapter.require(accountId);
+      await session.send(
+        xml('message', { type: 'chat', to: input.to }, xml('body', {}, input.body.text)),
+      );
+      return { ...input, status: 'sent', createdAt: new Date().toISOString() };
+    },
+    handlePresence(accountId, stanza) {
+      const type = stanza.attrs.type;
+      if (
+        ['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'error', 'probe'].includes(type)
+      )
+        return true;
+      const jid = adapter.bareJid(stanza.attrs.from || accountId);
+      const contact = adapter.rosters.get(accountId)?.get(jid);
+      if (!contact || !['to', 'both'].includes(contact.subscription)) return true;
+      const resource = String(stanza.attrs.from || '').split('/')[1] || '_bare';
+      const resources = adapter.remoteResources.get(accountId) || new Map();
+      if (type === 'unavailable') resources.delete(`${jid}/${resource}`);
+      else
+        resources.set(`${jid}/${resource}`, {
+          mode: stanza.getChildText('show') || undefined,
+          status: stanza.getChildText('status') || undefined,
+        });
+      adapter.remoteResources.set(accountId, resources);
+      const active = [...resources.entries()].filter(([key]) => key.startsWith(`${jid}/`));
+      const latest = active[active.length - 1]?.[1];
+      adapter.emit({
+        type: 'presence.changed',
+        payload: {
+          accountId,
+          jid,
+          availability: active.length ? 'available' : 'unavailable',
+          mode: latest?.mode,
+          status: latest?.status,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      return true;
+    },
+    handleMessage(accountId, stanza) {
+      if (!stanza.getChildText('body')) return false;
+      const senderJid = adapter.bareJid(stanza.attrs.from || accountId);
+      const bodyText = stanza.getChildText('body');
+      const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id;
+      const identity = `${accountId}|${senderJid}|${explicitId || crypto.randomUUID()}`;
+      const stanzaId = explicitId
+        ? `received_${crypto.createHash('sha256').update(identity).digest('hex')}`
+        : `received_${crypto.randomUUID()}`;
+      adapter.emit({
+        type: 'message.received',
+        payload: {
+          id: `msg_${stanzaId}`,
+          accountId,
+          conversationId: senderJid,
+          clientMessageId: `received_${stanzaId}`,
+          senderJid,
+          body: { kind: 'text', text: bodyText },
+          status: 'sent',
+          createdAt: new Date().toISOString(),
+        },
+      });
+      if (process.env.ATOMIC_XMPP_DEBUG === 'true')
+        console.debug(
+          '[XMPP_MESSAGE_RECEIVED]',
+          JSON.stringify({ accountId, from: senderJid, id: stanzaId, hasBody: true }),
+        );
+      return true;
+    },
+  };
+}
+
+module.exports = { createRosterMessaging };

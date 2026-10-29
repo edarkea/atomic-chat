@@ -1,591 +1,268 @@
-const { client, xml } = require('@xmpp/client');
-const crypto = require('node:crypto');
-const net = require('node:net');
-const tls = require('node:tls');
-const { EventEmitter } = require('node:events');
-const { validateXmppTransport } = require('./security-policy.cjs');
-const { CertificateVerificationFailure, assessCertificate } = require('./certificate-trust.cjs');
-const { parseOffer, IBB_NS, SI_NS, SI_FILE_NS, FEATURE_NEG_NS, DATAFORM_NS, validateOpen, validateData } = require('./file-protocol.cjs');
-const STARTTLS_NS = 'urn:ietf:params:xml:ns:xmpp-tls';
-const DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items';
-const DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info';
-const MUC_NS = 'http://jabber.org/protocol/muc';
-const MUC_USER_NS = 'http://jabber.org/protocol/muc#user';
-const DELAY_NS = 'urn:xmpp:delay';
-const LEGACY_DELAY_NS = 'jabber:x:delay';
-const MUC_TEXT_LIMIT_BYTES = 4096;
-const MUC_MESSAGE_BUFFER_LIMIT = 200;
-const MUC_ROOM_LIMIT = 5;
-const MAX_PENDING_BINARY_BYTES = 256 * 1024;
-
-function fileTrace(phase, direction, details = {}) {
-  if (process.env.ATOMIC_XMPP_FILE_TRACE !== 'true') return;
-  const allowed = new Set(['phase', 'direction', 'at', 'iqType', 'condition', 'result', 'errorCode', 'blockSize', 'seq', 'bytes', 'correlation']);
-  const safe = { phase, direction, at: new Date().toISOString() };
-  for (const [key, value] of Object.entries(details)) if (allowed.has(key)) safe[key] = value;
-  console.info('[XMPP_FILE_TRACE]', JSON.stringify(safe));
-}
-
-function taggedError(code, message, phase, cause) {
-  const error = new Error(message);
-  error.code = code;
-  error.phase = phase;
-  if (cause) error.cause = cause;
-  return error;
-}
-
-function tlsIdentityCheck(tlsOptions) {
-  return (host, certificate) => {
-    const identityError = tls.checkServerIdentity(host, certificate);
-    if (identityError) return identityError;
-    if (tlsOptions.expectedFingerprint && certificate.fingerprint256 !== tlsOptions.expectedFingerprint) return taggedError('CERTIFICATE_PIN_MISMATCH', 'The certificate fingerprint changed during TLS negotiation.', 'tls.verify');
-    return undefined;
-  };
-}
-
-function negotiateStartTls(host, port, domain) {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect({ host, port });
-    let buffer = '';
-    let stage = 'connect';
-    let settled = false;
-    const timer = setTimeout(() => finish(taggedError('SERVER_UNREACHABLE', 'STARTTLS connection timed out.', 'starttls.connect')), 10000);
-    const cleanup = () => { clearTimeout(timer); socket.removeListener('connect', onConnect); socket.removeListener('data', onData); socket.removeListener('error', onError); socket.removeListener('close', onClose); };
-    const finish = (error) => { if (settled) return; settled = true; cleanup(); if (error) { socket.destroy(); reject(error); } else resolve(socket); };
-    const onConnect = () => { stage = 'features'; socket.write(`<?xml version='1.0'?><stream:stream to='${domain.replaceAll('&', '&amp;').replaceAll("'", '&apos;')}' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>`); };
-    const onData = (data) => {
-      buffer += data.toString('utf8');
-      if (stage === 'features') {
-        const start = buffer.indexOf('<stream:features');
-        const close = start >= 0 ? buffer.indexOf('</stream:features>', start) : -1;
-        if (start < 0 || close < 0) return;
-        const features = buffer.slice(start, close + '</stream:features>'.length);
-        if (!features.includes(`xmlns='${STARTTLS_NS}'`) && !features.includes(`xmlns="${STARTTLS_NS}"`)) return finish(taggedError('STARTTLS_UNAVAILABLE', 'The server did not advertise STARTTLS.', 'starttls.features'));
-        stage = 'proceed';
-        socket.write(`<starttls xmlns='${STARTTLS_NS}'/>`);
-      } else if (stage === 'proceed') {
-        if (buffer.includes(`<proceed xmlns='${STARTTLS_NS}'`) || buffer.includes(`<proceed xmlns="${STARTTLS_NS}"`)) finish();
-        else if (buffer.includes('<failure')) finish(taggedError('TLS_NEGOTIATION_FAILED', 'The server rejected STARTTLS negotiation.', 'starttls.proceed'));
-      }
-    };
-    const onError = (error) => finish(taggedError(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'ECONNRESET'].includes(error.code) ? 'SERVER_UNREACHABLE' : 'TLS_NEGOTIATION_FAILED', error.message, `starttls.${stage}`, error));
-    const onClose = () => { if (!settled) finish(taggedError('TLS_NEGOTIATION_FAILED', 'The server closed the STARTTLS negotiation.', `starttls.${stage}`)); };
-    socket.on('connect', onConnect); socket.on('data', onData); socket.once('error', onError); socket.once('close', onClose);
-  });
-}
-
-function upgradeStartTls(rawSocket, host, tlsOptions) {
-  return new Promise((resolve, reject) => {
-    const secureSocket = tls.connect({ socket: rawSocket, host, servername: host, ...tlsOptions, rejectUnauthorized: tlsOptions.rejectUnauthorized !== false, checkServerIdentity: tlsOptions.checkServerIdentity || tlsIdentityCheck(tlsOptions) });
-    const timer = setTimeout(() => { secureSocket.destroy(); reject(taggedError('TLS_NEGOTIATION_FAILED', 'STARTTLS TLS handshake timed out.', 'tls.handshake')); }, 10000);
-    secureSocket.once('secureConnect', () => { clearTimeout(timer); resolve(secureSocket); });
-    secureSocket.once('error', (error) => { clearTimeout(timer); reject(taggedError(error.code === 'CERTIFICATE_PIN_MISMATCH' ? 'CERTIFICATE_PIN_MISMATCH' : 'TLS_NEGOTIATION_FAILED', error.message, 'tls.handshake', error)); });
-  });
-}
-
-function startTlsSocket(tlsOptions, domain) {
-  return class StartTlsSocket extends EventEmitter {
-    constructor() { super(); this.socket = null; this.secure = true; }
-    connect(parameters) { void negotiateStartTls(parameters.host, parameters.port, domain).then((rawSocket) => upgradeStartTls(rawSocket, parameters.host, tlsOptions)).then((secureSocket) => { this.socket = secureSocket; secureSocket.on('data', (data) => this.emit('data', data)); secureSocket.on('close', () => this.emit('close')); secureSocket.on('error', (error) => this.emit('error', error)); this.emit('connect'); }).catch((error) => this.emit('error', error)); }
-    end() { this.socket?.end(); }
-    write(data, callback) { return this.socket.write(data, callback); }
-  };
-}
-
-function certificateSocket(tlsOptions) {
-  return class CertificateSocket extends EventEmitter {
-    constructor() { super(); this.socket = null; this.secure = true; }
-    connect(parameters) {
-      this.socket = tls.connect({ ...parameters, ...tlsOptions, rejectUnauthorized: true, servername: parameters.host, checkServerIdentity: tlsIdentityCheck(tlsOptions) });
-      this.socket.on('data', (data) => this.emit('data', data));
-      this.socket.on('close', () => this.emit('close'));
-      this.socket.on('error', (error) => this.emit('error', error));
-      this.socket.on('secureConnect', () => this.emit('connect'));
-    }
-    end() { this.socket?.end(); }
-    write(data, callback) { return this.socket.write(data, callback); }
-  };
-}
+const { createXmppTransport, negotiateStartTls } = require('./xmpp-transport.cjs');
+const { createXmppSession } = require('./xmpp-session.cjs');
+const { createRosterMessaging } = require('./xmpp-roster-messaging.cjs');
+const { createMucService } = require('./xmpp-muc.cjs');
+const { createFileService } = require('./xmpp-file.cjs');
 
 class XmppAdapter {
-  constructor(packaged = false, trustStore = null, mucPolicies = [], fileTransfers = null, outgoingTransfers = null) { this.packaged = packaged; this.trustStore = trustStore; this.fileTransfers = fileTransfers; this.outgoingTransfers = outgoingTransfers; this.sessions = new Map(); this.states = new Map(); this.listeners = new Set(); this.connecting = new Map(); this.pendingDecisions = new Map(); this.activeDecisionBySender = new Map(); this.rosters = new Map(); this.remoteResources = new Map(); this.initialPresencePublished = new Set(); this.sessionGenerations = new Map(); this.sessionDomains = new Map(); this.sessionEndpoints = new Map(); this.mucDiscoveries = new Map(); this.mucRooms = new Map(); this.filePending = new Map(); this.fileOwners = new Map(); this.fileIqHandled = new WeakSet(); this.fileTraceAttempts = new WeakMap(); this.mucPolicies = new Map(); if (this.fileTransfers) this.fileTransfers.onEvent((event) => { if (!event.type.endsWith('stateChanged')) return; const transferId = event.payload?.offer?.transferId; if (!transferId || !['completed', 'failed', 'cancelled'].includes(event.payload?.state)) return; for (const [key, pending] of this.filePending) if (pending.record.offer.transferId === transferId) this.filePending.delete(key); }); mucPolicies.forEach((policy) => this.setMucPolicy(policy)); }
-  onEvent(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  constructor(
+    packaged = false,
+    trustStore = null,
+    mucPolicies = [],
+    fileTransfers = null,
+    outgoingTransfers = null,
+  ) {
+    this.packaged = packaged;
+    this.trustStore = trustStore;
+    this.fileTransfers = fileTransfers;
+    this.outgoingTransfers = outgoingTransfers;
+    this.sessions = new Map();
+    this.states = new Map();
+    this.listeners = new Set();
+    this.connecting = new Map();
+    this.pendingDecisions = new Map();
+    this.activeDecisionBySender = new Map();
+    this.rosters = new Map();
+    this.remoteResources = new Map();
+    this.initialPresencePublished = new Set();
+    this.sessionGenerations = new Map();
+    this.sessionDomains = new Map();
+    this.sessionEndpoints = new Map();
+    this.mucDiscoveries = new Map();
+    this.mucRooms = new Map();
+    this.filePending = new Map();
+    this.fileOwners = new Map();
+    this.fileIqHandled = new WeakSet();
+    this.fileTraceAttempts = new WeakMap();
+    this.mucPolicies = new Map();
 
-  async connect(input, password, senderId) {
-    const current = this.connecting.get(input.accountId);
-    if (current) return current;
-    if (this.sessions.has(input.accountId)) await this.disconnect(input.accountId);
-    const operation = this.connectInternal(input, password, senderId);
-    this.connecting.set(input.accountId, operation);
-    try { return await operation; } finally { if (this.connecting.get(input.accountId) === operation) this.connecting.delete(input.accountId); }
+    this.transport = createXmppTransport(this);
+    this.sessionService = createXmppSession(this);
+    this.rosterMessaging = createRosterMessaging(this);
+    this.mucService = createMucService(this);
+    this.fileService = createFileService(this);
+    if (this.fileTransfers)
+      this.fileTransfers.onEvent((event) => {
+        if (!event.type.endsWith('stateChanged')) return;
+        const transferId = event.payload?.offer?.transferId;
+        if (!transferId || !['completed', 'failed', 'cancelled'].includes(event.payload?.state))
+          return;
+        for (const [key, pending] of this.filePending)
+          if (pending.record.offer.transferId === transferId) this.filePending.delete(key);
+      });
+    mucPolicies.forEach((policy) => this.setMucPolicy(policy));
   }
 
-  async connectInternal(input, password, senderId) {
-    if (!password) throw new Error('secret_unavailable');
-    const transport = validateXmppTransport(input.endpoint, this.packaged);
-    this.states.set(input.accountId, { accountId: input.accountId, status: 'connecting', retryable: true, since: new Date().toISOString() });
-    const tlsOptions = await this.resolveTlsOptions(input, senderId, transport);
-    const service = `${transport.transport === 'direct-tls' ? 'xmpps' : 'xmpp'}://${transport.host}:${transport.port}`;
-    const session = client({
-      service,
-      domain: input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host,
-      username: input.accountId.split('@')[0],
-      password,
-    });
-    if (transport.transport === 'direct-tls') this.installTlsTransport(session, service, tlsOptions);
-    else this.installStartTlsTransport(session, service, tlsOptions, input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host);
-    this.installFileIqHandlers(input.accountId, session);
-    this.states.set(input.accountId, { accountId: input.accountId, status: 'authenticating', retryable: true, since: new Date().toISOString() });
-    session.on('error', (error) => { this.handleSessionEvent(input.accountId, session, 'error', error.code || 'TRANSPORT_FAILED'); });
-    session.on('offline', () => { this.handleSessionEvent(input.accountId, session, 'offline'); });
-    session.on('online', () => { this.handleSessionEvent(input.accountId, session, 'online'); });
-    this.fileOwners.set(input.accountId, senderId);
-    session.on('element', (stanza) => { if (this.isFileIq(stanza)) this.fileIqHandled.add(stanza); });
-    session.on('stanza', (stanza) => { if (this.sessions.get(input.accountId) !== session) return; this.handleStanza(input.accountId, stanza); });
-    try { await session.start(); } catch (error) { this.setState(input.accountId, 'failed', true, error.code || 'TRANSPORT_FAILED'); throw error; }
-    this.remoteResources.set(input.accountId, new Map()); this.initialPresencePublished.delete(input.accountId); this.sessions.set(input.accountId, session); this.sessionDomains.set(input.accountId, input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host); this.sessionEndpoints.set(input.accountId, { host: transport.host, port: transport.port, transport: transport.transport }); this.sessionGenerations.set(input.accountId, (this.sessionGenerations.get(input.accountId) || 0) + 1); await session.send(xml('presence')); this.initialPresencePublished.add(input.accountId);
-    const state = { accountId: input.accountId, status: 'connected', retryable: false, since: new Date().toISOString() }; this.states.set(input.accountId, state); return state;
+  onEvent(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  emit(event) {
+    this.listeners.forEach((listener) => listener(event));
   }
 
-  async disconnect(accountId) {
-    this.cancelPendingDecision(accountId);
-    await this.fileTransfers?.cancelAccount(accountId).catch(() => undefined);
-    await this.outgoingTransfers?.cancelAccount(accountId).catch(() => undefined);
-    for (const [key, pending] of this.filePending) if (key.startsWith(`${accountId}|`)) this.filePending.delete(key);
-    this.clearMucRooms(accountId);
-    const session = this.sessions.get(accountId);
-    this.states.set(accountId, { accountId, status: 'disconnecting', retryable: false, since: new Date().toISOString() });
-    if (session) await session.stop();
-    this.sessions.delete(accountId);
-    this.rosters.delete(accountId); this.remoteResources.delete(accountId); this.initialPresencePublished.delete(accountId); this.sessionDomains.delete(accountId); this.sessionEndpoints.delete(accountId); this.sessionGenerations.set(accountId, (this.sessionGenerations.get(accountId) || 0) + 1);
-    this.states.set(accountId, { accountId, status: 'idle', retryable: false, since: new Date().toISOString() });
+  connect(input, password, senderId) {
+    return this.sessionService.connect(input, password, senderId);
+  }
+  connectInternal(input, password, senderId) {
+    return this.sessionService.connectInternal(input, password, senderId);
+  }
+  disconnect(accountId) {
+    return this.sessionService.disconnect(accountId);
+  }
+  setState(accountId, status, retryable, reason) {
+    return this.sessionService.setState(accountId, status, retryable, reason);
+  }
+  handleSessionEvent(accountId, session, event, reason) {
+    return this.sessionService.handleSessionEvent(accountId, session, event, reason);
+  }
+  require(accountId) {
+    return this.sessionService.require(accountId);
+  }
+  requireConnected(accountId) {
+    return this.sessionService.requireConnected(accountId);
+  }
+  bareJid(jid) {
+    return this.sessionService.bareJid(jid);
   }
 
   installTlsTransport(session, service, tlsOptions) {
-    session.transports = session.transports.map((Transport) => {
-      let directTls = false;
-      try { directTls = service.startsWith('xmpps:') && Transport.prototype.socketParameters(service) !== undefined; } catch { directTls = false; }
-      if (!directTls) return Transport;
-      class SessionTlsTransport extends Transport {}
-      SessionTlsTransport.prototype.Socket = certificateSocket(tlsOptions);
-      return SessionTlsTransport;
-    });
+    return this.transport.installTlsTransport(session, service, tlsOptions);
   }
-
   installStartTlsTransport(session, service, tlsOptions, domain) {
-    session.transports = session.transports.map((Transport) => {
-      let tcp = false;
-      try { tcp = service.startsWith('xmpp:') && Transport.prototype.socketParameters(service) !== undefined; } catch { tcp = false; }
-      if (!tcp) return Transport;
-      class SessionStartTlsTransport extends Transport {}
-      SessionStartTlsTransport.prototype.Socket = startTlsSocket(tlsOptions, domain);
-      return SessionStartTlsTransport;
-    });
+    return this.transport.installStartTlsTransport(session, service, tlsOptions, domain);
   }
-
-  async probeDirectCertificate(endpoint) {
-    return new Promise((resolve, reject) => {
-      const socket = tls.connect({ host: endpoint.host, port: endpoint.port, servername: endpoint.host, rejectUnauthorized: false });
-      const timer = setTimeout(() => { socket.destroy(); reject(new Error('CERTIFICATE_PROBE_TIMEOUT')); }, 10000);
-      const finish = (callback) => { clearTimeout(timer); socket.removeListener('secureConnect', onSecureConnect); socket.removeListener('error', onError); callback(); };
-      const onSecureConnect = () => {
-        try {
-          const certificate = socket.getPeerCertificate(true);
-          const authorizationError = socket.authorizationError;
-          finish(() => { socket.destroy(); resolve({ certificate, authorizationError, authorized: socket.authorized }); });
-        } catch (error) { finish(() => { socket.destroy(); reject(error); }); }
-      };
-      const onError = (error) => finish(() => { socket.destroy(); reject(error); });
-      socket.once('secureConnect', onSecureConnect);
-      socket.once('error', onError);
-    });
+  probeDirectCertificate(endpoint) {
+    return this.transport.probeDirectCertificate(endpoint);
   }
-
-  async probeStartTlsCertificate(endpoint, domain) {
-    const rawSocket = await negotiateStartTls(endpoint.host, endpoint.port, domain);
-    const secureSocket = await upgradeStartTls(rawSocket, endpoint.host, { rejectUnauthorized: false, checkServerIdentity: tls.checkServerIdentity });
-    try { return { certificate: secureSocket.getPeerCertificate(true), authorizationError: secureSocket.authorizationError, authorized: secureSocket.authorized }; } finally { secureSocket.destroy(); }
+  probeStartTlsCertificate(endpoint, domain) {
+    return this.transport.probeStartTlsCertificate(endpoint, domain);
   }
-
-  async resolveTlsOptions(input, senderId, transport) {
-    const endpoint = input.endpoint;
-    const transportName = transport.transport;
-    let previous = null;
-    try { previous = this.trustStore?.getTrustedCertificate(input.accountId, endpoint.host, endpoint.port, transportName) || null; } catch { throw new Error('certificate_storage_unavailable'); }
-    const probe = transportName === 'direct-tls' ? await this.probeDirectCertificate(endpoint) : await this.probeStartTlsCertificate(endpoint, endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || endpoint.host);
-    const assessment = assessCertificate(endpoint.host, probe.certificate, probe.authorized, probe.authorizationError);
-    if (assessment.error && !assessment.trustable) throw new CertificateVerificationFailure('CERTIFICATE_INVALID', assessment.error.message, assessment.info, assessment.error);
-    const changed = previous && previous.fingerprintSha256 !== assessment.info.fingerprintSha256;
-    if (previous && !changed) return { ca: previous.certificatePem, expectedFingerprint: previous.fingerprintSha256 };
-    if (changed || assessment.trustable) {
-      const decision = await this.awaitTrustDecision(input, transportName, assessment.info, assessment.error, changed ? previous : null, senderId);
-      if (decision === 'cancel') throw new CertificateVerificationFailure('CERTIFICATE_REJECTED', 'La conexión fue cancelada porque no se aceptó el certificado.', assessment.info);
-      if (decision === 'trust_and_remember') {
-        if (!this.trustStore) throw new Error('certificate_storage_unavailable');
-        try { this.trustStore.upsertTrustedCertificate({ accountId: input.accountId, host: endpoint.host, port: endpoint.port, transport: transportName, fingerprintSha256: assessment.info.fingerprintSha256, certificatePem: assessment.info.pem, approvedAt: new Date().toISOString() }); } catch { throw new Error('certificate_storage_unavailable'); }
-      }
-      return { ca: assessment.error ? assessment.info.pem : undefined, expectedFingerprint: assessment.info.fingerprintSha256 };
-    }
-    return {};
+  resolveTlsOptions(input, senderId, transport) {
+    return this.transport.resolveTlsOptions(input, senderId, transport);
   }
-
   awaitTrustDecision(input, transport, certificate, verificationError, previous, senderId) {
-    return new Promise((resolve) => {
-      const previousRequestId = this.activeDecisionBySender.get(senderId);
-      if (previousRequestId) { const previousDecision = this.pendingDecisions.get(previousRequestId); this.pendingDecisions.delete(previousRequestId); previousDecision?.resolve('cancel'); }
-      const timeout = setTimeout(() => { if (this.pendingDecisions.has(input.requestId)) { this.pendingDecisions.delete(input.requestId); if (this.activeDecisionBySender.get(senderId) === input.requestId) this.activeDecisionBySender.delete(senderId); resolve('cancel'); } }, 300000);
-      this.pendingDecisions.set(input.requestId, { accountId: input.accountId, senderId, fingerprintSha256: certificate.fingerprintSha256, resolve: (decision) => { clearTimeout(timeout); resolve(decision); } });
-      this.activeDecisionBySender.set(senderId, input.requestId);
-      this.emit({ targetSenderId: senderId, type: 'certificate.trustRequired', payload: { requestId: input.requestId, accountId: input.accountId, host: input.endpoint.host, port: input.endpoint.port, transport, certificate, ...(verificationError ? { verificationError } : {}), ...(previous ? { previous } : {}) } });
-    });
+    return this.transport.awaitTrustDecision(
+      input,
+      transport,
+      certificate,
+      verificationError,
+      previous,
+      senderId,
+    );
   }
-
   decideCertificateTrust(senderId, input) {
-    const pending = this.pendingDecisions.get(input.requestId);
-    if (!pending || pending.senderId !== senderId || pending.accountId !== input.accountId || pending.fingerprintSha256 !== input.fingerprintSha256) throw new Error('CERTIFICATE_DECISION_CONFLICT');
-    if (!['cancel', 'trust_once', 'trust_and_remember'].includes(input.decision)) throw new Error('INVALID_INPUT');
-    this.pendingDecisions.delete(input.requestId);
-    if (this.activeDecisionBySender.get(senderId) === input.requestId) this.activeDecisionBySender.delete(senderId);
-    pending.resolve(input.decision);
+    return this.transport.decideCertificateTrust(senderId, input);
   }
-
   cancelPendingDecision(accountId) {
-    for (const [requestId, pending] of this.pendingDecisions) if (pending.accountId === accountId) { this.pendingDecisions.delete(requestId); if (this.activeDecisionBySender.get(pending.senderId) === requestId) this.activeDecisionBySender.delete(pending.senderId); pending.resolve('cancel'); }
+    return this.transport.cancelPendingDecision(accountId);
   }
 
-  async setPresence(accountId, presence) {
-    const session = this.require(accountId);
-    const show = presence.mode ? xml('show', {}, presence.mode) : undefined;
-    const status = presence.status ? xml('status', {}, presence.status) : undefined;
-    await session.send(xml('presence', { type: presence.availability === 'unavailable' ? 'unavailable' : undefined }, show, status));
-    return { jid: accountId, ...presence, updatedAt: new Date().toISOString() };
+  setPresence(accountId, presence) {
+    return this.rosterMessaging.setPresence(accountId, presence);
+  }
+  listRoster(accountId) {
+    return this.rosterMessaging.listRoster(accountId);
+  }
+  sendMessage(accountId, input) {
+    return this.rosterMessaging.sendMessage(accountId, input);
   }
 
-  async listRoster(accountId) {
-    const session = this.require(accountId);
-    const result = await session.iqCaller.request(xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' })));
-    const contacts = result.getChild('query', 'jabber:iq:roster')?.getChildren('item').map((item) => ({ jid: this.bareJid(item.attrs.jid), name: item.attrs.name, groups: item.getChildren('group').map((group) => group.getText()), subscription: ['none', 'to', 'from', 'both'].includes(item.attrs.subscription) ? item.attrs.subscription : 'none', ...(item.attrs.ask === 'subscribe' ? { ask: 'subscribe' } : {}), source: 'roster' })) || [];
-    const normalized = [...new Map(contacts.map((contact) => [contact.jid.toLowerCase(), contact])).values()]; this.rosters.set(accountId, new Map(normalized.map((contact) => [contact.jid, contact]))); const resources = this.remoteResources.get(accountId) || new Map(); for (const key of resources.keys()) if (!this.rosters.get(accountId).has(key.split('/')[0]) || !['to', 'both'].includes(this.rosters.get(accountId).get(key.split('/')[0]).subscription)) resources.delete(key); this.remoteResources.set(accountId, resources); if (!this.initialPresencePublished.has(accountId)) { await session.send(xml('presence')); this.initialPresencePublished.add(accountId); } return normalized;
+  sendFile(accountId, input) {
+    return this.fileService.sendFile(accountId, input);
   }
-
-  async sendMessage(accountId, input) {
-    if (this.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
-    const session = this.require(accountId);
-    await session.send(xml('message', { type: 'chat', to: input.to }, xml('body', {}, input.body.text)));
-    return { ...input, status: 'sent', createdAt: new Date().toISOString() };
+  resolveFileRecipient(accountId, conversationId, session, generation) {
+    return this.fileService.resolveFileRecipient(accountId, conversationId, session, generation);
   }
-
-  async sendFile(accountId, input) {
-    if (!this.outgoingTransfers) throw taggedError('UNSUPPORTED', 'El envío de archivos no está disponible.', 'file.send');
-    const session = this.requireConnected(accountId);
-    const generation = this.sessionGenerations.get(accountId) || 0;
-    const recipientJid = await this.resolveFileRecipient(accountId, input.conversationId, session, generation);
-    const conversationId = this.bareJid(recipientJid);
-    const offer = { transferId: `file_${crypto.randomUUID()}`, accountId, conversationId, senderJid: accountId, recipientJid, name: input.fileName, sizeBytes: '0', transport: 'ibb', offeredAt: new Date().toISOString() };
-    return this.outgoingTransfers.start({
-      filePath: input.filePath,
-      siSessionId: `si_${crypto.randomUUID()}`,
-      offer,
-      ownerSenderId: input.ownerSenderId,
-      transport: {
-        sendOffer: (record) => this.sendOutgoingOffer(accountId, session, generation, record),
-        sendOpen: (record, blockSize) => this.sendOutgoingOpen(accountId, session, generation, record, blockSize),
-        sendData: (record, block, sequence) => this.sendOutgoingData(accountId, session, generation, record, block, sequence),
-        sendClose: (record) => this.sendOutgoingClose(accountId, session, generation, record),
-      },
-    });
+  requestOutgoingIq(accountId, session, generation, record, child, phase) {
+    return this.fileService.requestOutgoingIq(accountId, session, generation, record, child, phase);
   }
-
-  async resolveFileRecipient(accountId, conversationId, session, generation) {
-    const bare = this.bareJid(conversationId).toLowerCase();
-    const roster = this.rosters.get(accountId);
-    const contact = [...(roster?.entries() || [])].find(([jid]) => jid.toLowerCase() === bare)?.[1];
-    if (!contact || !['to', 'both'].includes(contact.subscription)) throw taggedError('RECIPIENT_UNAVAILABLE', 'El destinatario no está autorizado en el roster.', 'file.recipient');
-    const resources = [...(this.remoteResources.get(accountId)?.entries() || [])].filter(([jid]) => jid.split('/')[0].toLowerCase() === bare);
-    const recipientJid = resources.at(-1)?.[0];
-    if (!recipientJid) throw taggedError('RECIPIENT_UNAVAILABLE', 'No hay un recurso disponible para el destinatario.', 'file.recipient');
-    this.assertSessionCurrent(accountId, session, generation, this.sessionDomains.get(accountId) || '');
-    const response = await session.iqCaller.request(xml('iq', { type: 'get', id: `file_disco_${crypto.randomUUID()}`, to: recipientJid }, xml('query', { xmlns: DISCO_INFO_NS })));
-    this.assertSessionCurrent(accountId, session, generation, this.sessionDomains.get(accountId) || '');
-    if (!response?.is?.('iq') || response.attrs?.type !== 'result' || response.attrs?.from !== recipientJid) throw taggedError('RECIPIENT_UNAVAILABLE', 'La respuesta de capacidades no corresponde al recurso seleccionado.', 'file.recipient');
-    const features = new Set(response.getChild('query', DISCO_INFO_NS)?.getChildren('feature').map((feature) => feature.attrs.var));
-    if (![SI_NS, SI_FILE_NS, IBB_NS].every((feature) => features.has(feature))) throw taggedError('UNSUPPORTED_METHOD', 'El recurso no ofrece SI File Transfer mediante IBB.', 'file.recipient');
-    return recipientJid;
+  sendOutgoingOffer(accountId, session, generation, record) {
+    return this.fileService.sendOutgoingOffer(accountId, session, generation, record);
   }
-
-  async requestOutgoingIq(accountId, session, generation, record, child, phase) {
-    this.assertSessionCurrent(accountId, session, generation, this.sessionDomains.get(accountId) || '');
-    const currentResources = this.remoteResources.get(accountId);
-    if (!currentResources?.has(record.offer.recipientJid)) throw taggedError('RECIPIENT_UNAVAILABLE', 'El recurso del destinatario ya no está disponible.', `file.${phase}`);
-    const id = `file_${phase}_${crypto.randomUUID()}`;
-    const response = await session.iqCaller.request(xml('iq', { type: 'set', id, to: record.offer.recipientJid }, child));
-    this.assertSessionCurrent(accountId, session, generation, this.sessionDomains.get(accountId) || '');
-    if (!response?.is?.('iq') || response.attrs?.id !== id || response.attrs?.from !== record.offer.recipientJid) throw taggedError('TRANSPORT_FAILED', `La respuesta IQ ${phase} no está correlacionada.`, `file.${phase}`);
-    if (response.attrs.type === 'error') {
-      const condition = response.getChild('error')?.getChildren()?.find((item) => item.name !== 'text')?.name;
-      const error = taggedError(condition === 'not-acceptable' ? 'UNSUPPORTED_METHOD' : 'REMOTE_REJECTED', `El receptor rechazó ${phase}.`, `file.${phase}`);
-      throw error;
-    }
-    if (response.attrs.type !== 'result') throw taggedError('TRANSPORT_FAILED', `La respuesta IQ ${phase} no es un resultado.`, `file.${phase}`);
-    return response;
+  sendOutgoingOpen(accountId, session, generation, record, blockSize) {
+    return this.fileService.sendOutgoingOpen(accountId, session, generation, record, blockSize);
   }
-
-  async sendOutgoingOffer(accountId, session, generation, record) {
-    const si = xml('si', { xmlns: SI_NS, id: record.siSessionId, profile: SI_FILE_NS },
-      xml('file', { xmlns: SI_FILE_NS, name: record.offer.name, size: record.offer.sizeBytes }),
-      xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'form' }, xml('field', { var: 'stream-method', type: 'list-single' }, xml('option', {}, xml('value', {}, IBB_NS))))));
-    const response = await this.requestOutgoingIq(accountId, session, generation, record, si, 'si');
-    const values = response.getChild('si', SI_NS)?.getChild('feature', FEATURE_NEG_NS)?.getChild('x', DATAFORM_NS)?.getChildren('field').flatMap((field) => field.getChildren('value').map((value) => value.getText())) || [];
-    if (!values.includes(IBB_NS)) throw taggedError('UNSUPPORTED_METHOD', 'El receptor no seleccionó IBB.', 'file.si');
-    return response;
+  sendOutgoingData(accountId, session, generation, record, block, sequence) {
+    return this.fileService.sendOutgoingData(
+      accountId,
+      session,
+      generation,
+      record,
+      block,
+      sequence,
+    );
   }
-
-  sendOutgoingOpen(accountId, session, generation, record, blockSize) { return this.requestOutgoingIq(accountId, session, generation, record, xml('open', { xmlns: IBB_NS, sid: record.siSessionId, 'block-size': String(blockSize), stanza: 'iq' }), 'open'); }
-  sendOutgoingData(accountId, session, generation, record, block, sequence) { return this.requestOutgoingIq(accountId, session, generation, record, xml('data', { xmlns: IBB_NS, sid: record.siSessionId, seq: String(sequence) }, block.toString('base64')), 'data'); }
-  sendOutgoingClose(accountId, session, generation, record) { return this.requestOutgoingIq(accountId, session, generation, record, xml('close', { xmlns: IBB_NS, sid: record.siSessionId }), 'close'); }
+  sendOutgoingClose(accountId, session, generation, record) {
+    return this.fileService.sendOutgoingClose(accountId, session, generation, record);
+  }
+  isFileIq(stanza) {
+    return this.fileService.isFileIq(stanza);
+  }
+  installFileIqHandlers(accountId, session) {
+    return this.fileService.installFileIqHandlers(accountId, session);
+  }
+  observeFileIqReply(session, request, response) {
+    return this.fileService.observeFileIqReply(session, request, response);
+  }
+  handleFileIq(accountId, stanza, options = {}) {
+    return this.fileService.handleFileIq(accountId, stanza, options);
+  }
+  handleFileStanza(accountId, stanza) {
+    return this.fileService.handleFileStanza(accountId, stanza);
+  }
 
   setMucPolicy(policy) {
-    if (!policy || typeof policy.accountId !== 'string' || typeof policy.service !== 'string' || policy.canCreate !== false || policy.source !== 'operator' || typeof policy.evidence !== 'string' || !policy.evidence.trim() || !policy.endpoint || typeof policy.endpoint.host !== 'string' || !policy.endpoint.host.trim() || !Number.isInteger(policy.endpoint.port) || !['starttls', 'direct-tls'].includes(policy.endpoint.transport)) return false;
-    this.mucPolicies.set(this.mucPolicyKey(policy.accountId, policy.service, policy.endpoint), { ...policy, endpoint: { ...policy.endpoint } }); return true;
+    return this.mucService.setMucPolicy(policy);
   }
-
-  async discoverMuc(input) {
-    this.assertMucRequest(input); const session = this.requireConnected(input.accountId); const generation = this.sessionGenerations.get(input.accountId) || 0; const domain = this.sessionDomains.get(input.accountId) || ''; const request = this.withTimeout(this.discoverServices(session, input.accountId, () => this.assertSessionCurrent(input.accountId, session, generation, domain)), 10000, 'TIMEOUT', 'El descubrimiento MUC excedió el tiempo límite.');
-    const rooms = await request; this.assertSessionCurrent(input.accountId, session, generation, domain); const accreditedRooms = rooms.map((room) => ({ ...room, discoveryGeneration: generation, discoveryDomain: domain, discoveryEndpoint: this.sessionEndpoints.get(input.accountId) })); this.mucDiscoveries.set(input.accountId, new Map(accreditedRooms.map((room) => [room.jid.toLowerCase(), room]))); return accreditedRooms;
+  discoverMuc(input) {
+    return this.mucService.discoverMuc(input);
   }
-
-  async discoverServices(session, accountId, guard = () => undefined) {
-    const domain = this.sessionDomains.get(accountId) || process.env.ATOMIC_XMPP_DOMAIN || accountId.split('@')[1];
-    const items = await this.discoItems(session, domain); guard(); const services = [];
-    for (const item of items) {
-      const jid = this.bareJid(item.attrs.jid || ''); if (!jid) continue;
-      const info = await this.discoInfo(session, jid); guard(); const identities = info.getChild('query', DISCO_INFO_NS)?.getChildren('identity') || []; const features = info.getChild('query', DISCO_INFO_NS)?.getChildren('feature') || [];
-      if (!identities.some((identity) => identity.attrs.category === 'conference' && identity.attrs.type === 'text') || !features.some((feature) => feature.attrs.var === 'http://jabber.org/protocol/muc')) continue;
-      services.push(jid);
-    }
-    const rooms = []; for (const service of services) { const visible = await this.discoItems(session, service); guard(); for (const item of visible) { const jid = this.bareJid(item.attrs.jid || ''); if (!jid || !jid.endsWith(`@${service}`) || jid.includes('/')) continue; rooms.push({ service, room: jid.slice(0, -service.length - 1), jid }); } }
-    return [...new Map(rooms.map((room) => [room.jid.toLowerCase(), room])).values()];
+  discoverServices(session, accountId, guard) {
+    return this.mucService.discoverServices(session, accountId, guard);
   }
-
-  async discoItems(session, to) { const result = await session.iqCaller.request(xml('iq', { type: 'get', to }, xml('query', { xmlns: DISCO_ITEMS_NS }))); const query = result.getChild('query', DISCO_ITEMS_NS); if (!query) throw taggedError('TRANSPORT_FAILED', 'La respuesta de descubrimiento está incompleta.', 'muc.discovery'); return query.getChildren('item'); }
-  async discoInfo(session, to) { const result = await session.iqCaller.request(xml('iq', { type: 'get', to }, xml('query', { xmlns: DISCO_INFO_NS }))); if (!result.getChild('query', DISCO_INFO_NS)) throw taggedError('TRANSPORT_FAILED', 'La respuesta de identidad MUC está incompleta.', 'muc.discovery'); return result; }
-
-  async joinMuc(input) {
-    this.assertMucRequest(input); const roomJid = this.validateRoomJid(input.roomJid); const nickname = this.validateNickname(input.nickname); const session = this.requireConnected(input.accountId); const discovered = this.mucDiscoveries.get(input.accountId)?.get(roomJid.toLowerCase());
-    if (!discovered || discovered.service !== this.bareJid(roomJid).split('@')[1]) throw taggedError('UNAUTHORIZED', 'La sala no fue descubierta en el servicio seleccionado.', 'muc.join');
-    const generation = this.sessionGenerations.get(input.accountId) || 0; const currentDomain = this.sessionDomains.get(input.accountId) || ''; const endpoint = this.sessionEndpoints.get(input.accountId); const policy = this.mucPolicies.get(this.mucPolicyKey(input.accountId, discovered.service, endpoint)); if (!policy) throw taggedError('UNAUTHORIZED', 'La entrada requiere acreditación administrativa de que la cuenta no puede crear salas.', 'muc.policy');
-    if (discovered.discoveryGeneration !== generation || discovered.discoveryDomain !== currentDomain || JSON.stringify(discovered.discoveryEndpoint) !== JSON.stringify(endpoint) || discovered.service !== this.bareJid(roomJid).split('@')[1]) throw taggedError('UNAUTHORIZED', 'La evidencia de la sala está obsoleta.', 'muc.join');
-    const roomInfo = await this.discoInfo(session, roomJid); this.assertSessionCurrent(input.accountId, session, generation, currentDomain); const roomQuery = roomInfo.getChild('query', DISCO_INFO_NS); if (!roomQuery || !roomQuery.getChildren('identity').length) throw taggedError('UNAUTHORIZED', 'La sala ya no está disponible.', 'muc.join');
-    const rooms = this.mucRooms.get(input.accountId) || new Map(); const active = [...rooms.values()].filter((room) => ['joining', 'joined', 'leaving'].includes(room.state.status)).length; if (active >= MUC_ROOM_LIMIT) throw taggedError('CONFLICT', 'Se alcanzó el máximo de salas simultáneas.', 'muc.join');
-    if (rooms.get(roomJid.toLowerCase())?.state.status === 'joining' || rooms.get(roomJid.toLowerCase())?.state.status === 'joined') throw taggedError('CONFLICT', 'La cuenta ya está en esta sala.', 'muc.join');
-    const record = this.createMucRoom(input.accountId, discovered, generation, nickname, input.requestId); rooms.set(roomJid.toLowerCase(), record); this.mucRooms.set(input.accountId, rooms); this.emitMucState(record, input.requestId);
-    const presence = xml('presence', { to: `${roomJid}/${nickname}` }, xml('x', { xmlns: MUC_NS }, xml('history', { maxstanzas: '0' })));
-    try { this.assertSessionCurrent(input.accountId, session, generation, currentDomain); await session.send(presence); return await this.withTimeout(record.joinPromise, 15000, 'TIMEOUT', 'La entrada a la sala excedió el tiempo límite.'); } catch (error) { this.failMucRoom(record, error); throw error; }
+  discoItems(session, to) {
+    return this.mucService.discoItems(session, to);
   }
-
-  async leaveMuc(input) {
-    this.assertMucRequest(input); const roomJid = this.validateRoomJid(input.roomJid); const record = this.mucRooms.get(input.accountId)?.get(roomJid.toLowerCase()); if (!record || record.state.status !== 'joined') throw taggedError('CONFLICT', 'La cuenta no está dentro de esta sala.', 'muc.leave');
-    record.state = { ...record.state, status: 'leaving' }; record.leaveRequestId = input.requestId; this.emitMucState(record, input.requestId); const session = this.requireConnected(input.accountId); try { await session.send(xml('presence', { to: record.state.selfOccupantJid || `${roomJid}/${record.nickname}`, type: 'unavailable' })); return await this.withTimeout(record.leavePromise, 15000, 'TIMEOUT', 'La salida de la sala no fue confirmada.'); } catch (error) { if (record.state.status === 'leaving') { record.state = { ...record.state, status: 'leaving', errorCode: error.code || 'TRANSPORT_FAILED' }; this.emitMucState(record, input.requestId); } throw error; }
+  discoInfo(session, to) {
+    return this.mucService.discoInfo(session, to);
   }
-
-  async sendMucMessage(input) {
-    this.assertMucRequest(input); const roomJid = this.validateRoomJid(input.roomJid); if (!input.clientMessageId || typeof input.clientMessageId !== 'string' || input.clientMessageId.length > 512 || input.body?.kind !== 'text' || typeof input.body.text !== 'string' || !input.body.text.trim()) throw taggedError('INVALID_INPUT', 'El mensaje MUC no es válido.', 'muc.send'); if (Buffer.byteLength(input.body.text, 'utf8') > MUC_TEXT_LIMIT_BYTES) throw taggedError('INVALID_INPUT', 'El mensaje supera el límite de 4096 bytes UTF-8.', 'muc.send');
-    const record = this.mucRooms.get(input.accountId)?.get(roomJid.toLowerCase()); if (!record || record.state.status !== 'joined') throw taggedError('NOT_CONNECTED', 'La sala no está confirmada como ingresada.', 'muc.send'); const self = record.state.selfOccupantJid && record.participants.get(record.state.selfOccupantJid); if (!self || !['participant', 'moderator'].includes(self.role)) throw taggedError('UNAUTHORIZED', 'El usuario no tiene voz en la sala.', 'muc.send');
-    await this.requireConnected(input.accountId).send(xml('message', { type: 'groupchat', to: roomJid, id: input.clientMessageId }, xml('body', {}, input.body.text), xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }))); return { accountId: input.accountId, roomJid, clientMessageId: input.clientMessageId, status: 'sent' };
+  joinMuc(input) {
+    return this.mucService.joinMuc(input);
   }
-
-  createMucRoom(accountId, room, generation, nickname, requestId) { let resolveJoin; let rejectJoin; let resolveLeave; const joinPromise = new Promise((resolve, reject) => { resolveJoin = resolve; rejectJoin = reject; }); const leavePromise = new Promise((resolve) => { resolveLeave = resolve; }); joinPromise.catch(() => undefined); return { accountId, generation, room, nickname, requestId, active: true, participants: new Map(), seenMessageIds: new Set(), joinPromise, resolveJoin, rejectJoin, leavePromise, resolveLeave, state: { accountId, room, status: 'joining', participants: [], sessionGeneration: generation } }; }
-  emitMucState(record, correlationId) { this.emit({ type: 'muc.stateChanged', correlationId: correlationId || record.requestId, payload: { ...record.state, participants: [...record.participants.values()] } }); }
-  emitMucParticipant(record, participant, correlationId) { this.emit({ type: 'muc.participantChanged', correlationId: correlationId || record.requestId, payload: { accountId: record.accountId, room: record.room, participant, sessionGeneration: record.generation } }); }
-  mucPolicyKey(accountId, service, endpoint) { return `${accountId.toLowerCase()}|${service.toLowerCase()}|${endpoint?.host?.toLowerCase() || ''}:${endpoint?.port || ''}|${endpoint?.transport || ''}`; }
-  assertSessionCurrent(accountId, session, generation, domain) { if (this.sessions.get(accountId) !== session || this.sessionGenerations.get(accountId) !== generation || this.sessionDomains.get(accountId) !== domain || this.states.get(accountId)?.status !== 'connected') throw taggedError('NOT_CONNECTED', 'La sesión XMPP ya no es vigente.', 'muc.session'); }
-  assertMucRequest(input) { if (!input || input.version !== 1 || typeof input.requestId !== 'string' || !input.requestId.trim() || typeof input.accountId !== 'string' || !input.accountId.trim()) throw taggedError('INVALID_INPUT', 'La solicitud MUC no es válida.', 'muc.input'); }
-  validateRoomJid(value) { if (typeof value !== 'string' || value.length > 512 || value.includes('/') || !/^[^@\s]+@[^@\s]+$/.test(value.trim())) throw taggedError('INVALID_INPUT', 'El JID de sala no es válido.', 'muc.input'); return value.trim().toLowerCase(); }
-  validateNickname(value) { if (typeof value !== 'string' || !value.trim() || value.length > 128 || /[\s/@<>:&"']/.test(value)) throw taggedError('INVALID_INPUT', 'El nickname no es válido.', 'muc.input'); return value.trim(); }
-  requireConnected(accountId) { if (!this.sessions.has(accountId) || this.states.get(accountId)?.status !== 'connected') throw taggedError('NOT_CONNECTED', 'La cuenta no está conectada.', 'muc.session'); return this.sessions.get(accountId); }
-  withTimeout(promise, milliseconds, code, message) { let timer; return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(taggedError(code, message, 'muc.timeout')), milliseconds); })]).finally(() => clearTimeout(timer)); }
-  clearMucRooms(accountId) { const rooms = this.mucRooms.get(accountId); if (!rooms) return; for (const record of rooms.values()) { record.rejectJoin?.(taggedError('NOT_CONNECTED', 'La sesión XMPP terminó.', 'muc.session')); record.participants.clear(); } rooms.clear(); this.mucRooms.delete(accountId); this.mucDiscoveries.delete(accountId); }
-  failMucRoom(record, error) { if (!record || record.state.status === 'failed' || record.state.status === 'idle') return; const code = error?.code || 'TRANSPORT_FAILED'; record.state = { ...record.state, status: 'failed', errorCode: ['INVALID_INPUT', 'UNAUTHORIZED', 'NOT_CONNECTED', 'TIMEOUT', 'TRANSPORT_FAILED', 'CONFLICT', 'UNSUPPORTED', 'INTERNAL'].includes(code) ? code : 'TRANSPORT_FAILED', participants: [] }; record.active = false; record.participants.clear(); this.emitMucState(record); record.rejectJoin?.(error); const rooms = this.mucRooms.get(record.accountId); if (rooms?.get(record.room.jid.toLowerCase()) === record) rooms.delete(record.room.jid.toLowerCase()); }
-
+  leaveMuc(input) {
+    return this.mucService.leaveMuc(input);
+  }
+  sendMucMessage(input) {
+    return this.mucService.sendMucMessage(input);
+  }
+  createMucRoom(accountId, room, generation, nickname, requestId) {
+    return this.mucService.createMucRoom(accountId, room, generation, nickname, requestId);
+  }
+  emitMucState(record, correlationId) {
+    return this.mucService.emitMucState(record, correlationId);
+  }
+  emitMucParticipant(record, participant, correlationId) {
+    return this.mucService.emitMucParticipant(record, participant, correlationId);
+  }
+  mucPolicyKey(accountId, service, endpoint) {
+    return this.mucService.mucPolicyKey(accountId, service, endpoint);
+  }
+  assertSessionCurrent(accountId, session, generation, domain) {
+    return this.mucService.assertSessionCurrent(accountId, session, generation, domain);
+  }
+  assertMucRequest(input) {
+    return this.mucService.assertMucRequest(input);
+  }
+  validateRoomJid(value) {
+    return this.mucService.validateRoomJid(value);
+  }
+  validateNickname(value) {
+    return this.mucService.validateNickname(value);
+  }
+  withTimeout(promise, milliseconds, code, message) {
+    return this.mucService.withTimeout(promise, milliseconds, code, message);
+  }
+  clearMucRooms(accountId) {
+    return this.mucService.clearMucRooms(accountId);
+  }
+  failMucRoom(record, error) {
+    return this.mucService.failMucRoom(record, error);
+  }
   handleMucStanza(accountId, stanza) {
-    if (stanza.is('presence')) return this.handleMucPresence(accountId, stanza);
-    if (stanza.is('message') && stanza.attrs.type === 'groupchat') { this.handleMucMessage(accountId, stanza); return true; }
-    return false;
+    return this.mucService.handleMucStanza(accountId, stanza);
   }
-
   handleMucPresence(accountId, stanza) {
-    const from = String(stanza.attrs.from || ''); const roomJid = this.bareJid(from); const record = this.mucRooms.get(accountId)?.get(roomJid.toLowerCase()); if (!record || !record.active || record.generation !== this.sessionGenerations.get(accountId) || !['joining', 'joined', 'leaving'].includes(record.state.status)) return false;
-    const type = stanza.attrs.type; const errorCondition = stanza.getChild('error')?.getChildren()?.find((child) => child.name !== 'text')?.name; if (type === 'error' || errorCondition) { const error = taggedError(this.mucConditionCode(errorCondition), 'El servidor rechazó la entrada a la sala.', 'muc.join'); record.rejectJoin?.(error); this.failMucRoom(record, error); return true; }
-    const x = stanza.getChild('x', MUC_USER_NS); const item = x?.getChild('item'); const statusCodes = new Set((x?.getChildren('status') || []).map((status) => String(status.attrs.code || ''))); const participant = { occupantJid: from, nick: from.split('/').slice(1).join('/') || '', role: this.mucRole(item?.attrs.role), affiliation: this.mucAffiliation(item?.attrs.affiliation), availability: type === 'unavailable' ? 'unavailable' : 'available' };
-    if (type === 'unavailable') record.participants.delete(from); else record.participants.set(from, participant); if (record.state.status !== 'leaving') this.emitMucParticipant(record, participant);
-    if (type === 'unavailable' && statusCodes.has('110') && record.state.status === 'leaving') { record.state = { ...record.state, status: 'idle', participants: [] }; record.active = false; record.resolveLeave?.(record.state); this.mucRooms.get(accountId)?.delete(roomJid.toLowerCase()); this.emitMucState(record, record.leaveRequestId); return true; }
-    if (record.state.status === 'leaving') return true;
-    if (statusCodes.has('100')) this.emit({ type: 'muc.notice', payload: { accountId, roomJid, code: 'IDENTITY_VISIBLE', sessionGeneration: record.generation } });
-    if (statusCodes.has('170')) this.emit({ type: 'muc.notice', payload: { accountId, roomJid, code: 'PUBLIC_LOGGING', sessionGeneration: record.generation } });
-    if (statusCodes.has('210')) this.emit({ type: 'muc.notice', payload: { accountId, roomJid, code: 'SERVER_NICKNAME', nickname: participant.nick, sessionGeneration: record.generation } });
-    if (type === 'unavailable' && statusCodes.has('110')) { const error = taggedError('TRANSPORT_FAILED', 'La presencia propia fue retirada antes de confirmar la entrada.', 'muc.join'); this.failMucRoom(record, error); return true; }
-    if (statusCodes.has('201')) { const error = taggedError('CONFLICT', 'El servidor indicó que la sala fue creada durante la entrada.', 'muc.join'); void Promise.resolve(this.requireConnected(accountId).send(xml('presence', { to: from, type: 'unavailable' }))).catch(() => undefined); this.failMucRoom(record, error); return true; }
-    if (statusCodes.has('110')) { record.state = { ...record.state, status: 'joined', selfOccupantJid: from, participants: [...record.participants.values()] }; this.emitMucState(record); record.resolveJoin?.(record.state); }
-    return true;
+    return this.mucService.handleMucPresence(accountId, stanza);
   }
-
   handleMucMessage(accountId, stanza) {
-    const from = String(stanza.attrs.from || ''); const roomJid = this.bareJid(from); const record = this.mucRooms.get(accountId)?.get(roomJid.toLowerCase()); if (!record || record.generation !== this.sessionGenerations.get(accountId)) return;
-    const body = stanza.getChildText('body'); if (typeof body !== 'string') return; const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id || ''; const identity = explicitId ? `${accountId}|${roomJid}|${from}|${explicitId}` : `muc_${crypto.randomUUID()}`; const id = explicitId ? `room_${crypto.createHash('sha256').update(identity).digest('hex')}` : identity; if (record.seenMessageIds.has(id)) return; record.seenMessageIds.add(id); if (record.seenMessageIds.size > MUC_MESSAGE_BUFFER_LIMIT * 2) record.seenMessageIds.delete(record.seenMessageIds.values().next().value);
-    const source = stanza.getChild('delay', DELAY_NS) || stanza.getChild('x', LEGACY_DELAY_NS) ? 'server-history' : 'live'; const clientMessageId = stanza.getChild('origin-id')?.attrs?.id || (from === record.state.selfOccupantJid ? explicitId || undefined : undefined); const message = { id, accountId, roomJid, occupantJid: from, body: { kind: 'text', text: body }, receivedAt: new Date().toISOString(), ...(clientMessageId ? { clientMessageId } : {}), source, sessionGeneration: record.generation }; if (source === 'live') { record.messageBuffer = [...(record.messageBuffer || []), message].slice(-MUC_MESSAGE_BUFFER_LIMIT); } this.emit({ type: 'muc.messageReceived', correlationId: clientMessageId || id, payload: message });
+    return this.mucService.handleMucMessage(accountId, stanza);
   }
-
-  mucRole(value) { return ['none', 'visitor', 'participant', 'moderator'].includes(value) ? value : 'none'; }
-  mucAffiliation(value) { return ['none', 'member', 'admin', 'owner'].includes(value) ? value : 'none'; }
-  mucConditionCode(condition) { return ['conflict', 'not-acceptable'].includes(condition) ? 'CONFLICT' : ['forbidden', 'not-authorized', 'registration-required', 'membership-required'].includes(condition) ? 'UNAUTHORIZED' : ['service-unavailable', 'item-not-found', 'remote-server-not-found', 'recipient-unavailable'].includes(condition) ? 'NOT_CONNECTED' : condition === 'resource-constraint' ? 'CONFLICT' : 'TRANSPORT_FAILED'; }
-
-  isFileIq(stanza) {
-    if (!stanza?.is?.('iq') || !['get', 'set'].includes(stanza.attrs?.type)) return false;
-    return Boolean(stanza.getChild?.('si', SI_NS) || stanza.getChild?.('open', IBB_NS) || stanza.getChild?.('data', IBB_NS) || stanza.getChild?.('close', IBB_NS) || stanza.getChild?.('query', DISCO_INFO_NS));
+  mucRole(value) {
+    return this.mucService.mucRole(value);
   }
-
-  installFileIqHandlers(accountId, session) {
-    if (!session?.iqCallee?.set || !session?.iqCallee?.get) return;
-    const handler = async (context) => {
-      this.fileIqHandled.add(context.stanza);
-      const response = await this.handleFileIq(accountId, context.stanza);
-      if (response) this.observeFileIqReply(session, context.stanza, response);
-      return response;
-    };
-    session.iqCallee.get(DISCO_INFO_NS, 'query', handler);
-    session.iqCallee.set(SI_NS, 'si', handler);
-    session.iqCallee.set(IBB_NS, 'open', handler);
-    session.iqCallee.set(IBB_NS, 'data', handler);
-    session.iqCallee.set(IBB_NS, 'close', handler);
+  mucAffiliation(value) {
+    return this.mucService.mucAffiliation(value);
   }
-
-  observeFileIqReply(session, request, response) {
-    if (process.env.ATOMIC_XMPP_FILE_TRACE !== 'true' || !session?.on) return;
-    const child = request.getChild?.('si', SI_NS) || request.getChild?.('open', IBB_NS) || request.getChild?.('data', IBB_NS) || request.getChild?.('close', IBB_NS) || request.getChild?.('query', DISCO_INFO_NS);
-    const phase = child?.getName?.() === 'si' ? 'SI_RESULT' : child?.getName?.() === 'open' ? 'IBB_OPEN_RESULT' : child?.getName?.() === 'data' ? 'IBB_DATA' : child?.getName?.() === 'close' ? 'IBB_CLOSE' : 'DISCO_INFO';
-    const correlation = this.fileTraceAttempts.get(request);
-    let settled = false; let timer;
-    const cleanup = () => { if (settled) return; settled = true; clearTimeout(timer); session.removeListener?.('send', onSend); session.removeListener?.('error', onError); };
-    const onSend = (sent) => { if (!sent?.is?.('iq') || sent.attrs?.id !== request.attrs?.id) return; fileTrace(`${phase}_TX_FULFILLED`, 'TX', { iqType: sent.attrs.type, result: sent.attrs.type === 'result' ? 'sent' : undefined, correlation }); cleanup(); };
-    const onError = () => { fileTrace(`${phase}_TX_FAILED`, 'TX', { iqType: request.attrs?.type, errorCode: 'TRANSPORT_FAILED', correlation }); cleanup(); };
-    session.on('send', onSend); session.on('error', onError); timer = setTimeout(cleanup, 30000); timer.unref?.();
+  mucConditionCode(condition) {
+    return this.mucService.mucConditionCode(condition);
   }
 
   handleStanza(accountId, stanza) {
-    if (process.env.ATOMIC_XMPP_FILE_TRACE === 'true' && stanza?.is?.('iq') && stanza.attrs?.type === 'set' && stanza.getChild?.('si', SI_NS)) { const correlation = `attempt_${crypto.randomUUID()}`; this.fileTraceAttempts.set(stanza, correlation); fileTrace('FILE_IQ_CANDIDATE_RX', 'RX', { iqType: 'set', correlation }); }
-    if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_STANZA]', JSON.stringify({ accountId, from: stanza.attrs?.from || '', to: stanza.attrs?.to || '', type: stanza.name || stanza.attrs?.type || '', id: stanza.attrs?.id || '', hasBody: Boolean(stanza.getChildText?.('body')) }));
-    if (this.fileIqHandled.has(stanza) || (this.sessions.get(accountId)?.iqCallee && this.isFileIq(stanza))) return;
+    this.fileService.traceStanza(accountId, stanza);
+    if (
+      this.fileIqHandled.has(stanza) ||
+      (this.sessions.get(accountId)?.iqCallee && this.isFileIq(stanza))
+    )
+      return;
     if (this.handleMucStanza(accountId, stanza)) return;
     if (this.handleFileStanza(accountId, stanza)) return;
     if (stanza.is('presence')) {
-      const type = stanza.attrs.type; if (['subscribe', 'subscribed', 'unsubscribe', 'unsubscribed', 'error', 'probe'].includes(type)) return;
-      const jid = this.bareJid(stanza.attrs.from || accountId); const contact = this.rosters.get(accountId)?.get(jid); if (!contact || !['to', 'both'].includes(contact.subscription)) return;
-      const resource = String(stanza.attrs.from || '').split('/')[1] || '_bare'; const resources = this.remoteResources.get(accountId) || new Map(); if (type === 'unavailable') resources.delete(jid + '/' + resource); else resources.set(jid + '/' + resource, { mode: stanza.getChildText('show') || undefined, status: stanza.getChildText('status') || undefined }); this.remoteResources.set(accountId, resources);
-      const active = [...resources.entries()].filter(([key]) => key.startsWith(`${jid}/`)); const latest = active[active.length - 1]?.[1]; this.emit({ type: 'presence.changed', payload: { accountId, jid, availability: active.length ? 'available' : 'unavailable', mode: latest?.mode, status: latest?.status, updatedAt: new Date().toISOString() } });
+      this.rosterMessaging.handlePresence(accountId, stanza);
+      return;
     }
-    if (stanza.is('message') && stanza.getChildText('body')) {
-      const senderJid = this.bareJid(stanza.attrs.from || accountId);
-      const bodyText = stanza.getChildText('body');
-      const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id;
-      const identity = `${accountId}|${senderJid}|${explicitId || crypto.randomUUID()}`;
-      const stanzaId = explicitId ? `received_${crypto.createHash('sha256').update(identity).digest('hex')}` : `received_${crypto.randomUUID()}`;
-      this.emit({ type: 'message.received', payload: { id: `msg_${stanzaId}`, accountId, conversationId: senderJid, clientMessageId: `received_${stanzaId}`, senderJid, body: { kind: 'text', text: bodyText }, status: 'sent', createdAt: new Date().toISOString() } });
-      if (process.env.ATOMIC_XMPP_DEBUG === 'true') console.debug('[XMPP_MESSAGE_RECEIVED]', JSON.stringify({ accountId, from: senderJid, id: stanzaId, hasBody: true }));
-    }
+    if (stanza.is('message')) this.rosterMessaging.handleMessage(accountId, stanza);
   }
-
-  handleFileIq(accountId, stanza, options = {}) {
-    if (!this.fileTransfers || !stanza?.is?.('iq')) return undefined;
-    const session = this.sessions.get(accountId); const generation = this.sessionGenerations.get(accountId) || 0; const si = stanza.getChild?.('si', SI_NS); const open = stanza.getChild?.('open', IBB_NS); const data = stanza.getChild?.('data', IBB_NS); const close = stanza.getChild?.('close', IBB_NS); const disco = stanza.getChild?.('query', DISCO_INFO_NS);
-    const deliver = async (child) => { if (options.send) await options.send(child); return child; };
-    const errorElement = (condition) => xml('error', { type: 'cancel' }, xml(condition, { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' }));
-    const conditionFor = (cause) => cause?.code === 'RESOURCE_CONSTRAINT' || cause?.message === 'RESOURCE_CONSTRAINT' ? 'resource-constraint' : cause?.code === 'UNSUPPORTED_METHOD' ? 'not-acceptable' : cause?.code === 'CONFLICT' || cause?.message === 'NOT_ACCEPTED' ? 'not-acceptable' : cause?.code === 'UNAUTHORIZED' ? 'not-authorized' : cause?.message === 'BAD_SENDER' ? 'item-not-found' : cause?.message === 'INVALID_BASE64' ? 'bad-request' : cause?.message === 'BAD_REQUEST' ? 'bad-request' : 'undefined-condition';
-    if (stanza.attrs?.type === 'get' && disco) { fileTrace('DISCO_INFO', 'RX', { iqType: 'get' }); const response = xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: SI_NS }), xml('feature', { var: SI_FILE_NS }), xml('feature', { var: IBB_NS })); fileTrace('DISCO_INFO', 'TX', { iqType: 'result', result: 'supported' }); return response; }
-    if (stanza.attrs?.type !== 'set' || (!si && !open && !data && !close)) return undefined;
-    if (si) {
-      const attempt = this.fileTraceAttempts.get(stanza) || `attempt_${crypto.randomUUID()}`; this.fileTraceAttempts.set(stanza, attempt); fileTrace('SI_OFFER_RX', 'RX', { iqType: stanza.attrs.type, result: 'recognized', correlation: attempt });
-      try {
-        const offer = parseOffer(stanza, accountId, generation); const publicOffer = { transferId: offer.transferId, accountId, conversationId: offer.conversationId, senderJid: offer.senderJid, name: offer.name, sizeBytes: offer.sizeBytes, ...(offer.description ? { description: offer.description } : {}), transport: 'ibb', offeredAt: new Date().toISOString() };
-        let replied = false; let resolveResponse; let rejectResponse;
-        const response = new Promise((resolve, reject) => { resolveResponse = resolve; rejectResponse = reject; });
-        const reply = async (child) => { if (replied) return; replied = true; try { await deliver(child); resolveResponse(child); } catch (cause) { rejectResponse(cause); throw cause; } };
-        const replyError = async (reason) => { if (replied) return; const condition = reason === 'user_rejected' ? 'forbidden' : 'not-acceptable'; fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition, correlation: attempt }); await reply(errorElement(condition)); };
-        const record = this.fileTransfers.add({ offer: publicOffer, iqOfferId: offer.iqId, siSessionId: offer.siSid, ownerSenderId: this.fileOwners.get(accountId), iq: stanza, session, onRejected: replyError, onAccepted: async () => { if (replied) throw new Error('SI_ALREADY_REPLIED'); fileTrace('SI_RESULT_TX_ATTEMPT', 'TX', { iqType: 'result', correlation: attempt }); try { await reply(xml('si', { xmlns: SI_NS }, xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS)))))); if (options.send) fileTrace('SI_RESULT_TX_FULFILLED', 'TX', { iqType: 'result', correlation: attempt }); } catch (cause) { if (options.send) fileTrace('SI_RESULT_TX_FAILED', 'TX', { iqType: 'result', errorCode: 'TRANSPORT_FAILED', correlation: attempt }); throw cause; } } });
-        this.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, { record, session, generation, attempt, protocolQueue: Promise.resolve(), openState: 'idle', pendingBinaryBytes: 0 }); fileTrace('SI_OFFER_REGISTERED', 'RX', { result: 'offered', correlation: attempt }); return response;
-      } catch (cause) { const condition = cause?.code === 'UNSUPPORTED_METHOD' ? 'not-acceptable' : cause?.code === 'RESOURCE_CONSTRAINT' ? 'resource-constraint' : cause?.code === 'BAD_REQUEST' ? 'bad-request' : 'undefined-condition'; fileTrace('SI_PARSE_REJECTED', 'RX', { iqType: 'set', condition, correlation: this.fileTraceAttempts.get(stanza) }); return errorElement(condition); }
-    }
-    const sid = open?.attrs?.sid || data?.attrs?.sid || close?.attrs?.sid || ''; const pending = this.filePending.get(`${accountId}|${generation}|${stanza.attrs.from}|${sid}`);
-    if (open) fileTrace('IBB_OPEN_CANDIDATE_RX', 'RX', { iqType: 'set', correlation: pending?.attempt || `open_${crypto.randomUUID()}` });
-    if (!pending) { if (open) fileTrace('IBB_OPEN_UNMATCHED', 'RX', { iqType: 'set', condition: 'item-not-found' }); return errorElement('item-not-found'); }
-    if (stanza.attrs.from !== pending.record.offer.senderJid) return errorElement('item-not-found');
-    const enqueue = (operation) => { const task = pending.protocolQueue.then(operation); pending.protocolQueue = task.catch(() => undefined); return task; };
-    if (open) {
-      if (pending.openState !== 'idle') return errorElement('not-acceptable');
-      pending.openState = 'queued';
-      try {
-        if (pending.record.state !== 'accepted') throw new Error('NOT_ACCEPTED');
-        pending.blockSize = validateOpen(open, pending.record.siSessionId, pending.record.offer.senderJid);
-        pending.sid = open.attrs.sid;
-        pending.seq = 0;
-      } catch (cause) {
-        pending.openState = 'failed';
-        void this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'cancelled_by_sender' : 'invalid_protocol').catch(() => undefined);
-        fileTrace('IBB_OPEN_RESULT_TX_FAILED', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt });
-        return errorElement(conditionFor(cause));
-      }
-      return enqueue(async () => {
-        const record = pending.record;
-        pending.openState = 'processing';
-        if (record.state !== 'accepted') throw new Error('NOT_ACCEPTED');
-        await this.fileTransfers.open(record.offer.transferId);
-        pending.openState = 'ready';
-        fileTrace('IBB_OPEN_MATCHED', 'RX', { iqType: 'set', blockSize: pending.blockSize, result: 'accepted', correlation: pending.attempt });
-        return {};
-      }).then(deliver).catch(async (cause) => { pending.openState = 'failed'; await this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'cancelled_by_sender' : 'invalid_protocol').catch(() => undefined); fileTrace('IBB_OPEN_RESULT_TX_FAILED', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
-    }
-    if (data) {
-      if (['idle', 'failed'].includes(pending.openState) || !pending.blockSize) return errorElement('not-acceptable');
-      const reservation = pending.blockSize;
-      if (pending.pendingBinaryBytes + reservation > MAX_PENDING_BINARY_BYTES) return errorElement('resource-constraint');
-      pending.pendingBinaryBytes += reservation;
-      return enqueue(async () => {
-        try {
-          const expectedSeq = pending.seq; const bytes = validateData(data, pending.sid, pending.record.offer.senderJid, pending.blockSize, expectedSeq); fileTrace('IBB_DATA', 'RX', { iqType: 'set', seq: expectedSeq, bytes: bytes.length, correlation: pending.attempt }); await this.fileTransfers.append(pending.record.offer.transferId, bytes); pending.seq = (expectedSeq + 1) % 65536; return {};
-        } finally { pending.pendingBinaryBytes -= reservation; }
-      }).then(deliver).catch(async (cause) => { if (cause?.code !== 'RESOURCE_CONSTRAINT') await this.fileTransfers.fail(pending.record.offer.transferId, 'storage_failed').catch(() => undefined); fileTrace('IBB_DATA', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
-    }
-    return enqueue(async () => { if (!pending.sid || pending.record.state !== 'transferring') throw new Error('NOT_ACCEPTED'); fileTrace('IBB_CLOSE', 'RX', { iqType: 'set', correlation: pending.attempt }); await this.fileTransfers.complete(pending.record.offer.transferId); fileTrace('IBB_CLOSE', 'TX', { iqType: 'result', result: 'completed', correlation: pending.attempt }); return {}; }).then(deliver).catch(async (cause) => { await this.fileTransfers.fail(pending.record.offer.transferId, cause?.message === 'NOT_ACCEPTED' ? 'invalid_protocol' : 'storage_failed').catch(() => undefined); fileTrace('IBB_CLOSE', 'TX', { iqType: 'error', condition: conditionFor(cause), correlation: pending.attempt }); return deliver(errorElement(conditionFor(cause))); });
-  }
-
-  handleFileStanza(accountId, stanza) {
-    if (!this.fileTransfers || !stanza?.is?.('iq')) return false;
-    const session = this.sessions.get(accountId);
-    const sendChild = (child) => {
-      if (!child || !session?.send) return undefined;
-      const type = child.is?.('error') ? 'error' : 'result';
-      return session.send(xml('iq', { type, id: stanza.attrs.id, to: stanza.attrs.from }, child));
-    };
-    const response = this.handleFileIq(accountId, stanza, { send: sendChild });
-    if (response === undefined) return false;
-    if (!response?.then) void Promise.resolve(sendChild(response)).catch(() => undefined);
-    else {
-      const child = stanza.getChild?.('open', IBB_NS) || stanza.getChild?.('data', IBB_NS) || stanza.getChild?.('close', IBB_NS);
-      const sid = child?.attrs?.sid;
-      const generation = this.sessionGenerations.get(accountId) || 0;
-      const pending = sid ? this.filePending.get(`${accountId}|${generation}|${stanza.attrs.from}|${sid}`) : undefined;
-      if (pending) pending.protocolQueue = response.catch(() => undefined);
-      else void response.catch(() => undefined);
-    }
-    return true;
-  }
-
-  bareJid(jid) { return String(jid).split('/')[0]; }
-
-  emit(event) { this.listeners.forEach((listener) => listener(event)); }
-
-  require(accountId) { const session = this.sessions.get(accountId); if (!session) throw new Error('not_connected'); return session; }
-  setState(accountId, status, retryable, reason) { const state = { accountId, status, retryable, since: new Date().toISOString(), ...(reason ? { reason } : {}) }; this.states.set(accountId, state); this.emit({ type: 'connection.stateChanged', payload: state }); }
-  handleSessionEvent(accountId, session, event, reason) { if (this.sessions.get(accountId) !== session) return false; if (event === 'offline') { this.clearMucRooms(accountId); void this.fileTransfers?.cancelAccount(accountId).catch(() => undefined); void this.outgoingTransfers?.cancelAccount(accountId).catch(() => undefined); for (const [key] of this.filePending) if (key.startsWith(`${accountId}|`)) this.filePending.delete(key); this.sessions.delete(accountId); this.sessionGenerations.set(accountId, (this.sessionGenerations.get(accountId) || 0) + 1); this.setState(accountId, 'failed', true, 'offline'); } else if (event === 'error') this.setState(accountId, 'failed', true, reason || 'TRANSPORT_FAILED'); else if (event === 'online') this.setState(accountId, 'connected', false); return true; }
 }
 
 module.exports = { XmppAdapter, negotiateStartTls };
