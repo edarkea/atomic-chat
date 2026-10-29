@@ -23,6 +23,7 @@ function fakeFacade() {
     presence: signal({ jid: 'a@example.invalid', availability: 'available' }),
     preferences: signal({ theme: 'atomic', notifications: true, autoLogin: false }),
     error: signal<string | null>(null),
+    profiles: signal([]),
     certificateRequest: signal<CertificateTrustRequest | null>(null),
     decideCertificate: vi.fn(),
     tryAutoLogin: vi.fn(),
@@ -40,6 +41,15 @@ function fakeFacade() {
     resetPreferences: vi.fn(),
     disconnect: vi.fn(),
     refreshRoster: vi.fn(),
+    getProfilePreferences: vi.fn(async () => undefined),
+    saveProfile: vi.fn(async (profile) => ({
+      ok: true as const,
+      value: profile,
+      version: 1 as const,
+      requestId: 'test',
+    })),
+    forgetSecret: vi.fn(async () => true),
+    deleteProfile: vi.fn(async () => true),
   } as unknown as ChatFacade;
 }
 
@@ -670,5 +680,92 @@ describe('App composer integration', () => {
     await Promise.resolve();
     expect(fixture.nativeElement.querySelector('.presence-popover')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+  it('keeps profile state after failed operations and clears credentials on identity changes', async () => {
+    facade.profiles.set([
+      {
+        accountId: 'a@example.invalid',
+        domain: 'example.invalid',
+        mode: 'automatic',
+        updatedAt: '2026-10-29',
+        hasPersistentCredential: true,
+      },
+    ]);
+    (facade.isConnected as unknown as { set: (value: boolean) => void }).set(false);
+    fixture.detectChanges();
+    const app = fixture.componentInstance as any;
+    await app.selectLoginProfile('a@example.invalid');
+    app.setLoginPassword('password-a');
+    (
+      facade.forgetSecret as unknown as {
+        mockResolvedValueOnce: (value: boolean) => void;
+      }
+    ).mockResolvedValueOnce(false);
+    await app.forgetLoginSecret();
+    expect(app.selectedProfileId()).toBe('a@example.invalid');
+    expect(app.login().password).toBe('password-a');
+    expect(app.login().remember).toBe(true);
+    app.setLoginAccount('b');
+    expect(app.selectedProfileId()).toBe('');
+    expect(app.login().password).toBe('');
+    expect(app.login().remember).toBe(false);
+    await app.selectLoginProfile('a@example.invalid');
+    (
+      facade.deleteProfile as unknown as {
+        mockResolvedValueOnce: (value: boolean) => void;
+      }
+    ).mockResolvedValueOnce(false);
+    await app.deleteLoginProfile();
+    expect(app.selectedProfileId()).toBe('a@example.invalid');
+    (
+      facade.forgetSecret as unknown as {
+        mockResolvedValueOnce: (value: boolean) => void;
+      }
+    ).mockResolvedValueOnce(true);
+    await app.forgetLoginSecret();
+    expect(app.login().remember).toBe(false);
+    (
+      facade.deleteProfile as unknown as {
+        mockResolvedValueOnce: (value: boolean) => void;
+      }
+    ).mockResolvedValueOnce(true);
+    await app.deleteLoginProfile();
+    expect(app.selectedProfileId()).toBe('');
+  });
+  it('persists advanced settings for an existing legacy profile without changing its identity', async () => {
+    facade.profiles.set([
+      {
+        accountId: 'juan',
+        domain: '',
+        mode: 'manual',
+        manualEndpoint: { host: 'old.example.invalid', port: 5222, transport: 'starttls' },
+        updatedAt: '2026-10-29',
+        hasPersistentCredential: true,
+      },
+    ]);
+    (facade.isConnected as unknown as { set: (value: boolean) => void }).set(false);
+    fixture.detectChanges();
+    const app = fixture.componentInstance as any;
+    await app.selectLoginProfile('juan');
+    app.setLoginDomain('localhost');
+    await app.saveAdvancedSettings({
+      automatic: false,
+      host: '192.168.1.20',
+      port: 5223,
+      transport: 'direct-tls',
+    });
+    expect(facade.saveProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'juan',
+        domain: 'localhost',
+        mode: 'manual',
+        manualEndpoint: {
+          host: '192.168.1.20',
+          port: 5223,
+          transport: 'direct-tls',
+        },
+      }),
+    );
+    expect(app.selectedProfileId()).toBe('juan');
   });
 });

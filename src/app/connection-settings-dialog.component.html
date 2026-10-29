@@ -85,7 +85,7 @@
       }
       <footer class="settings-actions">
         <button type="button" [disabled]="saving()" (click)="restoreDefaults()">
-          Restaurar predeterminados
+          {{ restoreConfirmation() ? 'Confirmar restauración' : 'Restaurar predeterminados' }}
         </button>
         <span class="settings-actions-spacer"></span>
         <button type="button" [disabled]="saving()" (click)="cancel()">Cancelar</button>

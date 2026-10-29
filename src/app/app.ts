@@ -70,6 +70,7 @@ export class App {
     autoLoginExplicit: false,
   });
   protected readonly loginBusy = signal(false);
+  protected readonly profileActionBusy = signal(false);
   protected readonly selectedProfileId = signal('');
   protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
   protected readonly search = signal('');
@@ -227,6 +228,7 @@ export class App {
       this.login.update((value) => ({
         ...value,
         accountId,
+        password: '',
         remember: false,
         autoLogin: false,
         autoLoginExplicit: false,
@@ -243,6 +245,7 @@ export class App {
       this.selectedProfileId.set('');
       this.login.update((value) => ({
         ...value,
+        password: '',
         remember: false,
         autoLogin: false,
         autoLoginExplicit: false,
@@ -315,16 +318,27 @@ export class App {
   }
   protected async forgetLoginSecret(): Promise<void> {
     const accountId = this.selectedProfileId();
-    if (!accountId) return;
-    await this.chat.forgetSecret(accountId);
-    this.login.update((value) => ({ ...value, autoLogin: false, remember: false }));
+    if (!accountId || this.profileActionBusy()) return;
+    this.profileActionBusy.set(true);
+    try {
+      if (await this.chat.forgetSecret(accountId))
+        this.login.update((value) => ({ ...value, autoLogin: false, remember: false }));
+    } finally {
+      this.profileActionBusy.set(false);
+    }
   }
   protected async deleteLoginProfile(): Promise<void> {
     const accountId = this.selectedProfileId();
-    if (!accountId) return;
-    await this.chat.deleteProfile(accountId);
-    this.selectedProfileId.set('');
-    this.resetLoginForNewAccount();
+    if (!accountId || this.profileActionBusy()) return;
+    this.profileActionBusy.set(true);
+    try {
+      if (await this.chat.deleteProfile(accountId)) {
+        this.selectedProfileId.set('');
+        this.resetLoginForNewAccount();
+      }
+    } finally {
+      this.profileActionBusy.set(false);
+    }
   }
   private resetLoginForNewAccount(): void {
     this.login.set({
@@ -364,9 +378,17 @@ export class App {
       const selected = this.loginProfiles().find(
         (profile) => profile.accountId === this.selectedProfileId(),
       );
-      if (selected?.accountId.includes('@')) {
+      if (selected) {
+        const domain = selected.accountId.includes('@')
+          ? selected.domain
+          : this.login().domain.trim();
+        if (!domain) {
+          this.settingsError.set('Indica el dominio XMPP de la cuenta heredada antes de guardar.');
+          return;
+        }
         const saved = await this.chat.saveProfile({
           ...selected,
+          domain,
           mode: settings.automatic ? 'automatic' : 'manual',
           ...(settings.automatic
             ? { manualEndpoint: undefined }

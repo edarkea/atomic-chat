@@ -12,6 +12,7 @@
     [profiles]="loginProfiles()"
     [selectedProfileId]="selectedProfileId()"
     [busy]="loginBusy()"
+    [profileActionBusy]="profileActionBusy()"
     [error]="chat.error()"
     (accountIdChange)="setLoginAccount($event)"
     (domainChange)="setLoginDomain($event)"

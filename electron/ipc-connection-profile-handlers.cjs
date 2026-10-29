@@ -2,16 +2,19 @@ const { normalizeXmppDomain } = require('./xmpp-discovery.cjs');
 
 function registerConnectionProfileHandlers({ ipcMain, assertSender, getRuntime, helpers }) {
   const { requestId, validVersion, validateConnectionProfile } = helpers;
+  const withCredentialMetadata = (runtime, profile) => ({
+    ...profile,
+    hasPersistentCredential: Boolean(
+      runtime.secrets.hasPersistent?.(`account:${profile.accountId}`),
+    ),
+  });
   ipcMain.handle('connectionProfiles.list', (event, input) => {
     assertSender(event);
     if (!validVersion(input)) throw new Error('INVALID_INPUT');
     const runtime = getRuntime();
-    const profiles = runtime.persistence.listConnectionProfiles().map((profile) => ({
-      ...profile,
-      hasPersistentCredential: Boolean(
-        runtime.secrets.hasPersistent?.(`account:${profile.accountId}`),
-      ),
-    }));
+    const profiles = runtime.persistence
+      .listConnectionProfiles()
+      .map((profile) => withCredentialMetadata(runtime, profile));
     return {
       ok: true,
       value: profiles,
@@ -22,13 +25,34 @@ function registerConnectionProfileHandlers({ ipcMain, assertSender, getRuntime, 
   ipcMain.handle('connectionProfiles.save', (event, input) => {
     assertSender(event);
     if (!validVersion(input)) throw new Error('INVALID_INPUT');
-    const profile = validateConnectionProfile(input.profile);
-    const value = getRuntime().persistence.saveConnectionProfile({
-      ...profile,
+    const runtime = getRuntime();
+    if (
+      !input.profile ||
+      typeof input.profile.accountId !== 'string' ||
+      !input.profile.accountId.trim() ||
+      input.profile.accountId.length > 512
+    )
+      throw new Error('INVALID_INPUT');
+    const existing = runtime.persistence.getConnectionProfile(input.profile?.accountId);
+    const allowLegacy = Boolean(
+      existing &&
+      existing.accountId === input.profile?.accountId &&
+      !existing.accountId.includes('@'),
+    );
+    const profile = validateConnectionProfile(input.profile, { allowLegacy });
+    const value = runtime.persistence.saveConnectionProfile({
+      accountId: profile.accountId,
       domain: normalizeXmppDomain(profile.domain),
+      mode: profile.mode,
+      ...(profile.mode === 'manual' ? { manualEndpoint: profile.manualEndpoint } : {}),
       updatedAt: new Date().toISOString(),
     });
-    return { ok: true, value, version: 1, requestId: requestId(event, input) };
+    return {
+      ok: true,
+      value: withCredentialMetadata(runtime, value),
+      version: 1,
+      requestId: requestId(event, input),
+    };
   });
   ipcMain.handle('connectionProfiles.delete', (event, input) => {
     assertSender(event);

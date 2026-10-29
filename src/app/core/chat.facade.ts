@@ -180,12 +180,19 @@ export class ChatFacade {
   ): Promise<Result<XmppConnectionProfile> | undefined> {
     if (!this.account.saveProfile) return undefined;
     const result = await this.account.saveProfile(profile, createOpaqueId('profiles-save'));
-    if (result.ok)
+    if (result.ok) {
+      const previous = this.profiles().find((item) => item.accountId === result.value.accountId);
+      const saved = {
+        ...result.value,
+        hasPersistentCredential:
+          result.value.hasPersistentCredential ?? previous?.hasPersistentCredential ?? false,
+      };
       this.profiles.update((items) => [
-        result.value,
-        ...items.filter((item) => item.accountId !== result.value.accountId),
+        saved,
+        ...items.filter((item) => item.accountId !== saved.accountId),
       ]);
-    else this.error.set(result.error.message);
+      return { ...result, value: saved };
+    } else this.error.set(result.error.message);
     return result;
   }
 
@@ -265,9 +272,15 @@ export class ChatFacade {
       if (profile && !legacyProfile && this.account.saveProfile) {
         const saved = await this.account.saveProfile(profile, createOpaqueId('profiles-save'));
         if (!saved.ok) throw new Error(saved.error.message);
+        const previous = this.profiles().find((item) => item.accountId === saved.value.accountId);
+        const persisted = {
+          ...saved.value,
+          hasPersistentCredential:
+            saved.value.hasPersistentCredential ?? previous?.hasPersistentCredential ?? false,
+        };
         this.profiles.update((items) => [
-          saved.value,
-          ...items.filter((item) => item.accountId !== saved.value.accountId),
+          persisted,
+          ...items.filter((item) => item.accountId !== persisted.accountId),
         ]);
       }
       if (secret) {

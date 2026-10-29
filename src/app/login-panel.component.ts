@@ -35,6 +35,7 @@ export class LoginPanelComponent {
   readonly selectedProfileId = input('');
   readonly busy = input(false);
   readonly error = input<string | null>(null);
+  readonly profileActionBusy = input(false);
   readonly accountIdChange = output<string>();
   readonly domainChange = output<string>();
   readonly passwordChange = output<string>();

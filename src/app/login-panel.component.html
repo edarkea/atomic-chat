@@ -117,8 +117,12 @@
     </button>
     @if (selectedProfileId()) {
       <div class="profile-actions">
-        <button type="button" (click)="forgetSecret.emit()">Olvidar contraseña</button>
-        <button type="button" (click)="deleteProfile.emit()">Eliminar perfil</button>
+        <button type="button" [disabled]="profileActionBusy()" (click)="forgetSecret.emit()">
+          {{ profileActionBusy() ? 'Procesando…' : 'Olvidar contraseña' }}
+        </button>
+        <button type="button" [disabled]="profileActionBusy()" (click)="deleteProfile.emit()">
+          Eliminar perfil
+        </button>
       </div>
     }
     @if (error()) {

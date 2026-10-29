@@ -159,6 +159,17 @@ describe('extracted Angular presentation components', () => {
     expect(
       (fixture.nativeElement.querySelector('input[name="host"]') as HTMLInputElement).disabled,
     ).toBe(false);
+    const restore = [...fixture.nativeElement.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Restaurar'),
+    ) as HTMLButtonElement;
+    restore.click();
+    fixture.detectChanges();
+    expect(restore.textContent).toContain('Confirmar restauración');
+    restore.click();
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('input[name="automatic"]') as HTMLInputElement).checked,
+    ).toBe(true);
     (fixture.nativeElement.querySelector('button[type="button"]') as HTMLButtonElement).click();
     expect(cancelled).toHaveBeenCalledOnce();
     expect(saved).not.toHaveBeenCalled();

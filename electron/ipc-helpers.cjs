@@ -42,7 +42,7 @@ function createIpcHelpers({
     return validateXmppTransport(input.endpoint, appIsPackaged);
   }
 
-  function validateConnectionProfile(profile) {
+  function validateConnectionProfile(profile, options = {}) {
     if (!profile || typeof profile !== 'object') throw new Error('INVALID_INPUT');
     if (
       typeof profile.accountId !== 'string' ||
@@ -53,7 +53,9 @@ function createIpcHelpers({
     if (typeof profile.domain !== 'string' || !profile.domain.trim() || profile.domain.length > 253)
       throw new Error('INVALID_INPUT');
     const separator = profile.accountId.indexOf('@');
-    if (
+    if (separator < 0 && options.allowLegacy) {
+      if (/[^a-z0-9_.-]/i.test(profile.accountId)) throw new Error('INVALID_INPUT');
+    } else if (
       separator <= 0 ||
       separator !== profile.accountId.lastIndexOf('@') ||
       /[\s/]/.test(profile.accountId.slice(0, separator)) ||

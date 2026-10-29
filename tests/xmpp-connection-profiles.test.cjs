@@ -369,6 +369,119 @@ test('modern profiles reject a profileDomain override that changes the persisted
   assert.equal(secretReads, 0);
 });
 
+test('legacy profiles persist advanced settings without changing identity or credential metadata', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-legacy-profile-'));
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8'),
+    decryptString: (value) => value.toString('utf8'),
+  };
+  const persistence = new PersistenceStore(directory);
+  const secrets = new SecretStore(safeStorage, directory);
+  persistence.upsertAccount({
+    accountId: 'juan',
+    host: 'old.example.invalid',
+    port: 5222,
+    tls: 1,
+    transport: 'starttls',
+    credentialRef: 'account:juan',
+    createdAt: '2026-10-29T12:00:00.000Z',
+  });
+  secrets.put('account:juan', 'legacy-password', { remember: true });
+  const handlers = new Map();
+  const historySecurity = {
+    beginConnection: () => 'token',
+    completeConnection: () => undefined,
+    finishConnection: () => undefined,
+  };
+  const runtime = {
+    persistence,
+    secrets,
+    xmpp: {
+      connect: async (input) => ({
+        accountId: input.accountId,
+        endpoint: input.endpoint,
+        status: 'connected',
+        retryable: false,
+        since: new Date().toISOString(),
+      }),
+    },
+  };
+  const helpers = createIpcHelpers({
+    assertSender: () => undefined,
+    validateXmppTransport: (endpoint) => ({ ...endpoint, rejectUnauthorized: true }),
+    appIsPackaged: false,
+    getRuntime: () => runtime,
+    fileTransfers: {},
+    outgoingFileTransfers: {},
+    historySecurity,
+  });
+  const registerOptions = {
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    assertSender: () => undefined,
+    getRuntime: () => runtime,
+    historySecurity,
+    helpers,
+    validateXmppTransport: (endpoint) => ({ ...endpoint, rejectUnauthorized: true }),
+  };
+  const {
+    registerConnectionProfileHandlers,
+  } = require('../electron/ipc-connection-profile-handlers.cjs');
+  const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+  registerConnectionProfileHandlers(registerOptions);
+  const saved = handlers.get('connectionProfiles.save')(
+    { sender: { id: 1 } },
+    {
+      version: 1,
+      requestId: 'legacy-save',
+      profile: {
+        accountId: 'juan',
+        domain: 'localhost',
+        mode: 'manual',
+        manualEndpoint: { host: '192.168.1.20', port: 5223, transport: 'direct-tls' },
+        updatedAt: 'ignored',
+        hasPersistentCredential: false,
+      },
+    },
+  );
+  assert.equal(saved.ok, true);
+  assert.equal(saved.value.accountId, 'juan');
+  assert.equal(saved.value.hasPersistentCredential, true);
+  persistence.close();
+  const reopened = new PersistenceStore(directory);
+  runtime.persistence = reopened;
+  assert.deepEqual(reopened.getConnectionProfile('juan'), {
+    accountId: 'juan',
+    domain: 'localhost',
+    mode: 'manual',
+    manualEndpoint: { host: '192.168.1.20', port: 5223, transport: 'direct-tls' },
+    updatedAt: saved.value.updatedAt,
+  });
+  registerAccountHandlers(registerOptions);
+  const connected = await handlers.get('account.connect')(
+    { sender: { id: 1 } },
+    {
+      version: 1,
+      requestId: 'legacy-connect-new-endpoint',
+      accountId: 'juan',
+      profileId: 'juan',
+      profileDomain: 'localhost',
+      credentialRef: 'account:juan',
+    },
+  );
+  assert.equal(connected.ok, true);
+  assert.equal(connected.value.accountId, 'juan');
+  assert.deepEqual(connected.value.endpoint, {
+    host: '192.168.1.20',
+    port: 5223,
+    transport: 'direct-tls',
+    tls: true,
+    domain: 'localhost',
+    rejectUnauthorized: true,
+  });
+  reopened.close();
+});
+
 test('temporary secrets never reach disk and remember false revokes a prior persistent secret', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-secret-'));
   const safeStorage = {

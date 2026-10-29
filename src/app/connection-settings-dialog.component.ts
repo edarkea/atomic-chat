@@ -40,6 +40,7 @@ export class ConnectionSettingsDialogComponent implements AfterViewInit, OnInit 
     transport: 'starttls',
   });
   protected readonly validationError = signal<string | null>(null);
+  protected readonly restoreConfirmation = signal(false);
 
   ngOnInit(): void {
     this.draft.set({ ...this.initial() });
@@ -73,8 +74,13 @@ export class ConnectionSettingsDialogComponent implements AfterViewInit, OnInit 
   }
 
   protected restoreDefaults(): void {
+    if (!this.restoreConfirmation()) {
+      this.restoreConfirmation.set(true);
+      return;
+    }
     this.draft.set({ automatic: true, host: '', port: 5222, transport: 'starttls' });
     this.validationError.set(null);
+    this.restoreConfirmation.set(false);
   }
 
   protected save(): void {
@@ -134,6 +140,7 @@ export class ConnectionSettingsDialogComponent implements AfterViewInit, OnInit 
   private updateDraft(changes: Partial<ConnectionSettingsDraft>): void {
     this.draft.update((current) => ({ ...current, ...changes }));
     this.validationError.set(null);
+    this.restoreConfirmation.set(false);
   }
 
   private firstFocusable(): HTMLElement | undefined {
