@@ -11,7 +11,7 @@
       [disabled]="model().discovering"
       [attr.aria-label]="model().discovering ? 'Actualizando salas' : 'Actualizar salas'"
     >
-      <span aria-hidden="true">↻</span
+      <span aria-hidden="true"><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-refresh" /></svg></span
       ><span>{{ model().discovering ? 'Actualizando…' : 'Actualizar' }}</span>
     </button>
   </header>
@@ -29,7 +29,7 @@
     <p class="muc-error" role="alert">{{ model().error }}</p>
   }
   @if (model().discovering) {
-    <p class="muc-loading" role="status"><span aria-hidden="true">◌</span> Consultando salas…</p>
+    <p class="muc-loading" role="status"><span aria-hidden="true"><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-loading" /></svg></span> Consultando salas…</p>
   }
   @if (!model().discovering && !model().services.length) {
     <p class="muc-empty">No hay salas descubiertas todavía.</p>
@@ -46,7 +46,7 @@
             [attr.aria-pressed]="isSelected(room.jid)"
             [attr.aria-label]="'Seleccionar sala ' + room.room"
           >
-            <span class="room-symbol" aria-hidden="true">⌂</span
+            <span class="room-symbol" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-room" /></svg></span
             ><span class="room-copy"
               ><strong>{{ room.room }}</strong
               ><small>{{ room.service }}</small></span

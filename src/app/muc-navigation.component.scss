@@ -46,7 +46,8 @@
   min-width: 92px;
 }
 .muc-discover span:first-child {
-  font-size: 18px;
+  align-items: center;
+  display: inline-flex;
   line-height: 1;
 }
 .muc-discover:hover,
@@ -101,8 +102,9 @@
   color: var(--atomic-text);
 }
 .muc-loading span {
+  align-items: center;
   color: var(--atomic-green);
-  font-size: 18px;
+  display: inline-flex;
   margin-right: 4px;
 }
 .muc-empty {
@@ -151,8 +153,9 @@
   text-align: left;
 }
 .room-symbol {
+  align-items: center;
   color: var(--atomic-green);
-  font-size: 18px;
+  display: inline-flex;
 }
 .room-copy {
   min-width: 0;

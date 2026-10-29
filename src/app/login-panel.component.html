@@ -1,8 +1,11 @@
 <main class="login-window">
   <div class="login-brand">
-    <span class="brand-mark">⌁</span><strong>ATOMIC CHAT</strong><span class="concept">P0</span>
+    <svg class="ac-icon ac-icon-brand" aria-hidden="true" focusable="false"><use href="#ac-brand" /></svg
+    ><strong>ATOMIC CHAT</strong><span class="concept">P0</span>
   </div>
-  <div class="login-symbol">◉</div>
+  <div class="login-symbol" aria-hidden="true">
+    <svg class="ac-icon ac-icon--24" aria-hidden="true" focusable="false"><use href="#ac-login" /></svg>
+  </div>
   <p class="eyebrow">CONEXIÓN XMPP</p>
   <h1>Iniciar sesión</h1>
   <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
@@ -35,7 +38,7 @@
           (click)="toggleProfileMenu()"
           (keydown)="onProfileTriggerKeydown($event)"
         >
-          ▾
+          <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-expand" /></svg>
         </button>
       </div>
       @if (profileMenuOpen()) {

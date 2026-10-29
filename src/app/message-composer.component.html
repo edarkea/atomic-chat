@@ -7,7 +7,7 @@
       (click)="attach.emit()"
       [disabled]="disabled()"
     >
-      ＋
+      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-attach" /></svg>
     </button>
   }
   <input
@@ -22,9 +22,9 @@
     [disabled]="disabled()"
   />
   @if (showEmoji()) {
-    <span class="emoji" aria-hidden="true">☺</span>
+    <span class="emoji" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-emoji" /></svg></span>
   }
   <button class="send" type="submit" aria-label="Enviar" [disabled]="disabled() || !draft().trim()">
-    ➤
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-send" /></svg>
   </button>
 </form>

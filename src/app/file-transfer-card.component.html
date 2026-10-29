@@ -11,7 +11,7 @@
   <p class="message-sender">
     {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
   </p>
-  <p class="file-title">▤ {{ transfer().offer.name }}</p>
+  <p class="file-title"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg> {{ transfer().offer.name }}</p>
   <small>{{ transfer().offer.sizeBytes }} bytes · {{ label() }}</small>
   @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
     <p class="file-security">

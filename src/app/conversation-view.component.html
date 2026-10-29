@@ -1,12 +1,12 @@
 <header class="chat-header">
-  <span class="avatar header-avatar">♙</span>
+  <span class="avatar header-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
   <div>
     <strong>{{
       activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
     }}</strong>
     <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
   </div>
-  <span class="more" aria-hidden="true">•••</span>
+  <span class="more" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-more" /></svg></span>
 </header>
 <div
   #chatContent

@@ -21,7 +21,10 @@
   margin: 0;
 }
 .file-title {
+  align-items: center;
   color: var(--atomic-text);
+  display: flex;
+  gap: var(--atomic-space-2);
   font-weight: 700;
 }
 .file-security {

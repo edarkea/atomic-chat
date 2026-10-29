@@ -150,6 +150,32 @@ describe('App composer integration', () => {
     fixture.detectChanges();
   });
 
+  it('renders one unique local SVG sprite with declared icon references', () => {
+    const root = fixture.nativeElement as HTMLElement;
+    const symbols = root.querySelectorAll<SVGSymbolElement>(
+      'svg.ac-icon-sprite symbol[id^="ac-"]',
+    );
+    const ids = new Set(Array.from(symbols, (symbol) => symbol.id));
+
+    expect(symbols).toHaveLength(22);
+    expect(ids.size).toBe(symbols.length);
+
+    const uses = root.querySelectorAll<SVGUseElement>('svg.ac-icon use');
+    for (const use of uses) {
+      const href = use.getAttribute('href');
+      expect(href?.startsWith('#ac-')).toBe(true);
+      expect(ids.has(href?.slice(1) ?? '')).toBe(true);
+    }
+
+    const renderedIcons = root.querySelectorAll<SVGSVGElement>(
+      'svg.ac-icon:not(.ac-icon-sprite)',
+    );
+    for (const icon of renderedIcons) {
+      expect(icon.getAttribute('aria-hidden')).toBe('true');
+      expect(icon.getAttribute('focusable')).toBe('false');
+    }
+  });
+
   it('renders one accessible discovery action and a readable nickname control', () => {
     (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();

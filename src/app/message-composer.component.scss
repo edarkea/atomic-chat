@@ -48,11 +48,14 @@
   opacity: 0.38;
 }
 .composer-icon {
-  font-size: 22px !important;
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
 }
 .emoji {
+  align-items: center;
   color: var(--atomic-text-secondary);
-  font-size: 17px;
+  display: inline-flex;
 }
 .send {
   transform: rotate(-25deg);

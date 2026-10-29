@@ -65,11 +65,45 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-.brand-mark {
-  font-size: 27px;
-  font-weight: 400;
-  line-height: 1;
-  transform: rotate(90deg);
+.ac-icon-sprite {
+  height: 0;
+  overflow: hidden;
+  position: absolute;
+  width: 0;
+}
+
+.ac-icon {
+  display: inline-block;
+  fill: none;
+  flex: 0 0 auto;
+  height: 1em;
+  pointer-events: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+  vertical-align: middle;
+  width: 1em;
+}
+
+.ac-icon--16 {
+  height: 16px;
+  width: 16px;
+}
+
+.ac-icon--20 {
+  height: 20px;
+  width: 20px;
+}
+
+.ac-icon--24 {
+  height: 24px;
+  width: 24px;
+}
+
+.ac-icon-brand {
+  height: 27px;
+  width: 27px;
 }
 .concept {
   background: #24332b;
@@ -175,9 +209,9 @@ select:focus-visible {
   margin-top: 3px;
 }
 .more {
+  align-items: center;
   color: var(--atomic-green);
-  font-size: 17px;
-  letter-spacing: 0.14em;
+  display: inline-flex;
   margin-left: auto;
 }
 

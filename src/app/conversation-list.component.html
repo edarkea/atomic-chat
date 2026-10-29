@@ -1,5 +1,5 @@
 <label class="search-box"
-  ><span>⌕</span
+  ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-search" /></svg
   ><input
     placeholder="Buscar usuario o JID..."
     aria-label="Buscar conversaciones"
@@ -14,7 +14,11 @@
     type="button"
     (click)="directoryToggle.emit()"
     [attr.aria-label]="model().directoryOpen ? 'Volver a conversaciones' : 'Iniciar o unirse a un chat'"
-  >{{ model().directoryOpen ? '←' : '+' }}</button>
+  >@if (model().directoryOpen) {
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-back" /></svg>
+  } @else {
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-add" /></svg>
+  }</button>
 </header>
 @if (!model().directoryOpen) {
   <nav class="conversation-list" aria-label="Conversaciones">
@@ -29,7 +33,7 @@
             (click)="selectRoom.emit(item.roomState.room.jid)"
             [attr.aria-label]="'Abrir sala ' + item.roomState.room.room"
           >
-            <span class="avatar muc-avatar" aria-hidden="true">⌂</span
+            <span class="avatar muc-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-room" /></svg></span
             ><span class="contact-copy"
               ><strong>{{ item.roomState.room.room }}</strong
               ><small>{{ item.roomState.room.service }}</small
@@ -50,7 +54,7 @@
             type="button"
             (click)="selectContact.emit(item.contact)"
           >
-            <span class="avatar">♙</span
+            <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span
             ><span class="contact-copy"
               ><strong
                 ><i
@@ -81,13 +85,13 @@
           type="button"
           (click)="selectRoom.emit(roomState.room.jid)"
         >
-          <span class="avatar muc-avatar" aria-hidden="true">⌂</span
+          <span class="avatar muc-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-room" /></svg></span
           ><span class="contact-copy"><strong>{{ roomState.room.room }}</strong></span>
         </button>
       }
       @for (contact of (model().workspaceContacts || model().filteredContacts); track contact.jid) {
         <button class="conversation-item" type="button" (click)="selectContact.emit(contact)">
-          <span class="avatar">♙</span
+          <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span
           ><span class="contact-copy"><strong>{{ contactName(contact) }}</strong></span>
         </button>
       }
@@ -97,7 +101,7 @@
   <nav class="conversation-list" aria-label="Directorio de contactos">
     @for (contact of model().filteredContacts; track contact.jid) {
       <button class="conversation-item" type="button" (click)="selectContact.emit(contact)">
-        <span class="avatar">♙</span
+        <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span
         ><span class="contact-copy"
           ><strong>{{ contactName(contact) }}</strong
           ><small class="contact-groups">Contacto conocido del roster</small></span
@@ -105,7 +109,7 @@
     }
     @if (model().filteredContacts.length === 0 && model().search.includes('@')) {
       <button class="conversation-item" type="button" (click)="useJid.emit()">
-        <span class="avatar">＋</span
+        <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-add" /></svg></span
         ><span class="contact-copy"><strong>Nuevo chat</strong><small>{{ model().search }}</small></span
       ></button>
     }
@@ -125,6 +129,6 @@
   }
 }
 <div class="sidebar-actions">
-  <button type="button" aria-label="Actualizar roster" (click)="refreshRoster.emit()">↻</button
-  ><button type="button" aria-label="Desconectar" (click)="disconnect.emit()">⇥</button>
+  <button type="button" aria-label="Actualizar roster" (click)="refreshRoster.emit()"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-refresh" /></svg></button
+  ><button type="button" aria-label="Desconectar" (click)="disconnect.emit()"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-disconnect" /></svg></button>
 </div>
