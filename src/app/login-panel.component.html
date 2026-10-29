@@ -7,28 +7,69 @@
   <h1>Iniciar sesión</h1>
   <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
   <form class="login-form" (ngSubmit)="submitted.emit()">
-    @if (profiles().length) {
-      <label
-        >Perfil guardado<select
-          name="profile"
-          [ngModel]="selectedProfileId()"
-          (ngModelChange)="profileSelected.emit($event)"
+    <label for="login-account">Usuario XMPP</label>
+    <div #profilePicker class="account-picker" (focusout)="onProfileFocusOut($event)">
+      <div class="account-input-row">
+        <input
+          #accountInput
+          id="login-account"
+          name="account"
+          [ngModel]="accountId()"
+          (ngModelChange)="accountIdChange.emit($event)"
+          autocomplete="username"
+          placeholder="usuario o usuario@dominio"
+          role="combobox"
+          aria-controls="login-profile-options"
+          [attr.aria-expanded]="profileMenuOpen()"
+          [attr.aria-autocomplete]="'list'"
+        />
+        <button
+          #profileTrigger
+          type="button"
+          class="profile-trigger"
+          [disabled]="!profiles().length"
+          aria-label="Seleccionar cuenta guardada"
+          aria-haspopup="listbox"
+          aria-controls="login-profile-options"
+          [attr.aria-expanded]="profileMenuOpen()"
+          (click)="toggleProfileMenu()"
+          (keydown)="onProfileTriggerKeydown($event)"
         >
-          <option value="">Nueva cuenta</option>
-          @for (profile of profiles(); track profile.accountId) {
-            <option [value]="profile.accountId">{{ profile.accountId }}</option>
+          ▾
+        </button>
+      </div>
+      @if (profileMenuOpen()) {
+        <div
+          id="login-profile-options"
+          class="profile-options"
+          role="listbox"
+          aria-label="Cuentas guardadas"
+        >
+          <button
+            #profileOption
+            type="button"
+            role="option"
+            [attr.aria-selected]="!selectedProfileId()"
+            (click)="selectProfile('')"
+            (keydown)="onProfileOptionKeydown($event, 0)"
+          >
+            Nueva cuenta
+          </button>
+          @for (profile of profiles(); track profile.accountId; let index = $index) {
+            <button
+              #profileOption
+              type="button"
+              role="option"
+              [attr.aria-selected]="selectedProfileId() === profile.accountId"
+              (click)="selectProfile(profile.accountId)"
+              (keydown)="onProfileOptionKeydown($event, index + 1)"
+            >
+              {{ profile.accountId }}
+            </button>
           }
-        </select></label
-      >
-    }
-    <label
-      >Usuario XMPP<input
-        name="account"
-        [ngModel]="accountId()"
-        (ngModelChange)="accountIdChange.emit($event)"
-        autocomplete="username"
-        placeholder="usuario o usuario@dominio"
-    /></label>
+        </div>
+      }
+    </div>
     <label
       >Dominio XMPP<input
         name="domain"
@@ -66,47 +107,14 @@
       />
       Iniciar sesión automáticamente</label
     >
-    <details>
-      <summary>Configuración avanzada</summary>
-      <label class="check-row"
-        ><input
-          type="checkbox"
-          name="automatic"
-          [ngModel]="automatic()"
-          (ngModelChange)="automaticChange.emit($event)"
-        />
-        Descubrir servidor y puerto automáticamente</label
-      >
-      <fieldset [disabled]="automatic()">
-        <legend>Endpoint manual</legend>
-        <label
-          >Host<input
-            name="host"
-            [ngModel]="host()"
-            (ngModelChange)="hostChange.emit($event)"
-            placeholder="chat.empresa.com"
-        /></label>
-        <label
-          >Puerto<input
-            name="port"
-            type="number"
-            min="1"
-            max="65535"
-            [ngModel]="port()"
-            (ngModelChange)="portChange.emit(+$event)"
-        /></label>
-        <label
-          >Transporte<select
-            name="transport"
-            [ngModel]="transport()"
-            (ngModelChange)="transportChange.emit($event)"
-          >
-            <option value="starttls">STARTTLS</option>
-            <option value="direct-tls">TLS directo</option>
-          </select></label
-        >
-      </fieldset>
-    </details>
+    <button
+      #advancedButton
+      type="button"
+      class="advanced-settings-button"
+      (click)="advancedSettings.emit()"
+    >
+      Configuración avanzada
+    </button>
     @if (selectedProfileId()) {
       <div class="profile-actions">
         <button type="button" (click)="forgetSecret.emit()">Olvidar contraseña</button>

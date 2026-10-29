@@ -25,8 +25,18 @@
     (profileSelected)="selectLoginProfile($event)"
     (forgetSecret)="forgetLoginSecret()"
     (deleteProfile)="deleteLoginProfile()"
+    (advancedSettings)="openAdvancedSettings()"
     (submitted)="connect()"
   />
+  @if (settingsOpen()) {
+    <app-connection-settings-dialog
+      [initial]="settingsDraft()"
+      [saving]="settingsSaving()"
+      [error]="settingsError()"
+      (saved)="saveAdvancedSettings($event)"
+      (cancelled)="cancelAdvancedSettings()"
+    />
+  }
 } @else {
   <main class="app-window">
     <header class="titlebar">

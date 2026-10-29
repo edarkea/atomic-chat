@@ -9,8 +9,8 @@
   display: grid;
   grid-template-columns: 43% 57%;
   grid-template-rows: auto auto auto auto 1fr auto;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow: auto;
   padding: var(--atomic-space-4) 28px;
   width: 100%;
 }
@@ -86,7 +86,8 @@
   width: 100%;
 }
 .login-form select,
-.login-form fieldset {
+.login-form fieldset,
+.advanced-settings-button {
   background: var(--atomic-bg);
   border: 1px solid var(--atomic-border-soft);
   border-radius: var(--atomic-radius-sm);
@@ -101,6 +102,86 @@
   gap: var(--atomic-space-2);
   margin: 8px 0 0;
   padding: 10px;
+}
+
+.account-picker {
+  position: relative;
+}
+
+.account-input-row {
+  display: flex;
+}
+
+.account-input-row input {
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+  flex: 1 1 auto;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.profile-trigger {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-left: 0;
+  border-radius: 0 var(--atomic-radius-sm) var(--atomic-radius-sm) 0;
+  color: var(--atomic-green);
+  cursor: pointer;
+  font-size: 18px;
+  min-width: 46px;
+}
+
+.profile-trigger:disabled {
+  color: var(--atomic-text-muted);
+  cursor: default;
+}
+
+.profile-options {
+  background: var(--atomic-surface-raised);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-sm);
+  box-shadow: 0 12px 28px #0008;
+  left: 0;
+  max-height: 240px;
+  overflow: auto;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+}
+
+.profile-options button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--atomic-separator);
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  min-height: 44px;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.profile-options button:last-child {
+  border-bottom: 0;
+}
+
+.profile-options button:hover,
+.profile-options button[aria-selected='true'] {
+  background: var(--atomic-surface-soft);
+  color: var(--atomic-green);
+}
+
+.advanced-settings-button {
+  color: var(--atomic-green);
+  cursor: pointer;
+  text-align: left;
+}
+
+.advanced-settings-button:hover {
+  border-color: var(--atomic-focus);
 }
 .login-form legend {
   color: var(--atomic-text-muted);
@@ -181,7 +262,7 @@
   .login-window {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     padding: var(--atomic-space-4);
   }
   .login-brand {

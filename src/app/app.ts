@@ -25,6 +25,10 @@ import {
   OlderMessagesRequest,
 } from './conversation-view.component';
 import { LoginPanelComponent } from './login-panel.component';
+import {
+  ConnectionSettingsDialogComponent,
+  ConnectionSettingsDraft,
+} from './connection-settings-dialog.component';
 import { MucViewComponent } from './muc-view.component';
 import { SidebarComponent, SidebarModel } from './sidebar.component';
 import { PresenceOption } from './sidebar.models';
@@ -38,6 +42,7 @@ type ConversationSelection =
   selector: 'app-root',
   imports: [
     CertificateDialogComponent,
+    ConnectionSettingsDialogComponent,
     ConversationViewComponent,
     LoginPanelComponent,
     MucViewComponent,
@@ -62,6 +67,7 @@ export class App {
     automatic: true,
     remember: false,
     autoLogin: false,
+    autoLoginExplicit: false,
   });
   protected readonly loginBusy = signal(false);
   protected readonly selectedProfileId = signal('');
@@ -73,6 +79,17 @@ export class App {
   });
   protected readonly selectedContact = signal<Contact | undefined>(undefined);
   protected readonly settingsOpen = signal(false);
+  protected readonly settingsSaving = signal(false);
+  protected readonly settingsError = signal<string | null>(null);
+  protected readonly settingsDraft = computed<ConnectionSettingsDraft>(() => {
+    const value = this.login();
+    return {
+      automatic: value.automatic,
+      host: value.host,
+      port: value.port,
+      transport: value.transport,
+    };
+  });
   protected readonly certificateRequest = computed(() => this.chat.certificateRequest?.() ?? null);
   protected readonly presenceOpen = signal(false);
   protected readonly presenceStatus = signal('');
@@ -193,6 +210,7 @@ export class App {
       selectedRoomJid: this.muc.selectedRoomJid(),
     },
   }));
+  @ViewChild(LoginPanelComponent) private loginPanel?: LoginPanelComponent;
   @ViewChild(ConversationViewComponent) private conversationView?: ConversationViewComponent;
 
   constructor() {
@@ -204,9 +222,32 @@ export class App {
   }
 
   protected setLoginAccount(accountId: string): void {
+    if (accountId !== this.login().accountId && this.selectedProfileId()) {
+      this.selectedProfileId.set('');
+      this.login.update((value) => ({
+        ...value,
+        accountId,
+        remember: false,
+        autoLogin: false,
+        autoLoginExplicit: false,
+      }));
+      return;
+    }
     this.login.update((value) => ({ ...value, accountId }));
   }
   protected setLoginDomain(domain: string): void {
+    const selected = this.loginProfiles().find(
+      (profile) => profile.accountId === this.selectedProfileId(),
+    );
+    if (selected?.accountId.includes('@') && domain !== this.login().domain) {
+      this.selectedProfileId.set('');
+      this.login.update((value) => ({
+        ...value,
+        remember: false,
+        autoLogin: false,
+        autoLoginExplicit: false,
+      }));
+    }
     this.login.update((value) => ({ ...value, domain }));
   }
   protected setLoginPassword(password: string): void {
@@ -238,15 +279,19 @@ export class App {
       ...value,
       remember,
       autoLogin: remember ? value.autoLogin : false,
+      autoLoginExplicit: true,
     }));
   }
   protected setLoginAutoLogin(autoLogin: boolean): void {
-    this.login.update((value) => ({ ...value, autoLogin }));
+    this.login.update((value) => ({ ...value, autoLogin, autoLoginExplicit: true }));
   }
-  protected selectLoginProfile(accountId: string): void {
+  protected async selectLoginProfile(accountId: string): Promise<void> {
     this.selectedProfileId.set(accountId);
     const profile = this.loginProfiles().find((item) => item.accountId === accountId);
-    if (!profile) return;
+    if (!profile) {
+      this.resetLoginForNewAccount();
+      return;
+    }
     const at = profile.accountId.lastIndexOf('@');
     this.login.update((value) => ({
       ...value,
@@ -257,6 +302,15 @@ export class App {
       transport: profile.manualEndpoint?.transport || 'starttls',
       automatic: profile.mode === 'automatic',
       password: '',
+      remember: profile.hasPersistentCredential === true,
+      autoLogin: false,
+      autoLoginExplicit: false,
+    }));
+    const preferences = await this.chat.getProfilePreferences(profile.accountId);
+    if (this.selectedProfileId() !== profile.accountId) return;
+    this.login.update((value) => ({
+      ...value,
+      autoLogin: profile.hasPersistentCredential === true && Boolean(preferences?.autoLogin),
     }));
   }
   protected async forgetLoginSecret(): Promise<void> {
@@ -270,7 +324,77 @@ export class App {
     if (!accountId) return;
     await this.chat.deleteProfile(accountId);
     this.selectedProfileId.set('');
-    this.login.update((value) => ({ ...value, accountId: '', domain: '', host: '', password: '' }));
+    this.resetLoginForNewAccount();
+  }
+  private resetLoginForNewAccount(): void {
+    this.login.set({
+      accountId: '',
+      domain: '',
+      password: '',
+      host: '',
+      port: 5222,
+      transport: 'starttls',
+      automatic: true,
+      remember: false,
+      autoLogin: false,
+      autoLoginExplicit: false,
+    });
+  }
+  protected openAdvancedSettings(): void {
+    this.settingsError.set(null);
+    this.settingsOpen.set(true);
+  }
+  protected cancelAdvancedSettings(): void {
+    this.settingsError.set(null);
+    this.settingsOpen.set(false);
+    queueMicrotask(() => this.loginPanel?.focusAdvancedSettings());
+  }
+  protected async saveAdvancedSettings(settings: ConnectionSettingsDraft): Promise<void> {
+    if (!settings.automatic && (!settings.host.trim() || !Number.isInteger(settings.port))) {
+      this.settingsError.set('Indica un host y un puerto entero entre 1 y 65535.');
+      return;
+    }
+    if (!settings.automatic && (settings.port < 1 || settings.port > 65535)) {
+      this.settingsError.set('El puerto debe estar entre 1 y 65535.');
+      return;
+    }
+    this.settingsSaving.set(true);
+    this.settingsError.set(null);
+    try {
+      const selected = this.loginProfiles().find(
+        (profile) => profile.accountId === this.selectedProfileId(),
+      );
+      if (selected?.accountId.includes('@')) {
+        const saved = await this.chat.saveProfile({
+          ...selected,
+          mode: settings.automatic ? 'automatic' : 'manual',
+          ...(settings.automatic
+            ? { manualEndpoint: undefined }
+            : {
+                manualEndpoint: {
+                  host: settings.host.trim(),
+                  port: settings.port,
+                  transport: settings.transport,
+                },
+              }),
+          updatedAt: new Date().toISOString(),
+        });
+        if (!saved?.ok) {
+          this.settingsError.set(saved?.error.message || 'No fue posible guardar el perfil.');
+          return;
+        }
+      }
+      this.login.update((value) => ({
+        ...value,
+        automatic: settings.automatic,
+        host: settings.host.trim(),
+        port: settings.port,
+        transport: settings.transport,
+      }));
+      this.cancelAdvancedSettings();
+    } finally {
+      this.settingsSaving.set(false);
+    }
   }
   protected connectionLabel(): string {
     const labels: Record<string, string> = {
@@ -344,6 +468,7 @@ export class App {
       },
       remember: login.remember === true,
       autoLogin: login.autoLogin === true,
+      autoLoginExplicit: login.autoLoginExplicit === true,
     });
     this.loginBusy.set(false);
     if (connected) {

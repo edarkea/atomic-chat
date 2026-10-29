@@ -16,6 +16,7 @@ export interface XmppConnectionProfile {
   mode: ConnectionMode;
   manualEndpoint?: ManualXmppEndpoint;
   updatedAt: string;
+  hasPersistentCredential?: boolean;
 }
 export type ConnectionStatus =
   'idle' | 'connecting' | 'authenticating' | 'connected' | 'disconnecting' | 'failed';

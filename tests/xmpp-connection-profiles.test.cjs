@@ -311,6 +311,64 @@ test('maps typed DNS and transport failures to stable connection error codes', (
   }
 });
 
+test('modern profiles reject a profileDomain override that changes the persisted identity', async () => {
+  const handlers = new Map();
+  let secretReads = 0;
+  const profile = {
+    accountId: 'ana@empresa.com',
+    domain: 'empresa.com',
+    mode: 'manual',
+    manualEndpoint: { host: 'srv.empresa.com', port: 5222, transport: 'starttls' },
+    updatedAt: '2026-10-29T12:00:00.000Z',
+  };
+  const historySecurity = {
+    beginConnection: () => 'token',
+    completeConnection: () => undefined,
+    finishConnection: () => undefined,
+  };
+  const options = {
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    assertSender: () => undefined,
+    getRuntime: () => ({
+      persistence: { getConnectionProfile: () => profile, upsertAccount: () => undefined },
+      secrets: {
+        get: () => {
+          secretReads += 1;
+          return 'secret';
+        },
+      },
+      xmpp: { connect: async () => ({}) },
+    }),
+    historySecurity,
+    validateXmppTransport: (endpoint) => ({ ...endpoint, rejectUnauthorized: true }),
+    helpers: createIpcHelpers({
+      assertSender: () => undefined,
+      validateXmppTransport: (endpoint) => ({ ...endpoint, rejectUnauthorized: true }),
+      appIsPackaged: false,
+      getRuntime: () => ({}),
+      fileTransfers: {},
+      outgoingFileTransfers: {},
+      historySecurity,
+    }),
+  };
+  const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+  registerAccountHandlers(options);
+  const result = await handlers.get('account.connect')(
+    { sender: { id: 1 } },
+    {
+      version: 1,
+      requestId: 'modern-domain-override',
+      accountId: profile.accountId,
+      profileId: profile.accountId,
+      profileDomain: 'otro.com',
+      credentialRef: `account:${profile.accountId}`,
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'INVALID_INPUT');
+  assert.equal(secretReads, 0);
+});
+
 test('temporary secrets never reach disk and remember false revokes a prior persistent secret', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-secret-'));
   const safeStorage = {
@@ -347,7 +405,10 @@ test('profile IPC validates sender, account identity, and secret revocation with
       getConnectionProfile: (accountId) => profiles.get(accountId) || null,
       updatePreferences: (...args) => calls.push(args),
     },
-    secrets: { delete: (reference) => calls.push(['delete', reference]) },
+    secrets: {
+      delete: (reference) => calls.push(['delete', reference]),
+      hasPersistent: (reference) => reference === `account:${profile.accountId}`,
+    },
   };
   const options = {
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
@@ -381,6 +442,11 @@ test('profile IPC validates sender, account identity, and secret revocation with
     handlers.get('connectionProfiles.list')(event, { version: 1, requestId: 'list-1' }).value[0]
       .accountId,
     profile.accountId,
+  );
+  assert.equal(
+    handlers.get('connectionProfiles.list')(event, { version: 1, requestId: 'list-1b' }).value[0]
+      .hasPersistentCredential,
+    true,
   );
   assert.equal(
     handlers.get('account.forgetSecret')(event, {

@@ -62,7 +62,14 @@ function registerAccountHandlers({
       let endpoints;
       let domain = input.profileDomain || input.endpoint?.domain;
       if (profile) {
-        domain = normalizeXmppDomain(domain || profile.domain);
+        if (profile.accountId.includes('@')) {
+          const persistedDomain = normalizeXmppDomain(profile.domain);
+          if (domain && normalizeXmppDomain(domain) !== persistedDomain)
+            throw new Error('INVALID_INPUT');
+          domain = persistedDomain;
+        } else {
+          domain = normalizeXmppDomain(domain || profile.domain);
+        }
         if (profile.mode === 'manual')
           endpoints = [{ ...profile.manualEndpoint, priority: 0, weight: 0 }];
         else endpoints = (await resolveXmppEndpoints(domain)).candidates;

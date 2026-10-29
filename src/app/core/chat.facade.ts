@@ -9,6 +9,7 @@ import {
   Presence,
   PresenceInput,
   Preferences,
+  Result,
   XmppConnectionProfile,
 } from './domain';
 import {
@@ -139,10 +140,16 @@ export class ChatFacade {
           right.updatedAt.localeCompare(left.updatedAt) ||
           left.accountId.localeCompare(right.accountId),
       )) {
+        if (!profile.domain.trim() || profile.hasPersistentCredential !== true) continue;
         const result = await this.preferencesPort.get({ accountId: profile.accountId });
         if (result.ok && result.value.autoLogin) {
           this.preferences.set(result.value);
-          await this.connect(profile.accountId, '', { profile, remember: true, autoLogin: true });
+          await this.connect(profile.accountId, '', {
+            profile,
+            remember: true,
+            autoLogin: true,
+            autoLoginExplicit: true,
+          });
           return;
         }
       }
@@ -162,6 +169,26 @@ export class ChatFacade {
     return result.ok ? result.value : [];
   }
 
+  async getProfilePreferences(accountId: string): Promise<Preferences | undefined> {
+    if (!this.isAvailable()) return undefined;
+    const result = await this.preferencesPort.get({ accountId });
+    return result.ok ? result.value : undefined;
+  }
+
+  async saveProfile(
+    profile: XmppConnectionProfile,
+  ): Promise<Result<XmppConnectionProfile> | undefined> {
+    if (!this.account.saveProfile) return undefined;
+    const result = await this.account.saveProfile(profile, createOpaqueId('profiles-save'));
+    if (result.ok)
+      this.profiles.update((items) => [
+        result.value,
+        ...items.filter((item) => item.accountId !== result.value.accountId),
+      ]);
+    else this.error.set(result.error.message);
+    return result;
+  }
+
   async forgetSecret(accountId: string): Promise<boolean> {
     const result = await this.account.forgetSecret?.({
       version: 1,
@@ -173,6 +200,11 @@ export class ChatFacade {
       this.error.set(result.error.message);
       return false;
     }
+    this.profiles.update((items) =>
+      items.map((item) =>
+        item.accountId === accountId ? { ...item, hasPersistentCredential: false } : item,
+      ),
+    );
     return true;
   }
 
@@ -197,6 +229,7 @@ export class ChatFacade {
       manualEndpoint?: XmppConnectionProfile['manualEndpoint'];
       remember?: boolean;
       autoLogin?: boolean;
+      autoLoginExplicit?: boolean;
     },
   ): Promise<boolean> {
     const generation = ++this.identityGeneration;
@@ -250,11 +283,18 @@ export class ChatFacade {
           if (this.isCurrent(generation, requestedAccount)) this.error.set(stored.error.message);
           return false;
         }
+        this.profiles.update((items) =>
+          items.map((item) =>
+            item.accountId === requestedAccount
+              ? { ...item, hasPersistentCredential: options?.remember !== false }
+              : item,
+          ),
+        );
       }
       const endpoint = this.account.getConfig()?.endpoint;
       if (!profile && (!endpoint?.host || !endpoint.port))
         throw new Error('XMPP endpoint is not configured');
-      if (profile) {
+      if (profile && options?.autoLoginExplicit) {
         const preference = await this.preferencesPort.update({
           accountId: requestedAccount,
           changes: { autoLogin: Boolean(options?.autoLogin && options?.remember) },

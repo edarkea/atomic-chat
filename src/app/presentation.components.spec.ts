@@ -9,6 +9,7 @@ import {
   RoomState,
 } from './core/domain';
 import { CertificateDialogComponent } from './certificate-dialog.component';
+import { ConnectionSettingsDialogComponent } from './connection-settings-dialog.component';
 import { ConversationTimelineItem, ConversationViewComponent } from './conversation-view.component';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { LoginPanelComponent } from './login-panel.component';
@@ -81,6 +82,86 @@ describe('extracted Angular presentation components', () => {
     const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
     form.dispatchEvent(new Event('submit'));
     expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it('integrates the account selector and supports keyboard selection', async () => {
+    await TestBed.configureTestingModule({ imports: [LoginPanelComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(LoginPanelComponent);
+    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
+    fixture.componentRef.setInput('password', 'secret');
+    fixture.componentRef.setInput('profiles', [
+      {
+        accountId: 'operator@example.invalid',
+        domain: 'example.invalid',
+        mode: 'automatic',
+        updatedAt: '2026-01-01',
+        hasPersistentCredential: true,
+      },
+      {
+        accountId: 'juan',
+        domain: '',
+        mode: 'manual',
+        manualEndpoint: { host: 'chat.example.invalid', port: 5222, transport: 'starttls' },
+        updatedAt: '2026-01-02',
+        hasPersistentCredential: false,
+      },
+    ]);
+    fixture.componentRef.setInput('password', '');
+    const selected = vi.fn();
+    fixture.componentInstance.profileSelected.subscribe(selected);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('select[name="profile"]')).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fixture.componentRef.setInput('selectedProfileId', 'operator@example.invalid');
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
+    ).toBe(false);
+    const trigger = fixture.nativeElement.querySelector('.profile-trigger') as HTMLButtonElement;
+    trigger.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="listbox"]')).toBeTruthy();
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await Promise.resolve();
+    const options = fixture.nativeElement.querySelectorAll(
+      '[role="option"]',
+    ) as NodeListOf<HTMLButtonElement>;
+    options[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(selected).toHaveBeenCalledWith('juan');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it('opens advanced settings as a modal and keeps cancellation isolated', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConnectionSettingsDialogComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConnectionSettingsDialogComponent);
+    fixture.componentRef.setInput('initial', {
+      automatic: false,
+      host: 'chat.example.invalid',
+      port: 5222,
+      transport: 'starttls',
+    });
+    const saved = vi.fn();
+    const cancelled = vi.fn();
+    fixture.componentInstance.saved.subscribe(saved);
+    fixture.componentInstance.cancelled.subscribe(cancelled);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeTruthy();
+    const automatic = fixture.nativeElement.querySelector(
+      'input[name="automatic"]',
+    ) as HTMLInputElement;
+    automatic.click();
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('input[name="host"]') as HTMLInputElement).disabled,
+    ).toBe(false);
+    (fixture.nativeElement.querySelector('button[type="button"]') as HTMLButtonElement).click();
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(saved).not.toHaveBeenCalled();
   });
 
   it('keeps sidebar actions presentational and emits intent', async () => {

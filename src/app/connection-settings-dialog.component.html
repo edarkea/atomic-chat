@@ -1,0 +1,98 @@
+<div
+  class="dialog-backdrop"
+  role="presentation"
+  tabindex="-1"
+  (click)="onBackdropClick($event)"
+  (keydown)="onBackdropKeydown($event)"
+>
+  <section
+    #dialog
+    class="settings-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="connection-settings-title"
+    (keydown)="onDialogKeydown($event)"
+  >
+    <header class="settings-dialog-header">
+      <div>
+        <p class="eyebrow">CONFIGURACIÓN XMPP</p>
+        <h2 id="connection-settings-title">Configuración avanzada</h2>
+      </div>
+      <button
+        type="button"
+        class="dialog-close"
+        [disabled]="saving()"
+        (click)="cancel()"
+        aria-label="Cerrar"
+      >
+        ×
+      </button>
+    </header>
+    <form class="settings-form" (ngSubmit)="save()">
+      <label class="check-row">
+        <input
+          type="checkbox"
+          name="automatic"
+          [ngModel]="draft().automatic"
+          [disabled]="saving()"
+          (ngModelChange)="setAutomatic($event)"
+        />
+        Descubrir servidor y puerto automáticamente
+      </label>
+      <fieldset>
+        <legend>Endpoint manual</legend>
+        <label>
+          Host
+          <input
+            name="host"
+            [ngModel]="draft().host"
+            [disabled]="saving() || draft().automatic"
+            [attr.aria-invalid]="!draft().automatic && !draft().host.trim() ? 'true' : null"
+            placeholder="chat.empresa.com"
+            (ngModelChange)="setHost($event)"
+          />
+        </label>
+        <label>
+          Puerto
+          <input
+            name="port"
+            type="number"
+            min="1"
+            max="65535"
+            [ngModel]="draft().port"
+            [disabled]="saving() || draft().automatic"
+            [attr.aria-invalid]="
+              !draft().automatic && (draft().port < 1 || draft().port > 65535) ? 'true' : null
+            "
+            (ngModelChange)="setPort(+$event)"
+          />
+        </label>
+        <label>
+          Transporte
+          <select
+            name="transport"
+            [ngModel]="draft().transport"
+            [disabled]="saving()"
+            (ngModelChange)="setTransport($event)"
+          >
+            <option value="starttls">STARTTLS</option>
+            <option value="direct-tls">TLS directo</option>
+          </select>
+        </label>
+      </fieldset>
+      @if (displayError(); as message) {
+        <p class="settings-error" role="alert">{{ message }}</p>
+      }
+      <footer class="settings-actions">
+        <button type="button" [disabled]="saving()" (click)="restoreDefaults()">
+          Restaurar predeterminados
+        </button>
+        <span class="settings-actions-spacer"></span>
+        <button type="button" [disabled]="saving()" (click)="cancel()">Cancelar</button>
+        <button type="submit" class="primary" [disabled]="saving()">
+          {{ saving() ? 'Guardando…' : 'Guardar' }}
+        </button>
+      </footer>
+    </form>
+  </section>
+</div>

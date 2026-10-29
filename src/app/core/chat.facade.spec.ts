@@ -259,3 +259,69 @@ describe('ChatFacade roster reconciliation', () => {
     expect(facade.historyLoading()).toBe(false);
   });
 });
+
+describe('ChatFacade login profile safety', () => {
+  it('skips autologin for a legacy profile without a persisted domain', async () => {
+    const connect = vi.fn(async () =>
+      ok({
+        accountId: 'juan',
+        status: 'connected' as const,
+        retryable: false,
+        since: new Date().toISOString(),
+      }),
+    );
+    await TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: ACCOUNT_PORT,
+          useValue: {
+            getConfig: () => undefined,
+            listProfiles: async () =>
+              ok([
+                {
+                  accountId: 'juan',
+                  domain: '',
+                  mode: 'manual' as const,
+                  updatedAt: '2026-10-29',
+                  hasPersistentCredential: true,
+                },
+              ]),
+          },
+        },
+        {
+          provide: XMPP_PORT,
+          useValue: {
+            connect,
+            disconnect: async () => ok(undefined),
+            getState: async () => ok({}),
+            setPresence: async () => ok({}),
+            listRoster: async () => ok([]),
+            sendMessage: async () => ok({}),
+            subscribe: () => () => undefined,
+          },
+        },
+        {
+          provide: HISTORY_PORT,
+          useValue: {
+            list: async () => ok([]),
+            listPage: async () => ok({}),
+            conversations: async () => ok([]),
+          },
+        },
+        {
+          provide: PREFERENCES_PORT,
+          useValue: {
+            get: async () => ok({ theme: 'atomic' as const, notifications: true, autoLogin: true }),
+            update: async () => ok({}),
+            reset: async () =>
+              ok({ theme: 'atomic' as const, notifications: true, autoLogin: false }),
+          },
+        },
+        { provide: CERTIFICATE_PORT, useValue: { decide: async () => ok(undefined) } },
+      ],
+    }).compileComponents();
+    const facade = TestBed.inject(ChatFacade);
+    await facade.tryAutoLogin();
+    expect(connect).not.toHaveBeenCalled();
+  });
+});

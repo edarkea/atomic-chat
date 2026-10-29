@@ -5,9 +5,16 @@ function registerConnectionProfileHandlers({ ipcMain, assertSender, getRuntime, 
   ipcMain.handle('connectionProfiles.list', (event, input) => {
     assertSender(event);
     if (!validVersion(input)) throw new Error('INVALID_INPUT');
+    const runtime = getRuntime();
+    const profiles = runtime.persistence.listConnectionProfiles().map((profile) => ({
+      ...profile,
+      hasPersistentCredential: Boolean(
+        runtime.secrets.hasPersistent?.(`account:${profile.accountId}`),
+      ),
+    }));
     return {
       ok: true,
-      value: getRuntime().persistence.listConnectionProfiles(),
+      value: profiles,
       version: 1,
       requestId: requestId(event, input),
     };
