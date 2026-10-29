@@ -6,6 +6,11 @@ const { OutgoingFileTransferCoordinator } = require('../electron/file-transfer-o
 
 const cycles = Math.max(1, Number.parseInt(process.env.ATOMIC_CAL10_TRANSFER_CYCLES || '250', 10));
 
+if (typeof global.gc !== 'function') {
+  console.error('CAL-10 transfer probe requires --expose-gc for comparable heap measurements.');
+  process.exit(1);
+}
+
 function fakeTimer() {
   return { unref() {} };
 }
@@ -41,7 +46,7 @@ async function run() {
   outgoing.onEvent(() => {
     outgoingEvents += 1;
   });
-  if (global.gc) global.gc();
+  global.gc();
   const before = memory();
   const startedAt = process.hrtime.bigint();
   try {
@@ -85,7 +90,7 @@ async function run() {
   } finally {
     await fsp.rm(root, { recursive: true, force: true });
   }
-  if (global.gc) global.gc();
+  global.gc();
   const after = memory();
   const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
   process.stdout.write(
