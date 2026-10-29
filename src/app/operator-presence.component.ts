@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  ElementRef,
+  input,
+  output,
+  ViewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Preferences } from './core/domain';
 import { PresenceOption } from './sidebar.models';
@@ -24,6 +32,9 @@ export interface OperatorPresenceModel {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OperatorPresenceComponent {
+  @ViewChild('presenceTrigger') private readonly presenceTrigger?: ElementRef<HTMLButtonElement>;
+  @ViewChild('presenceMenu') private readonly presenceMenu?: ElementRef<HTMLElement>;
+
   readonly model = input.required<OperatorPresenceModel>();
   readonly presenceToggle = output<void>();
   readonly presenceClose = output<void>();
@@ -32,6 +43,20 @@ export class OperatorPresenceComponent {
   readonly settingsToggle = output<void>();
   readonly preferencesChange = output<Partial<Preferences>>();
   readonly resetPreferences = output<void>();
+
+  private presenceWasOpen = false;
+
+  constructor() {
+    effect(() => {
+      const isOpen = this.model().presenceOpen;
+      if (isOpen && !this.presenceWasOpen) {
+        queueMicrotask(() => this.focusSelectedOption());
+      } else if (!isOpen && this.presenceWasOpen) {
+        queueMicrotask(() => this.presenceTrigger?.nativeElement.focus());
+      }
+      this.presenceWasOpen = isOpen;
+    });
+  }
 
   protected selectPresence(option: PresenceOption): void {
     this.presenceSelected.emit(option);
@@ -43,16 +68,14 @@ export class OperatorPresenceComponent {
     if (!['ArrowDown', 'Enter', ' '].includes(event.key)) return;
     event.preventDefault();
     if (!this.model().presenceOpen) this.presenceToggle.emit();
-    queueMicrotask(() => this.focusFirstOption());
   }
   protected onMenuKeydown(event: KeyboardEvent): void {
-    if (event.target instanceof HTMLInputElement) return;
     const options = Array.from(
-      (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>(
+      this.presenceMenu?.nativeElement.querySelectorAll<HTMLButtonElement>(
         '[role="menuitemradio"]',
-      ),
+      ) ?? [],
     );
-    const current = options.indexOf(document.activeElement as HTMLButtonElement);
+    const current = options.indexOf(event.currentTarget as HTMLButtonElement);
     if (event.key === 'Escape') {
       event.preventDefault();
       this.presenceClose.emit();
@@ -78,7 +101,19 @@ export class OperatorPresenceComponent {
       if (option) this.selectPresence(option);
     }
   }
-  private focusFirstOption(): void {
-    document.querySelector<HTMLElement>('.presence-menu [role="menuitemradio"]')?.focus();
+  protected onStatusKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    this.presenceClose.emit();
+  }
+  private focusSelectedOption(): void {
+    const options =
+      this.presenceMenu?.nativeElement.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitemradio"]',
+      );
+    const selected = this.presenceMenu?.nativeElement.querySelector<HTMLButtonElement>(
+      '[role="menuitemradio"][aria-checked="true"]',
+    );
+    (selected ?? options?.[0])?.focus();
   }
 }

@@ -52,7 +52,7 @@
 .presence-arrow {
   margin-left: auto;
 }
-.presence-menu {
+.presence-popover {
   background: var(--atomic-surface-raised);
   border: 1px solid var(--atomic-border);
   border-radius: var(--atomic-radius-sm);
@@ -65,6 +65,10 @@
   top: calc(100% + 4px);
   width: 100%;
   z-index: 10;
+}
+.presence-menu {
+  display: grid;
+  gap: 3px;
 }
 .presence-menu button {
   align-items: center;
@@ -85,7 +89,7 @@
 .presence-menu button[aria-checked='true'] {
   background: var(--atomic-surface-active);
 }
-.presence-menu input {
+.presence-status-field input {
   background: var(--atomic-bg);
   border: 1px solid var(--atomic-border-soft);
   color: var(--atomic-text);

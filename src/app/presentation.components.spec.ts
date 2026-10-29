@@ -283,7 +283,7 @@ describe('extracted Angular presentation components', () => {
       { id: 'online', mode: undefined, label: 'En línea', dot: 'online' },
       { id: 'away', mode: 'away', label: 'Ausente', dot: 'away' },
     ];
-    fixture.componentRef.setInput('model', {
+    const presenceModel = {
       accountId: 'operator@example.invalid',
       connectionLabel: 'Conectado',
       presenceLabel: 'En línea',
@@ -294,27 +294,72 @@ describe('extracted Angular presentation components', () => {
       presenceStatus: '',
       settingsOpen: false,
       preferences: { theme: 'atomic', notifications: true, autoLogin: false },
-    });
+    };
+    fixture.componentRef.setInput('model', presenceModel);
     const selected = vi.fn();
-    const closed = vi.fn();
+    const statusChanged = vi.fn();
     fixture.componentInstance.presenceSelected.subscribe(selected);
-    fixture.componentInstance.presenceClose.subscribe(closed);
+    fixture.componentInstance.presenceStatusChange.subscribe(statusChanged);
+    fixture.componentInstance.presenceClose.subscribe(() => {
+      fixture.componentRef.setInput('model', { ...presenceModel, presenceOpen: false });
+    });
     fixture.detectChanges();
     const menu = fixture.nativeElement.querySelector('[role="menu"]') as HTMLElement;
     const buttons = menu.querySelectorAll(
       '[role="menuitemradio"]',
     ) as NodeListOf<HTMLButtonElement>;
     expect(menu).toBeTruthy();
+    expect(buttons).toHaveLength(options.length);
+    expect(menu.querySelector('input')).toBeNull();
     expect(buttons[0].getAttribute('aria-checked')).toBe('true');
     expect(buttons[0].tabIndex).toBe(0);
     expect(buttons[1].tabIndex).toBe(-1);
+    const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
+    buttons[0].dispatchEvent(tabEvent);
+    expect(tabEvent.defaultPrevented).toBe(false);
     buttons[0].focus();
     buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     expect(document.activeElement).toBe(buttons[1]);
+    buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(document.activeElement).toBe(buttons[0]);
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    expect(document.activeElement).toBe(buttons[1]);
+    buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    expect(document.activeElement).toBe(buttons[0]);
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    expect(document.activeElement).toBe(buttons[1]);
     buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(selected).toHaveBeenCalledWith(options[1]);
-    expect(closed).toHaveBeenCalledOnce();
+    expect(selected).toHaveBeenCalledTimes(1);
+    expect(selected).toHaveBeenLastCalledWith(options[1]);
+    buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    expect(selected).toHaveBeenCalledTimes(2);
+    buttons[1].click();
+    expect(selected).toHaveBeenCalledTimes(3);
+
+    const statusInput = fixture.nativeElement.querySelector(
+      'input[aria-label="Mensaje de estado"]',
+    ) as HTMLInputElement;
+    statusInput.value = 'En reunión';
+    statusInput.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(statusChanged).toHaveBeenCalledWith('En reunión');
+
+    buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(fixture.nativeElement.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.presence-trigger'));
+
+    fixture.componentRef.setInput('model', { ...presenceModel, presenceOpen: true });
+    fixture.detectChanges();
+    const reopenedInput = fixture.nativeElement.querySelector(
+      'input[aria-label="Mensaje de estado"]',
+    ) as HTMLInputElement;
+    reopenedInput.focus();
+    reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(fixture.nativeElement.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.presence-trigger'));
   });
 
   it('renders the certificate decisions and emits the selected policy', async () => {

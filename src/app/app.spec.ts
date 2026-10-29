@@ -57,4 +57,18 @@ describe('App composer integration', () => {
   it('scrolls a newly selected conversation after asynchronous history rendering', async () => { const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement; Object.defineProperties(area, { scrollHeight: { configurable: true, value: 1200 }, clientHeight: { configurable: true, value: 300 } }); facade.messages.set([chatMessage('último B', 'b1')] as any); fixture.detectChanges(); (fixture.componentInstance as any).conversationSelection.set({ kind: 'direct', accountId: 'a@example.invalid', jid: 'other@example.invalid' }); fixture.detectChanges(); await new Promise(requestAnimationFrame); expect(area.scrollTop).toBe(900); });
   it('preserves the visual position when prepending an older page', async () => { const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement; let height = 1000; Object.defineProperties(area, { scrollHeight: { configurable: true, get: () => height }, clientHeight: { configurable: true, value: 300 } }); await new Promise(requestAnimationFrame); facade.hasOlderMessages.set(true); (facade.loadOlderMessages as any).mockImplementationOnce(async () => { height = 1200; }); area.scrollTop = 0; (fixture.componentInstance as any).onChatScroll(); await Promise.resolve(); await new Promise(requestAnimationFrame); expect(area.scrollTop).toBe(200); expect(facade.loadOlderMessages).toHaveBeenCalledTimes(1); });
   it('does not repeat an older-page request while one is loading', async () => { const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement; Object.defineProperties(area, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 300 } }); facade.hasOlderMessages.set(true); facade.historyLoading.set(true); area.scrollTop = 0; (fixture.componentInstance as any).onChatScroll(); expect(facade.loadOlderMessages).not.toHaveBeenCalled(); });
+  it('closes the presence popover and restores focus through the shell', async () => {
+    const trigger = fixture.nativeElement.querySelector('.presence-trigger') as HTMLButtonElement;
+    trigger.click();
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector(
+      'input[aria-label="Mensaje de estado"]',
+    ) as HTMLInputElement;
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(fixture.nativeElement.querySelector('.presence-popover')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
 });

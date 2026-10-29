@@ -9,6 +9,7 @@
 <div class="presence-control">
   <span>Estado</span
   ><button
+    #presenceTrigger
     type="button"
     class="presence-trigger"
     aria-haspopup="menu"
@@ -21,30 +22,30 @@
     ><span class="presence-arrow" aria-hidden="true">⌄</span>
   </button>
   @if (model().presenceOpen) {
-    <div
-      class="presence-menu"
-      role="menu"
-      aria-label="Estado de presencia"
-      tabindex="-1"
-      (keydown)="onMenuKeydown($event)"
-    >
-      @for (option of model().presenceOptions; track option.id) {
-        <button
-          type="button"
-          role="menuitemradio"
-          [attr.aria-checked]="model().presenceOptionId === option.id"
-          [attr.tabindex]="optionTabIndex(option)"
-          (click)="selectPresence(option)"
-        >
-          <i class="presence-dot" [class]="'presence-dot ' + option.dot"></i>{{ option.label }}
-        </button>
-      }
-      <input
-        aria-label="Mensaje de estado"
-        placeholder="Mensaje opcional"
-        [ngModel]="model().presenceStatus"
-        (ngModelChange)="presenceStatusChange.emit($event)"
-      />
+    <div class="presence-popover">
+      <div #presenceMenu class="presence-menu" role="menu" aria-label="Estado de presencia">
+        @for (option of model().presenceOptions; track option.id) {
+          <button
+            type="button"
+            role="menuitemradio"
+            [attr.aria-checked]="model().presenceOptionId === option.id"
+            [attr.tabindex]="optionTabIndex(option)"
+            (click)="selectPresence(option)"
+            (keydown)="onMenuKeydown($event)"
+          >
+            <i class="presence-dot" [class]="'presence-dot ' + option.dot"></i>{{ option.label }}
+          </button>
+        }
+      </div>
+      <div class="presence-status-field">
+        <input
+          aria-label="Mensaje de estado"
+          placeholder="Mensaje opcional"
+          [ngModel]="model().presenceStatus"
+          (ngModelChange)="presenceStatusChange.emit($event)"
+          (keydown)="onStatusKeydown($event)"
+        />
+      </div>
     </div>
   }
 </div>
