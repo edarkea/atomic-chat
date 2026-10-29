@@ -66,6 +66,13 @@ export class LoginPanelComponent {
     const at = account.indexOf('@');
     const localpart = at >= 0 ? account.slice(0, at) : account;
     const domain = at >= 0 ? account.slice(at + 1) : this.domain().trim();
+    const persistentCredentialAvailable =
+      this.remember() &&
+      this.profiles().some(
+        (profile) =>
+          profile.accountId === this.selectedProfileId() &&
+          profile.hasPersistentCredential === true,
+      );
     if (
       this.busy() ||
       !account ||
@@ -74,12 +81,7 @@ export class LoginPanelComponent {
       (at >= 0 && at !== account.lastIndexOf('@')) ||
       /[\s/@]/.test(localpart) ||
       /[\s/@]/.test(domain) ||
-      (!this.password().trim() &&
-        !this.profiles().some(
-          (profile) =>
-            profile.accountId === this.selectedProfileId() &&
-            profile.hasPersistentCredential === true,
-        ))
+      (!this.password().trim() && !persistentCredentialAvailable)
     )
       return false;
     if (!this.automatic()) {

@@ -458,6 +458,19 @@ test('legacy profiles persist advanced settings without changing identity or cre
     updatedAt: saved.value.updatedAt,
   });
   registerAccountHandlers(registerOptions);
+  const temporarySecret = handlers.get('account.setSecret')(
+    { sender: { id: 1 } },
+    {
+      version: 1,
+      requestId: 'legacy-temporary-secret',
+      accountId: 'juan',
+      credentialRef: 'account:juan',
+      secret: 'temporary-password',
+      remember: false,
+    },
+  );
+  assert.equal(temporarySecret.ok, true);
+  assert.equal(secrets.hasPersistent('account:juan'), false);
   const connected = await handlers.get('account.connect')(
     { sender: { id: 1 } },
     {
@@ -471,6 +484,7 @@ test('legacy profiles persist advanced settings without changing identity or cre
   );
   assert.equal(connected.ok, true);
   assert.equal(connected.value.accountId, 'juan');
+  assert.equal(secrets.get('account:juan'), undefined);
   assert.deepEqual(connected.value.endpoint, {
     host: '192.168.1.20',
     port: 5223,

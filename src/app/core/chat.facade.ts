@@ -254,6 +254,11 @@ export class ChatFacade {
     try {
       const requestId = createOpaqueId('req');
       const credentialRef = `account:${requestedAccount}`;
+      const remember = options?.remember ?? true;
+      if (!secret.trim() && !remember) {
+        this.error.set('Introduce la contraseña para una sesión sin recordar.');
+        return false;
+      }
       const legacyProfile =
         options?.profile && !options.profile.accountId.includes('@') ? options.profile : undefined;
       const profile =
@@ -290,7 +295,7 @@ export class ChatFacade {
           credentialRef,
           secret,
           accountId: requestedAccount,
-          remember: options?.remember ?? true,
+          remember,
         });
         if (!stored.ok) {
           if (this.isCurrent(generation, requestedAccount)) this.error.set(stored.error.message);
@@ -299,7 +304,7 @@ export class ChatFacade {
         this.profiles.update((items) =>
           items.map((item) =>
             item.accountId === requestedAccount
-              ? { ...item, hasPersistentCredential: options?.remember !== false }
+              ? { ...item, hasPersistentCredential: remember }
               : item,
           ),
         );
@@ -310,7 +315,7 @@ export class ChatFacade {
       if (profile && options?.autoLoginExplicit) {
         const preference = await this.preferencesPort.update({
           accountId: requestedAccount,
-          changes: { autoLogin: Boolean(options?.autoLogin && options?.remember) },
+          changes: { autoLogin: Boolean(options?.autoLogin && remember) },
         });
         if (preference.ok)
           this.preferences.update((current) => ({ ...current, ...preference.value }));

@@ -22,6 +22,7 @@ describe('ChatFacade roster reconciliation', () => {
   let historyPort: any;
   let preferencesPort: any;
   let certificatePort: any;
+  let accountPort: any;
   let emitEvent: (event: unknown) => void;
   beforeEach(() => {
     history = {
@@ -31,13 +32,14 @@ describe('ChatFacade roster reconciliation', () => {
       'b@example.invalid': [],
     };
     port = {
-      connect: async (input: any) =>
+      connect: vi.fn(async (input: any) =>
         ok({
           accountId: input.accountId,
           status: 'connected',
           retryable: false,
           since: new Date().toISOString(),
         }),
+      ),
       disconnect: async () => ok(undefined),
       getState: async () => ok({}),
       setPresence: async (input: any) =>
@@ -74,25 +76,23 @@ describe('ChatFacade roster reconciliation', () => {
       reset: vi.fn(async () => ok({ theme: 'atomic', notifications: true, autoLogin: false })),
     };
     certificatePort = { decide: vi.fn(async () => ok(undefined)) };
+    accountPort = {
+      getConfig: () => ({
+        accountId: 'a@example.invalid',
+        endpoint: {
+          host: 'example.invalid',
+          port: 5222,
+          tls: true,
+          domain: 'example.invalid',
+          allowInsecureTls: false,
+        },
+      }),
+      setSecret: vi.fn(async () => ok({ stored: true })),
+    };
     TestBed.configureTestingModule({
       providers: [
         { provide: XMPP_PORT, useValue: port },
-        {
-          provide: ACCOUNT_PORT,
-          useValue: {
-            getConfig: () => ({
-              accountId: 'a@example.invalid',
-              endpoint: {
-                host: 'example.invalid',
-                port: 5222,
-                tls: true,
-                domain: 'example.invalid',
-                allowInsecureTls: false,
-              },
-            }),
-            setSecret: async () => ok({ stored: true }),
-          },
-        },
+        { provide: ACCOUNT_PORT, useValue: accountPort },
         { provide: HISTORY_PORT, useValue: historyPort },
         { provide: PREFERENCES_PORT, useValue: preferencesPort },
         { provide: CERTIFICATE_PORT, useValue: certificatePort },
@@ -257,6 +257,85 @@ describe('ChatFacade roster reconciliation', () => {
     releaseSecond(ok({ items: [], nextCursor: null, hasMore: false }));
     await second;
     expect(facade.historyLoading()).toBe(false);
+  });
+
+  it('requires a new secret when remember is explicitly disabled', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const profile = {
+      accountId: 'a@example.invalid',
+      domain: 'example.invalid',
+      mode: 'automatic' as const,
+      updatedAt: '2026-10-29',
+      hasPersistentCredential: true,
+    };
+    facade.profiles.set([profile]);
+    const result = await facade.connect('a@example.invalid', '', {
+      profile,
+      domain: profile.domain,
+      remember: false,
+      autoLogin: false,
+      autoLoginExplicit: true,
+    });
+    expect(result).toBe(false);
+    expect(accountPort.setSecret).not.toHaveBeenCalled();
+    expect(port.connect).not.toHaveBeenCalled();
+    expect(facade.error()).toContain('Introduce la contraseña');
+  });
+
+  it('stores a new temporary secret before connecting and revokes persistent metadata', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const profile = {
+      accountId: 'a@example.invalid',
+      domain: 'example.invalid',
+      mode: 'automatic' as const,
+      updatedAt: '2026-10-29',
+      hasPersistentCredential: true,
+    };
+    facade.profiles.set([profile]);
+    const result = await facade.connect('a@example.invalid', 'temporary', {
+      profile,
+      domain: profile.domain,
+      remember: false,
+      autoLogin: true,
+      autoLoginExplicit: true,
+    });
+    expect(result).toBe(true);
+    expect(accountPort.setSecret).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'a@example.invalid',
+        credentialRef: 'account:a@example.invalid',
+        secret: 'temporary',
+        remember: false,
+      }),
+    );
+    expect(port.connect).toHaveBeenCalledOnce();
+    expect(facade.profiles()[0].hasPersistentCredential).toBe(false);
+    expect(preferencesPort.update).toHaveBeenCalledWith({
+      accountId: 'a@example.invalid',
+      changes: { autoLogin: false },
+    });
+  });
+
+  it('reuses a persistent credential only for an explicitly remembered profile', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const profile = {
+      accountId: 'a@example.invalid',
+      domain: 'example.invalid',
+      mode: 'automatic' as const,
+      updatedAt: '2026-10-29',
+      hasPersistentCredential: true,
+    };
+    facade.profiles.set([profile]);
+    const result = await facade.connect('a@example.invalid', '', {
+      profile,
+      domain: profile.domain,
+      remember: true,
+      autoLogin: true,
+      autoLoginExplicit: true,
+    });
+    expect(result).toBe(true);
+    expect(accountPort.setSecret).not.toHaveBeenCalled();
+    expect(port.connect).toHaveBeenCalledOnce();
   });
 });
 

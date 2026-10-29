@@ -114,11 +114,17 @@ describe('extracted Angular presentation components', () => {
     expect(
       (fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
     ).toBe(true);
+    fixture.componentRef.setInput('remember', true);
     fixture.componentRef.setInput('selectedProfileId', 'operator@example.invalid');
     fixture.detectChanges();
     expect(
       (fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
     ).toBe(false);
+    fixture.componentRef.setInput('remember', false);
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement).disabled,
+    ).toBe(true);
     const trigger = fixture.nativeElement.querySelector('.profile-trigger') as HTMLButtonElement;
     trigger.click();
     fixture.detectChanges();
