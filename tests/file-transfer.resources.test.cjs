@@ -69,7 +69,9 @@ function siOffer(iqId, sid, size) {
 function ibbStanza(kind, id, sid, body, seq = 0, blockSize = 61440) {
   const child = kind === 'open'
     ? xml('open', { xmlns: IBB, sid, 'block-size': String(blockSize), stanza: 'iq' })
-    : xml('data', { xmlns: IBB, sid, seq: String(seq) }, body.toString('base64'));
+    : kind === 'close'
+      ? xml('close', { xmlns: IBB, sid })
+      : xml('data', { xmlns: IBB, sid, seq: String(seq) }, body.toString('base64'));
   return xml('iq', { type: 'set', id, from: FROM }, child);
 }
 
@@ -144,7 +146,7 @@ test('C5-RES-03 bounds deferred IBB binary reservations and preserves ordered re
   adapter.sessionGenerations.set(ACCOUNT, 1);
   adapter.fileOwners.set(ACCOUNT, 7);
   try {
-    adapter.handleStanza(ACCOUNT, siOffer('resource-offer', 'resource-sid', blockSize * 4));
+    adapter.handleStanza(ACCOUNT, siOffer('resource-offer', 'resource-sid', blockSize * 5));
     const record = [...coordinator.records.values()][0];
     await coordinator.accept(record.offer.transferId, 7);
     const pending = adapter.filePending.get(`${ACCOUNT}|1|${FROM}|resource-sid`);
@@ -163,26 +165,208 @@ test('C5-RES-03 bounds deferred IBB binary reservations and preserves ordered re
       return new Promise((resolve, reject) => { release = () => originalWrite(...args).then(resolve, reject); });
     };
     const body = Buffer.alloc(blockSize, 0x61);
-    for (let seq = 0; seq < 8; seq += 1) adapter.handleStanza(ACCOUNT, ibbStanza('data', `resource-data-${seq}`, 'resource-sid', body, seq, blockSize));
+    for (let seq = 0; seq < 4; seq += 1) adapter.handleStanza(ACCOUNT, ibbStanza('data', `resource-data-${seq}`, 'resource-sid', body, seq, blockSize));
+    const acceptedQueue = pending.protocolQueue;
+    for (let seq = 4; seq < 8; seq += 1) adapter.handleStanza(ACCOUNT, ibbStanza('data', `resource-data-${seq}`, 'resource-sid', body, seq, blockSize));
     await startedPromise;
     assert.equal(pending.pendingBinaryBytes, blockSize * 4);
-    assert.deepEqual(sent.map((stanza) => stanza.attrs.id), ['resource-offer', 'resource-open']);
-    release();
-    await pending.protocolQueue;
-    assert.equal(pending.pendingBinaryBytes, 0);
-    assert.equal(record.bytes.toString(), String(blockSize * 4));
+    assert.strictEqual(pending.protocolQueue, acceptedQueue);
     assert.deepEqual(sent.slice(2).map((stanza) => [stanza.attrs.id, stanza.attrs.type]), [
-      ['resource-data-0', 'result'],
-      ['resource-data-1', 'result'],
-      ['resource-data-2', 'result'],
-      ['resource-data-3', 'result'],
       ['resource-data-4', 'error'],
       ['resource-data-5', 'error'],
       ['resource-data-6', 'error'],
       ['resource-data-7', 'error'],
     ]);
+    release();
+    await pending.protocolQueue;
+    assert.equal(pending.pendingBinaryBytes, 0);
+    assert.equal(record.bytes.toString(), String(blockSize * 4));
+    assert.deepEqual(sent.slice(6).map((stanza) => [stanza.attrs.id, stanza.attrs.type]), [
+      ['resource-data-0', 'result'],
+      ['resource-data-1', 'result'],
+      ['resource-data-2', 'result'],
+      ['resource-data-3', 'result'],
+    ]);
     assert.equal(record.state, 'transferring');
     assert.equal(adapter.filePending.size, 1);
+
+    adapter.handleStanza(ACCOUNT, ibbStanza('data', 'resource-data-retry-4', 'resource-sid', body, 4, blockSize));
+    await pending.protocolQueue;
+    assert.equal(pending.pendingBinaryBytes, 0);
+    assert.equal(record.bytes.toString(), String(blockSize * 5));
+    assert.equal(sent.at(-1).attrs.id, 'resource-data-retry-4');
+    assert.equal(sent.at(-1).attrs.type, 'result');
+
+    adapter.handleStanza(ACCOUNT, ibbStanza('close', 'resource-close', 'resource-sid'));
+    await pending.protocolQueue;
+    assert.equal(record.state, 'completed');
+    assert.equal(coordinator.records.size, 0);
+    assert.equal(adapter.filePending.size, 0);
+    assert.equal(sent.at(-1).attrs.id, 'resource-close');
+    assert.equal(sent.at(-1).attrs.type, 'result');
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('C5-RES-03A bounds data admitted while open is pending and rejects idle pre-open data synchronously', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-file-preopen-'));
+  const destination = path.join(root, 'received.bin');
+  const sent = [];
+  const session = { send: async (stanza) => { sent.push(stanza); } };
+  const coordinator = new FileTransferCoordinator({ selectDestination: async () => destination });
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  adapter.sessions.set(ACCOUNT, session);
+  adapter.sessionGenerations.set(ACCOUNT, 1);
+  adapter.fileOwners.set(ACCOUNT, 7);
+  let releaseOpen;
+  let openStarted;
+  const openStartedPromise = new Promise((resolve) => { openStarted = resolve; });
+  const openGate = new Promise((resolve) => { releaseOpen = resolve; });
+  try {
+    const blockSize = 61440;
+    adapter.handleStanza(ACCOUNT, siOffer('preopen-offer', 'preopen-sid', blockSize * 5));
+    const record = [...coordinator.records.values()][0];
+    await coordinator.accept(record.offer.transferId, 7);
+    const pending = adapter.filePending.get(`${ACCOUNT}|1|${FROM}|preopen-sid`);
+    const idleQueue = pending.protocolQueue;
+    for (let id = 0; id < 4; id += 1) adapter.handleStanza(ACCOUNT, ibbStanza('data', `idle-data-${id}`, 'preopen-sid', Buffer.alloc(blockSize), id, blockSize));
+    assert.equal(pending.openState, 'idle');
+    assert.equal(pending.pendingBinaryBytes, 0);
+    assert.strictEqual(pending.protocolQueue, idleQueue);
+    const originalOpen = coordinator.open.bind(coordinator);
+    coordinator.open = async (id) => { openStarted(); await openGate; return originalOpen(id); };
+    adapter.handleStanza(ACCOUNT, ibbStanza('open', 'preopen-open', 'preopen-sid'));
+    await openStartedPromise;
+    const openQueue = pending.protocolQueue;
+    const body = Buffer.alloc(blockSize, 0x61);
+    for (let id = 0; id < 8; id += 1) adapter.handleStanza(ACCOUNT, ibbStanza('data', `preopen-data-${id}`, 'preopen-sid', body, id, blockSize));
+    assert.notStrictEqual(pending.protocolQueue, openQueue);
+    assert.equal(pending.pendingBinaryBytes, blockSize * 4);
+    assert.equal(sent.filter((stanza) => stanza.attrs.type === 'error').length, 8);
+    assert.equal(sent.filter((stanza) => stanza.attrs.id === 'preopen-open').length, 0);
+    releaseOpen();
+    await pending.protocolQueue;
+    assert.equal(pending.openState, 'ready');
+    assert.equal(pending.pendingBinaryBytes, 0);
+    assert.equal(sent.filter((stanza) => stanza.attrs.id === 'preopen-open' && stanza.attrs.type === 'result').length, 1);
+    assert.equal(record.bytes.toString(), String(blockSize * 4));
+
+    adapter.handleStanza(ACCOUNT, ibbStanza('data', 'preopen-data-valid', 'preopen-sid', body, 4, blockSize));
+    await pending.protocolQueue;
+    assert.equal(pending.pendingBinaryBytes, 0);
+    assert.equal(record.bytes.toString(), String(blockSize * 5));
+    assert.equal(sent.at(-1).attrs.id, 'preopen-data-valid');
+    assert.equal(sent.at(-1).attrs.type, 'result');
+
+    adapter.handleStanza(ACCOUNT, ibbStanza('close', 'preopen-close', 'preopen-sid'));
+    await pending.protocolQueue;
+    assert.equal(record.state, 'completed');
+    assert.equal(coordinator.records.size, 0);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('C5-RES-02A storage failure during data releases the terminal path once', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-file-data-failure-'));
+  const destination = path.join(root, 'received.bin');
+  const sent = [];
+  const session = { send: async (stanza) => { sent.push(stanza); } };
+  const coordinator = new FileTransferCoordinator({ selectDestination: async () => destination });
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  adapter.sessions.set(ACCOUNT, session);
+  adapter.sessionGenerations.set(ACCOUNT, 1);
+  adapter.fileOwners.set(ACCOUNT, 7);
+  try {
+    adapter.handleStanza(ACCOUNT, siOffer('failure-offer', 'failure-sid', 3));
+    const record = [...coordinator.records.values()][0];
+    await coordinator.accept(record.offer.transferId, 7);
+    const pending = adapter.filePending.get(`${ACCOUNT}|1|${FROM}|failure-sid`);
+    adapter.handleStanza(ACCOUNT, ibbStanza('open', 'failure-open', 'failure-sid'));
+    await pending.protocolQueue;
+    record.handle.write = async () => { throw new Error('synthetic write failure'); };
+    adapter.handleStanza(ACCOUNT, ibbStanza('data', 'failure-data', 'failure-sid', Buffer.from('abc'), 0));
+    await pending.protocolQueue;
+    assert.equal(record.state, 'failed');
+    assert.equal(coordinator.records.size, 0);
+    assert.equal(adapter.filePending.size, 0);
+    assert.equal(pending.pendingBinaryBytes, 0);
+    assert.deepEqual(sent.filter((stanza) => stanza.attrs.id === 'failure-data').map((stanza) => stanza.attrs.type), ['error']);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('C5-RES-02A delayed SI rejection keeps the record until its IQ response finishes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-file-si-reject-'));
+  const destination = path.join(root, 'received.bin');
+  const sent = [];
+  let releaseResponse;
+  let responseStarted;
+  const responseStartedPromise = new Promise((resolve) => { responseStarted = resolve; });
+  const responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+  const session = { send: async (stanza) => { sent.push(stanza); responseStarted(); await responseGate; } };
+  const coordinator = new FileTransferCoordinator({ selectDestination: async () => destination });
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  adapter.sessions.set(ACCOUNT, session);
+  adapter.sessionGenerations.set(ACCOUNT, 1);
+  adapter.fileOwners.set(ACCOUNT, 7);
+  try {
+    adapter.handleStanza(ACCOUNT, siOffer('reject-offer', 'reject-sid', 0));
+    const record = [...coordinator.records.values()][0];
+    const pending = adapter.filePending.get(`${ACCOUNT}|1|${FROM}|reject-sid`);
+    const rejectPromise = coordinator.reject(record.offer.transferId, 'user_rejected');
+    await responseStartedPromise;
+    assert.equal(record.state, 'cancelled');
+    assert.equal(coordinator.records.size, 1);
+    assert.equal(adapter.filePending.size, 0);
+    releaseResponse();
+    await rejectPromise;
+    assert.equal(coordinator.records.size, 0);
+    assert.equal(pending.record, record);
+    assert.deepEqual(sent.filter((stanza) => stanza.attrs.id === 'reject-offer').map((stanza) => stanza.attrs.type), ['error']);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('C5-RES-02A delayed close response completes once without orphaned resources', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-file-close-reply-'));
+  const destination = path.join(root, 'received.bin');
+  const sent = [];
+  let releaseClose;
+  let closeStarted;
+  const closeStartedPromise = new Promise((resolve) => { closeStarted = resolve; });
+  const closeGate = new Promise((resolve) => { releaseClose = resolve; });
+  const session = { send: async (stanza) => { sent.push(stanza); if (stanza.attrs.id === 'close-delay') { closeStarted(); await closeGate; } } };
+  const coordinator = new FileTransferCoordinator({ selectDestination: async () => destination });
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  adapter.sessions.set(ACCOUNT, session);
+  adapter.sessionGenerations.set(ACCOUNT, 1);
+  adapter.fileOwners.set(ACCOUNT, 7);
+  try {
+    adapter.handleStanza(ACCOUNT, siOffer('close-offer', 'close-sid', 3));
+    const record = [...coordinator.records.values()][0];
+    await coordinator.accept(record.offer.transferId, 7);
+    const pending = adapter.filePending.get(`${ACCOUNT}|1|${FROM}|close-sid`);
+    adapter.handleStanza(ACCOUNT, ibbStanza('open', 'close-open', 'close-sid'));
+    await pending.protocolQueue;
+    adapter.handleStanza(ACCOUNT, ibbStanza('data', 'close-data', 'close-sid', Buffer.from('abc'), 0));
+    await pending.protocolQueue;
+    adapter.handleStanza(ACCOUNT, ibbStanza('close', 'close-delay', 'close-sid'));
+    await closeStartedPromise;
+    assert.equal(record.state, 'completed');
+    assert.equal(coordinator.records.size, 0);
+    assert.equal(adapter.filePending.size, 0);
+    assert.equal(coordinator.cleanupJobs.size, 0);
+    assert.equal(coordinator.ownedTemporaries.size, 0);
+    assert.equal(sent.filter((stanza) => stanza.attrs.id === 'close-delay').length, 1);
+    releaseClose();
+    await pending.protocolQueue;
+    assert.equal(sent.filter((stanza) => stanza.attrs.id === 'close-delay' && stanza.attrs.type === 'result').length, 1);
+    assert.equal(record.timer, undefined);
+    assert.equal(record.progressTimer, undefined);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
