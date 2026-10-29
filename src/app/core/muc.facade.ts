@@ -12,12 +12,16 @@ import {
 } from './domain';
 import { ACCOUNT_PORT, ATTENTION_PORT, MUC_PORT, AccountPort, AttentionPort, MucPort } from './ports';
 import { UnreadStore } from './unread.store';
+import { ActiveConversationStore } from './active-conversation.store';
+import { WindowFocusStore } from './window-focus.store';
 
 @Injectable({ providedIn: 'root' })
 export class MucFacade {
   private readonly account = inject<AccountPort>(ACCOUNT_PORT);
   private readonly port = inject<MucPort>(MUC_PORT);
   private readonly unread = inject(UnreadStore);
+  private readonly activeConversation = inject(ActiveConversationStore);
+  private readonly windowFocus = inject(WindowFocusStore);
   private readonly attention = inject<AttentionPort | null>(ATTENTION_PORT, { optional: true });
   readonly services = signal<ReadonlyArray<RoomRef>>([]);
   readonly states = signal<ReadonlyArray<RoomState>>([]);
@@ -153,6 +157,10 @@ export class MucFacade {
   select(roomJid: string): void {
     this.selectedRoomJid.set(roomJid);
     this.participantPage.set(0);
+    this.markConversationRead(roomJid);
+  }
+
+  markConversationRead(roomJid: string): void {
     this.unread.markRead(this.accountId(), 'muc', roomJid);
     this.clearAttentionIfRead(this.accountId());
   }
@@ -231,16 +239,16 @@ export class MucFacade {
         );
         this.messageVersion.update((version) => version + 1);
         const room = this.states().find((item) => item.room.jid === message.roomJid);
-        const visible = this.selectedRoomJid().toLowerCase() === message.roomJid.toLowerCase();
         if (room?.selfOccupantJid !== message.occupantJid) {
           const incoming = this.unread.recordIncoming(
             message.accountId,
             'muc',
             message.roomJid,
             message.clientMessageId || message.id,
-            visible,
+            this.activeConversation.isVisible(message.accountId, 'muc', message.roomJid),
+            this.windowFocus.isFocused(),
           );
-          if (incoming.isNew) void this.requestAttention(message.accountId, message.roomJid);
+          if (incoming.attentionRequested) void this.requestAttention(message.accountId, message.roomJid);
         }
         this.roomActivity.update((current) => {
           const next = new Map(current);

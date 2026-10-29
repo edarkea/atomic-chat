@@ -19,25 +19,43 @@ export class UnreadStore {
     kind: UnreadConversationKind,
     jid: string,
     messageIdentity: string,
-    visible: boolean,
-  ): { readonly isNew: boolean; readonly unreadIncremented: boolean } {
+    selected: boolean,
+    focused: boolean,
+  ): {
+    readonly isNew: boolean;
+    readonly unreadIncremented: boolean;
+    readonly attentionRequested: boolean;
+  } {
     const identity = `${accountId.toLowerCase()}|${kind}|${messageIdentity}`;
-    if (this.seenIncoming.has(identity)) return { isNew: false, unreadIncremented: false };
+    if (this.seenIncoming.has(identity))
+      return { isNew: false, unreadIncremented: false, attentionRequested: false };
     this.seenIncoming.add(identity);
     if (this.seenIncoming.size > 5000) this.seenIncoming.delete(this.seenIncoming.values().next().value || '');
-    if (visible) return { isNew: true, unreadIncremented: false };
+    const shouldIncrementUnread = !selected || !focused;
+    const shouldRequestAttention = shouldIncrementUnread && !focused;
+    if (!shouldIncrementUnread)
+      return { isNew: true, unreadIncremented: false, attentionRequested: false };
     const key = unreadKey(accountId, kind, jid);
     this.counts.update((current) => {
       const next = new Map(current);
       next.set(key, (next.get(key) || 0) + 1);
       return next;
     });
-    this.attention.update((current) => {
-      const next = new Map(current);
-      next.set(accountId, { accountId, unreadTotal: this.accountTotal(accountId), attentionRequested: true });
-      return next;
-    });
-    return { isNew: true, unreadIncremented: true };
+    if (shouldRequestAttention)
+      this.attention.update((current) => {
+        const next = new Map(current);
+        next.set(accountId, {
+          accountId,
+          unreadTotal: this.accountTotal(accountId),
+          attentionRequested: true,
+        });
+        return next;
+      });
+    return {
+      isNew: true,
+      unreadIncremented: true,
+      attentionRequested: shouldRequestAttention,
+    };
   }
 
   markRead(accountId: string, kind: UnreadConversationKind, jid: string): void {

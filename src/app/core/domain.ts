@@ -375,6 +375,14 @@ export interface ConversationSummary {
   lastMessageAt?: number;
 }
 
+export type ActiveConversation =
+  | {
+      readonly accountId: string;
+      readonly kind: 'direct' | 'muc';
+      readonly jid: string;
+    }
+  | null;
+
 export interface AttentionState {
   accountId: string;
   unreadTotal: number;

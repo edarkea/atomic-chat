@@ -18,6 +18,8 @@ import {
   XmppConnectionProfile,
 } from './domain';
 import { UnreadStore } from './unread.store';
+import { ActiveConversationStore } from './active-conversation.store';
+import { WindowFocusStore } from './window-focus.store';
 import {
   ACCOUNT_PORT,
   CERTIFICATE_PORT,
@@ -49,6 +51,8 @@ export class ChatFacade {
   private readonly preferencesPort = inject<PreferencesPort>(PREFERENCES_PORT);
   private readonly xmpp = inject<XmppPort>(XMPP_PORT);
   private readonly unread = inject(UnreadStore);
+  private readonly activeConversation = inject(ActiveConversationStore);
+  private readonly windowFocus = inject(WindowFocusStore);
   private readonly attention = inject<AttentionPort | null>(ATTENTION_PORT, { optional: true });
   readonly accountId = signal(this.account.getConfig()?.accountId || '');
   readonly connection = signal<ConnectionState>({
@@ -129,14 +133,16 @@ export class ChatFacade {
         if (message.accountId === this.accountId()) {
           this.upsertMessage(message, message.conversationId || message.senderJid);
           if (event.type === 'message.received' && !this.isOwnMessage(message)) {
+            const conversationId = message.conversationId || message.senderJid;
             const incoming = this.unread.recordIncoming(
               message.accountId,
               'direct',
-              message.conversationId || message.senderJid,
+              conversationId,
               message.clientMessageId || message.id,
-              this.historyContext?.conversationId === this.bareConversation(message.conversationId),
+              this.activeConversation.isVisible(message.accountId, 'direct', conversationId),
+              this.windowFocus.isFocused(),
             );
-            if (incoming.isNew) void this.requestAttention(message.accountId, message.conversationId);
+            if (incoming.attentionRequested) void this.requestAttention(message.accountId, conversationId);
           }
         }
       }

@@ -33,6 +33,8 @@ import {
 import { MucViewComponent } from './muc-view.component';
 import { SidebarComponent, SidebarModel } from './sidebar.component';
 import { PresenceOption } from './sidebar.models';
+import { ActiveConversationStore } from './core/active-conversation.store';
+import { WindowFocusStore } from './core/window-focus.store';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -56,6 +58,8 @@ type ConversationSelection =
 export class App {
   protected readonly chat = inject(ChatFacade);
   protected readonly muc = inject(MucFacade);
+  private readonly activeConversation = inject(ActiveConversationStore);
+  private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly draft = signal('');
   protected readonly login = signal({
@@ -312,6 +316,25 @@ export class App {
 
   constructor() {
     void this.chat.tryAutoLogin();
+    effect(() => {
+      const selection = this.activeSelection();
+      this.activeConversation.set(
+        selection.kind === 'none'
+          ? null
+          : {
+              accountId: selection.accountId,
+              kind: selection.kind,
+              jid: selection.kind === 'direct' ? selection.jid : selection.roomJid,
+            },
+      );
+    });
+    effect(() => {
+      if (!this.windowFocus.isFocused()) return;
+      const selection = this.activeConversation.current();
+      if (!selection) return;
+      if (selection.kind === 'direct') this.chat.markConversationRead(selection.jid);
+      else this.muc.markConversationRead(selection.jid);
+    });
     effect(() => {
       const account = this.chat.accountId();
       if (this.chat.isConnected() && account) void this.files.setAccount(account);

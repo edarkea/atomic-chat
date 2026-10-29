@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { MucFacade } from './muc.facade';
 import { ACCOUNT_PORT, MUC_PORT } from './ports';
 import { ElectronXmppPort } from './electron-xmpp.port';
+import { ActiveConversationStore } from './active-conversation.store';
+import { UnreadStore } from './unread.store';
+import { WindowFocusStore } from './window-focus.store';
 
 const room = (accountId: string, name: string) => ({
   service: 'conference.example.invalid',
@@ -125,6 +128,30 @@ describe('MucFacade message isolation', () => {
     expect(facade.messages().map((item) => item.body.text)).toEqual(['1']);
     facade.select(second.jid);
     expect(facade.messages().map((item) => item.body.text)).toEqual(['2']);
+  });
+
+  it('counts a room message after switching from room A to direct contact B', () => {
+    const facade = TestBed.inject(MucFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const unread = TestBed.inject(UnreadStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    facade.setAccount('a@example.invalid');
+    const first = room('a@example.invalid', 'one');
+    emit({
+      type: 'muc.stateChanged',
+      payload: {
+        accountId: 'a@example.invalid',
+        room: first,
+        status: 'joined',
+        participants: [],
+        sessionGeneration: 1,
+      },
+    });
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'contact@example.invalid' });
+    focus.isFocused.set(true);
+    emit({ type: 'muc.messageReceived', payload: message('a@example.invalid', first.jid, 77) });
+
+    expect(unread.counts().get('a@example.invalid|muc|one@conference.example.invalid')).toBe(1);
   });
 
   it('bounds each room at 200 and clears only the abandoned room', () => {

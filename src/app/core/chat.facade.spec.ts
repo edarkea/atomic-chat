@@ -2,6 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ChatFacade } from './chat.facade';
 import { CertificateTrustRequest } from './domain';
+import { ActiveConversationStore } from './active-conversation.store';
+import { WindowFocusStore } from './window-focus.store';
 import { ACCOUNT_PORT, CERTIFICATE_PORT, HISTORY_PORT, PREFERENCES_PORT, XMPP_PORT } from './ports';
 
 const ok = <T>(value: T) => ({ ok: true as const, value, version: 1 as const, requestId: 'test' });
@@ -356,6 +358,38 @@ describe('ChatFacade roster reconciliation', () => {
       },
     });
     expect(facade.unreadTotal()).toBe(1);
+  });
+
+  it('counts a direct message for the selected conversation while the window is unfocused', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    await facade.connect('a@example.invalid');
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'new@example.invalid' });
+    focus.isFocused.set(false);
+
+    emitEvent({
+      type: 'message.received',
+      payload: historyMessage('a@example.invalid', 'new@example.invalid', 100),
+    });
+
+    expect(facade.unreadCounts().get('a@example.invalid|direct|new@example.invalid')).toBe(1);
+  });
+
+  it('keeps a direct conversation unread when a MUC is the active conversation', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    await facade.connect('a@example.invalid');
+    active.set({ accountId: 'a@example.invalid', kind: 'muc', jid: 'room@conference.example.invalid' });
+    focus.isFocused.set(true);
+
+    emitEvent({
+      type: 'message.received',
+      payload: historyMessage('a@example.invalid', 'contact@example.invalid', 101),
+    });
+
+    expect(facade.unreadCounts().get('a@example.invalid|direct|contact@example.invalid')).toBe(1);
   });
 });
 

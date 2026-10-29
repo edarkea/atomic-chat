@@ -118,6 +118,7 @@
   white-space: nowrap;
 }
 .contact-copy {
+  flex: 1 1 auto;
   min-width: 0;
 }
 .contact-groups {
@@ -166,11 +167,17 @@
   border-radius: 999px;
   color: var(--atomic-bg);
   display: inline-flex;
+  flex: 0 0 auto;
   font-size: 11px;
   justify-content: center;
+  line-height: 1;
+  margin-left: auto;
   min-height: 20px;
   min-width: 20px;
   padding: 0 5px;
+}
+.unread-badge[hidden] {
+  display: none !important;
 }
 .empty {
   color: var(--atomic-text-muted);
