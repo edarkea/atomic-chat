@@ -1,0 +1,139 @@
+import { Injectable } from '@angular/core';
+import {
+  CertificateTrustDecisionInput,
+  DomainEvent,
+  FileActiveInput,
+  FileRequest,
+  FileSendInput,
+  FileTransfer,
+  HistoryPage,
+  HistoryPageInput,
+  Message,
+  Preferences,
+  Result,
+} from './domain';
+import { getAtomicChatApi } from './electron-api';
+import {
+  AccountConfig,
+  AccountPort,
+  CertificatePort,
+  FileTransferPort,
+  HistoryPort,
+  PreferencesPort,
+} from './ports';
+
+const unavailable = <T>(requestId: string): Result<T> => ({
+  ok: false,
+  version: 1,
+  error: {
+    code: 'UNSUPPORTED',
+    retryable: false,
+    requestId,
+    message: 'La API de Electron no está disponible.',
+  },
+});
+
+@Injectable({ providedIn: 'root' })
+export class ElectronAccountPort implements AccountPort {
+  getConfig(): AccountConfig | undefined {
+    return getAtomicChatApi()?.config;
+  }
+
+  setSecret(input: {
+    version: 1;
+    requestId: string;
+    credentialRef: string;
+    secret: string;
+  }): Promise<Result<{ stored: true }>> {
+    const api = getAtomicChatApi();
+    return api ? api.account.setSecret(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronHistoryPort implements HistoryPort {
+  list(input: {
+    version: 1;
+    requestId: string;
+    accountId: string;
+    conversationId: string;
+  }): Promise<Result<Message[]>> {
+    const api = getAtomicChatApi();
+    return api ? api.history.list(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  listPage(input: HistoryPageInput): Promise<Result<HistoryPage>> {
+    const api = getAtomicChatApi();
+    return api ? api.history.listPage(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  conversations(input: {
+    version: 1;
+    requestId: string;
+    accountId: string;
+  }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>>> {
+    const api = getAtomicChatApi();
+    return api ? api.history.conversations(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronPreferencesPort implements PreferencesPort {
+  get(input: { accountId: string }): Promise<Result<Preferences>> {
+    const api = getAtomicChatApi();
+    return api ? api.preferences.get(input) : Promise.resolve(unavailable('preferences-get'));
+  }
+
+  update(input: {
+    accountId: string;
+    changes: Partial<Preferences>;
+  }): Promise<Result<Partial<Preferences>>> {
+    const api = getAtomicChatApi();
+    return api ? api.preferences.update(input) : Promise.resolve(unavailable('preferences-update'));
+  }
+
+  reset(input: { accountId: string }): Promise<Result<Preferences>> {
+    const api = getAtomicChatApi();
+    return api ? api.preferences.reset(input) : Promise.resolve(unavailable('preferences-reset'));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronCertificatePort implements CertificatePort {
+  decide(input: CertificateTrustDecisionInput): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.certificate.decide(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronFileTransferPort implements FileTransferPort {
+  send(input: FileSendInput): Promise<Result<FileTransfer | null>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.send(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  accept(input: FileRequest): Promise<Result<FileTransfer>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.accept(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  reject(input: FileRequest): Promise<Result<FileTransfer>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.reject(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  cancel(input: FileRequest): Promise<Result<FileTransfer>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.cancel(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.listActive(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void {
+    return getAtomicChatApi()?.subscribe(listener) ?? (() => undefined);
+  }
+}

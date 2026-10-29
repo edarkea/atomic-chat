@@ -1,40 +1,451 @@
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
-import { CertificateTrustDecision, CertificateTrustRequest, ConnectionState, Contact, Message, Presence, PresenceInput, Preferences } from './domain';
-import { InMemoryXmppPort } from './in-memory-xmpp.port';
-import { ElectronXmppPort } from './electron-xmpp.port';
-import { XmppPort } from './ports';
+import {
+  CertificateTrustDecision,
+  CertificateTrustRequest,
+  ConnectionState,
+  Contact,
+  Message,
+  Presence,
+  PresenceInput,
+  Preferences,
+} from './domain';
+import {
+  ACCOUNT_PORT,
+  CERTIFICATE_PORT,
+  HISTORY_PORT,
+  PREFERENCES_PORT,
+  XMPP_PORT,
+  AccountPort,
+  CertificatePort,
+  HistoryPort,
+  PreferencesPort,
+  XmppPort,
+} from './ports';
+
+interface HistoryContext {
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly generation: number;
+  readonly requestId: string;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ChatFacade {
-  private readonly inMemory = inject(InMemoryXmppPort);
-  private readonly electron = inject(ElectronXmppPort);
-  private readonly xmpp: XmppPort = window.atomicChat ? this.electron : this.inMemory;
-  readonly accountId = signal(window.atomicChat?.config.accountId || '');
-  readonly connection = signal<ConnectionState>({ accountId: this.accountId(), status: 'idle', retryable: false, since: new Date().toISOString() });
+  private readonly account = inject<AccountPort>(ACCOUNT_PORT);
+  private readonly certificate = inject<CertificatePort>(CERTIFICATE_PORT);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly history = inject<HistoryPort>(HISTORY_PORT);
+  private readonly preferencesPort = inject<PreferencesPort>(PREFERENCES_PORT);
+  private readonly xmpp = inject<XmppPort>(XMPP_PORT);
+  readonly accountId = signal(this.account.getConfig()?.accountId || '');
+  readonly connection = signal<ConnectionState>({
+    accountId: this.accountId(),
+    status: 'idle',
+    retryable: false,
+    since: new Date().toISOString(),
+  });
   readonly contacts = signal<Contact[]>([]);
   readonly messages = signal<Message[]>([]);
   readonly historyLoading = signal(false);
   readonly hasOlderMessages = signal(false);
   readonly hasNewerMessages = signal(false);
-  readonly presence = signal<Presence>({ jid: this.accountId(), availability: 'available', updatedAt: new Date().toISOString() });
+  readonly presence = signal<Presence>({
+    jid: this.accountId(),
+    availability: 'available',
+    updatedAt: new Date().toISOString(),
+  });
   readonly isConnected = computed(() => this.connection().status === 'connected');
   readonly error = signal<string | null>(null);
   readonly certificateRequest = signal<CertificateTrustRequest | null>(null);
-  readonly preferences = signal<Preferences>({ theme: 'atomic', notifications: true, autoLogin: false });
+  readonly preferences = signal<Preferences>({
+    theme: 'atomic',
+    notifications: true,
+    autoLogin: false,
+  });
   private identityGeneration = 0;
   private contactsOwner = '';
   private olderCursor: string | null = null;
   private newerCursor: string | null = null;
   private historyPages: Array<{ cursor: string }> = [];
-  private historyContext: { accountId: string; conversationId: string; generation: number; requestId: string } | null = null;
-  private readonly accountContactReset = effect(() => { this.accountId(); this.contacts.set([]); });
-  private isCurrent(generation: number, accountId: string): boolean { return generation === this.identityGeneration && accountId === this.accountId(); }
+  private historyContext: HistoryContext | null = null;
+  private readonly accountContactReset = effect(() => {
+    this.accountId();
+    this.contacts.set([]);
+  });
+
+  constructor() {
+    const unsubscribe = this.xmpp.subscribe((event) => {
+      if (event.type === 'certificate.trustRequired') {
+        const request = event.payload as CertificateTrustRequest;
+        if (request.accountId === this.accountId()) this.certificateRequest.set(request);
+      }
+      if (event.type === 'connection.stateChanged') {
+        const state = event.payload as ConnectionState;
+        if (state.accountId === this.accountId()) this.connection.set(state);
+      }
+      if (event.type === 'presence.changed') {
+        const presence = event.payload as Presence & { accountId?: string };
+        if (presence.accountId && presence.accountId !== this.accountId()) return;
+        if (presence.jid === this.accountId()) this.presence.set(presence);
+        else if (presence.accountId === this.accountId()) {
+          this.contacts.update((items) =>
+            items.map((contact) =>
+              contact.jid === presence.jid &&
+              contact.subscription &&
+              ['to', 'both'].includes(contact.subscription)
+                ? { ...contact, presence }
+                : contact,
+            ),
+          );
+        }
+      }
+      if (event.type === 'message.stateChanged' || event.type === 'message.received') {
+        const message = event.payload as Message;
+        if (message.accountId === this.accountId()) {
+          this.upsertMessage(message, message.conversationId || message.senderJid);
+        }
+      }
+    });
+    this.destroyRef.onDestroy(unsubscribe);
+  }
+
+  async decideCertificate(decision: CertificateTrustDecision): Promise<void> {
+    const request = this.certificateRequest();
+    if (!request || !this.account.getConfig()) return;
+    try {
+      const result = await this.certificate.decide({
+        version: 1,
+        requestId: request.requestId,
+        accountId: request.accountId,
+        fingerprintSha256: request.certificate.fingerprintSha256,
+        decision,
+      });
+      if (!result.ok) this.error.set(result.error.message);
+      else this.certificateRequest.set(null);
+    } catch {
+      this.error.set('No fue posible aplicar la decisión del certificado.');
+    }
+  }
+
+  async tryAutoLogin(): Promise<void> {
+    if (!this.account.getConfig()) return;
+    const result = await this.preferencesPort.get({ accountId: this.accountId() });
+    if (result.ok && result.value.autoLogin) await this.connect(this.accountId());
+  }
+
+  async connect(accountId = this.accountId(), secret = ''): Promise<boolean> {
+    const generation = ++this.identityGeneration;
+    const requestedAccount = accountId.trim();
+    this.error.set(null);
+    this.certificateRequest.set(null);
+    this.accountId.set(requestedAccount);
+    this.messages.set([]);
+    this.olderCursor = null;
+    this.newerCursor = null;
+    this.historyPages = [];
+    this.historyContext = null;
+    this.hasOlderMessages.set(false);
+    this.hasNewerMessages.set(false);
+    try {
+      const requestId = createOpaqueId('req');
+      const credentialRef = `account:${requestedAccount}`;
+      if (secret) {
+        const stored = await this.account.setSecret({
+          version: 1,
+          requestId,
+          credentialRef,
+          secret,
+        });
+        if (!stored.ok) {
+          if (this.isCurrent(generation, requestedAccount)) this.error.set(stored.error.message);
+          return false;
+        }
+      }
+      const endpoint = this.account.getConfig()?.endpoint;
+      if (!endpoint?.host || !endpoint.port) throw new Error('XMPP endpoint is not configured');
+      const result = await this.xmpp.connect({
+        version: 1,
+        requestId,
+        accountId: requestedAccount,
+        endpoint,
+        credentialRef,
+      });
+      if (!result.ok) {
+        if (this.isCurrent(generation, requestedAccount)) this.error.set(result.error.message);
+        return false;
+      }
+      if (!this.isCurrent(generation, requestedAccount)) return false;
+      this.connection.set(result.value);
+      const roster = await this.xmpp.listRoster(requestedAccount);
+      if (roster.ok && this.isCurrent(generation, requestedAccount)) this.mergeRoster(roster.value);
+      if (this.isCurrent(generation, requestedAccount)) {
+        await this.loadPreferences(generation, requestedAccount);
+      }
+      return true;
+    } catch {
+      if (this.isCurrent(generation, requestedAccount)) {
+        this.error.set('No fue posible iniciar sesión con el servidor XMPP.');
+      }
+      return false;
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    this.certificateRequest.set(null);
+    const result = await this.xmpp.disconnect(this.accountId());
+    if (result.ok) {
+      this.connection.set({
+        ...this.connection(),
+        status: 'idle',
+        since: new Date().toISOString(),
+      });
+    }
+  }
+
+  async refreshState(): Promise<void> {
+    const result = await this.xmpp.getState(this.accountId());
+    if (result.ok) this.connection.set(result.value);
+    else this.error.set(result.error.message);
+  }
+
+  async refreshRoster(): Promise<void> {
+    const accountId = this.accountId();
+    const generation = this.identityGeneration;
+    const result = await this.xmpp.listRoster(accountId);
+    if (result.ok && this.isCurrent(generation, accountId)) {
+      this.mergeRoster(result.value);
+      await this.loadStoredConversations(accountId, generation);
+    } else if (!result.ok && this.isCurrent(generation, accountId)) {
+      this.error.set(result.error.message);
+    }
+  }
+
+  async loadConversation(conversationId: string): Promise<void> {
+    if (!this.account.getConfig() || !conversationId) return;
+    const accountId = this.accountId();
+    const generation = this.identityGeneration;
+    const requestId = createOpaqueId('history');
+    const context: HistoryContext = {
+      accountId,
+      conversationId: this.bareConversation(conversationId),
+      generation,
+      requestId,
+    };
+    this.historyContext = context;
+    this.historyLoading.set(true);
+    this.olderCursor = null;
+    this.newerCursor = null;
+    this.historyPages = [];
+    this.messages.set([]);
+    try {
+      const result = await this.history.listPage({
+        version: 1,
+        requestId,
+        accountId,
+        conversationId: context.conversationId,
+        limit: 50,
+        direction: 'older',
+        cursor: null,
+      });
+      if (!this.isHistoryContextCurrent(context)) return;
+      if (result.ok) {
+        if (result.value.nextCursor) this.historyPages = [{ cursor: result.value.nextCursor }];
+        this.olderCursor = result.value.nextCursor;
+        this.hasOlderMessages.set(result.value.hasMore);
+        this.hasNewerMessages.set(false);
+        this.messages.set(result.value.items.slice(-200));
+      } else this.error.set(result.error.message);
+    } finally {
+      if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false);
+    }
+  }
+
+  async loadOlderMessages(conversationId: string): Promise<void> {
+    await this.loadHistoryPage(conversationId, 'older');
+  }
+
+  async loadNewerMessages(conversationId: string): Promise<void> {
+    await this.loadHistoryPage(conversationId, 'newer');
+  }
+
+  async loadPreferences(
+    generation = this.identityGeneration,
+    accountId = this.accountId(),
+  ): Promise<void> {
+    if (!this.account.getConfig()) return;
+    await this.loadStoredConversations(accountId, generation);
+    const result = await this.preferencesPort.get({ accountId });
+    if (!this.isCurrent(generation, accountId)) return;
+    if (result.ok) this.preferences.set(result.value);
+    else this.error.set(result.error.message);
+  }
+
+  async updatePreferences(changes: Partial<Preferences>): Promise<void> {
+    if (!this.account.getConfig()) return;
+    const result = await this.preferencesPort.update({ accountId: this.accountId(), changes });
+    if (result.ok) this.preferences.update((current) => ({ ...current, ...result.value }));
+    else this.error.set(result.error.message);
+  }
+
+  async resetPreferences(): Promise<void> {
+    if (!this.account.getConfig()) return;
+    const result = await this.preferencesPort.reset({ accountId: this.accountId() });
+    if (result.ok) this.preferences.set(result.value);
+    else this.error.set(result.error.message);
+  }
+
+  async setPresence(mode: PresenceInput['mode'], status = ''): Promise<void> {
+    const result = await this.xmpp.setPresence({
+      version: 1,
+      requestId: createOpaqueId('req'),
+      accountId: this.accountId(),
+      availability: 'available',
+      mode,
+      status: status || undefined,
+    });
+    if (result.ok) this.presence.set(result.value);
+    else this.error.set(result.error.message);
+  }
+
+  async setAvailability(availability: PresenceInput['availability']): Promise<void> {
+    return this.setPresence(availability === 'unavailable' ? 'away' : undefined);
+  }
+
+  async send(text: string, conversationId: string): Promise<boolean> {
+    const cleanText = text.trim();
+    const recipient = conversationId.trim();
+    if (!cleanText || !recipient || !this.accountId().trim()) return false;
+    try {
+      const result = await this.xmpp.sendMessage({
+        version: 1,
+        requestId: createOpaqueId('req'),
+        accountId: this.accountId(),
+        conversationId: recipient,
+        clientMessageId: createOpaqueId('client-msg'),
+        body: { kind: 'text', text: cleanText },
+      });
+      if (result.ok) {
+        this.upsertMessage(result.value, recipient);
+        return true;
+      }
+      this.error.set(result.error.message);
+      return false;
+    } catch {
+      this.error.set('No fue posible enviar el mensaje.');
+      return false;
+    }
+  }
+
+  private async loadStoredConversations(accountId: string, generation: number): Promise<void> {
+    try {
+      const result = await this.history.conversations({
+        version: 1,
+        requestId: createOpaqueId('req'),
+        accountId,
+      });
+      if (!this.isCurrent(generation, accountId) || !result.ok) return;
+      for (const conversation of result.value) this.addConversation(accountId, conversation.jid);
+    } catch {
+      // History recovery is best effort; it must not turn a valid login into a failure.
+    }
+  }
+
+  private async loadHistoryPage(
+    conversationId: string,
+    direction: 'older' | 'newer',
+  ): Promise<void> {
+    if (!this.account.getConfig() || !conversationId || this.historyLoading()) return;
+    const context = this.historyContext;
+    const cursor = direction === 'older' ? this.olderCursor : this.newerCursor;
+    if (!cursor || !context || context.conversationId !== this.bareConversation(conversationId))
+      return;
+    const accountId = this.accountId();
+    const requestId = createOpaqueId('history');
+    this.historyLoading.set(true);
+    try {
+      const result = await this.history.listPage({
+        version: 1,
+        requestId,
+        accountId,
+        conversationId: context.conversationId,
+        limit: 50,
+        direction,
+        cursor,
+      });
+      if (!this.isHistoryContextCurrent(context)) return;
+      if (!result.ok) {
+        this.error.set(result.error.message);
+        return;
+      }
+      const previous = this.messages();
+      const merged = [...previous, ...result.value.items]
+        .filter(
+          (item, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.id === item.id || candidate.clientMessageId === item.clientMessageId,
+            ) === index,
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      const progressed = merged.length > previous.length;
+      if (!progressed || !result.value.nextCursor) {
+        if (direction === 'older') this.hasOlderMessages.set(false);
+        else this.hasNewerMessages.set(false);
+        return;
+      }
+      const page = { cursor: result.value.nextCursor };
+      if (direction === 'older') {
+        this.historyPages.unshift(page);
+        if (this.historyPages.length > 4) this.historyPages.pop();
+        this.olderCursor = this.historyPages[0]?.cursor || null;
+        this.newerCursor =
+          this.historyPages.length === 4
+            ? this.historyPages[this.historyPages.length - 1]?.cursor || null
+            : null;
+        this.hasOlderMessages.set(result.value.hasMore);
+        this.hasNewerMessages.set(this.historyPages.length === 4);
+        this.messages.set(merged.slice(0, 200));
+      } else {
+        this.historyPages.push(page);
+        if (this.historyPages.length > 4) this.historyPages.shift();
+        this.olderCursor =
+          this.historyPages.length === 4 ? this.historyPages[0]?.cursor || null : this.olderCursor;
+        this.newerCursor = this.historyPages[this.historyPages.length - 1]?.cursor || null;
+        this.hasNewerMessages.set(result.value.hasMore);
+        this.hasOlderMessages.set(this.historyPages.length === 4 || this.hasOlderMessages());
+        this.messages.set(merged.slice(-200));
+      }
+    } finally {
+      if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false);
+    }
+  }
+
+  private isCurrent(generation: number, accountId: string): boolean {
+    return generation === this.identityGeneration && accountId === this.accountId();
+  }
+
+  private isHistoryContextCurrent(context: HistoryContext): boolean {
+    return (
+      this.isCurrent(context.generation, context.accountId) &&
+      this.historyContext?.requestId === context.requestId &&
+      this.historyContext.conversationId === context.conversationId
+    );
+  }
+
   private upsertMessage(message: Message, conversationId?: string): void {
     const activeConversation = this.historyContext?.conversationId;
-    if (activeConversation && this.bareConversation(message.conversationId) !== activeConversation) { if (conversationId) this.addConversation(message.accountId, conversationId); return; }
+    if (
+      activeConversation &&
+      this.bareConversation(message.conversationId) !== activeConversation
+    ) {
+      if (conversationId) this.addConversation(message.accountId, conversationId);
+      return;
+    }
     this.messages.update((items) => {
-      const next = items.filter((item) => item.clientMessageId !== message.clientMessageId && item.id !== message.id);
+      const next = items.filter(
+        (item) => item.clientMessageId !== message.clientMessageId && item.id !== message.id,
+      );
       let low = 0;
       let high = next.length;
       while (low < high) {
@@ -47,27 +458,48 @@ export class ChatFacade {
     });
     if (conversationId) this.addConversation(message.accountId, conversationId);
   }
-  private addConversation(accountId: string, jid: string): void { if (accountId !== this.accountId() || !jid) return; const bare = jid.split('/')[0].toLowerCase(); this.contacts.update((items) => items.some((item) => item.jid.split('/')[0].toLowerCase() === bare) ? items : [...items, { jid: bare, name: bare, groups: [], source: 'conversation' }]); }
-  private mergeRoster(roster: Contact[]): void { const accountId = this.accountId(); if (this.contactsOwner !== accountId) { this.contacts.set([]); this.contactsOwner = accountId; } const previous = new Map(this.contacts().map((contact) => [contact.jid.split('/')[0].toLowerCase(), contact])); const normalized = new Map<string, Contact>(); for (const contact of roster) { const jid = contact.jid.split('/')[0].toLowerCase(); const authorized = contact.subscription === 'to' || contact.subscription === 'both'; const old = previous.get(jid); normalized.set(jid, { ...contact, jid, source: 'roster', ...(authorized && old?.presence ? { presence: old.presence } : {}) }); } this.contacts.update((items) => { const local = items.filter((item) => item.source === 'conversation' && !normalized.has(item.jid.split('/')[0].toLowerCase())); return [...normalized.values(), ...local]; }); }
-  private async loadStoredConversations(accountId: string, generation: number): Promise<void> { if (!window.atomicChat?.history.conversations) return; try { const result = await window.atomicChat.history.conversations({ version: 1, requestId: createOpaqueId('req'), accountId }); if (!this.isCurrent(generation, accountId) || !result.ok) return; for (const conversation of result.value) this.addConversation(accountId, conversation.jid); } catch { /* History recovery is best effort; do not turn an authenticated session into a failed login. */ } }
-  constructor() { this.xmpp.subscribe((event) => { if (event.type === 'certificate.trustRequired') { const request = event.payload as CertificateTrustRequest; if (request.accountId === this.accountId()) this.certificateRequest.set(request); } if (event.type === 'connection.stateChanged') { const state = event.payload as ConnectionState; if (state.accountId === this.accountId()) this.connection.set(state); } if (event.type === 'presence.changed') { const presence = event.payload as Presence & { accountId?: string }; if (presence.accountId && presence.accountId !== this.accountId()) return; if (presence.jid === this.accountId()) this.presence.set(presence); else if (presence.accountId === this.accountId()) this.contacts.update((items) => items.map((contact) => contact.jid === presence.jid && contact.subscription && ['to', 'both'].includes(contact.subscription) ? { ...contact, presence } : contact)); } if (event.type === 'message.stateChanged' || event.type === 'message.received') { const message = event.payload as Message; if (message.accountId !== this.accountId()) return; this.upsertMessage(message, message.conversationId || message.senderJid); } }); }
-  async decideCertificate(decision: CertificateTrustDecision): Promise<void> { const request = this.certificateRequest(); if (!request || !window.atomicChat) return; try { const result = await window.atomicChat.certificate.decide({ version: 1, requestId: request.requestId, accountId: request.accountId, fingerprintSha256: request.certificate.fingerprintSha256, decision }); if (!result.ok) this.error.set(result.error.message); else this.certificateRequest.set(null); } catch { this.error.set('No fue posible aplicar la decisión del certificado.'); } }
-  async tryAutoLogin(): Promise<void> { if (!window.atomicChat) return; const result = await window.atomicChat.preferences.get({ accountId: this.accountId() }); if (result.ok && result.value.autoLogin) await this.connect(this.accountId()); }
-  async connect(accountId = this.accountId(), secret = ''): Promise<boolean> { const generation = ++this.identityGeneration; const requestedAccount = accountId.trim(); this.error.set(null); this.certificateRequest.set(null); this.accountId.set(requestedAccount); this.messages.set([]); this.olderCursor = null; this.newerCursor = null; this.historyPages = []; this.historyContext = null; this.hasOlderMessages.set(false); this.hasNewerMessages.set(false); try { const requestId = createOpaqueId('req'); const credentialRef = `account:${requestedAccount}`; if (window.atomicChat && secret) { const stored = await window.atomicChat.account.setSecret({ version: 1, requestId, credentialRef: credentialRef, secret }); if (!stored.ok) { if (this.isCurrent(generation, requestedAccount)) this.error.set(stored.error.message); return false; } } const endpoint = window.atomicChat?.config?.endpoint; if (!endpoint?.host || !endpoint.port) throw new Error('XMPP endpoint is not configured'); const result = await this.xmpp.connect({ version: 1, requestId, accountId: requestedAccount, endpoint, credentialRef: credentialRef }); if (!result.ok) { if (this.isCurrent(generation, requestedAccount)) this.error.set(result.error.message); return false; } if (!this.isCurrent(generation, requestedAccount)) return false; this.connection.set(result.value); const roster = await this.xmpp.listRoster(requestedAccount); if (roster.ok && this.isCurrent(generation, requestedAccount)) this.mergeRoster(roster.value); if (this.isCurrent(generation, requestedAccount)) await this.loadPreferences(generation, requestedAccount); return true; } catch { if (this.isCurrent(generation, requestedAccount)) this.error.set('No fue posible iniciar sesión con el servidor XMPP.'); return false; }
+
+  private addConversation(accountId: string, jid: string): void {
+    if (accountId !== this.accountId() || !jid) return;
+    const bare = jid.split('/')[0].toLowerCase();
+    this.contacts.update((items) =>
+      items.some((item) => item.jid.split('/')[0].toLowerCase() === bare)
+        ? items
+        : [...items, { jid: bare, name: bare, groups: [], source: 'conversation' }],
+    );
   }
-  async disconnect(): Promise<void> { this.certificateRequest.set(null); const result = await this.xmpp.disconnect(this.accountId()); if (result.ok) this.connection.set({ ...this.connection(), status: 'idle', since: new Date().toISOString() }); }
-  async refreshState(): Promise<void> { const result = await this.xmpp.getState(this.accountId()); if (result.ok) this.connection.set(result.value); else this.error.set(result.error.message); }
-  async refreshRoster(): Promise<void> { const accountId = this.accountId(); const generation = this.identityGeneration; const result = await this.xmpp.listRoster(accountId); if (result.ok && this.isCurrent(generation, accountId)) { this.mergeRoster(result.value); await this.loadStoredConversations(accountId, generation); } else if (!result.ok && this.isCurrent(generation, accountId)) this.error.set(result.error.message); }
-  async loadConversation(conversationId: string): Promise<void> { if (!window.atomicChat || !conversationId) return; const accountId = this.accountId(); const generation = this.identityGeneration; const requestId = createOpaqueId('history'); const context = { accountId, conversationId: this.bareConversation(conversationId), generation, requestId }; this.historyContext = context; this.historyLoading.set(true); this.olderCursor = null; this.newerCursor = null; this.historyPages = []; this.messages.set([]); try { const result = await window.atomicChat.history.listPage({ version: 1, requestId, accountId, conversationId: context.conversationId, limit: 50, direction: 'older', cursor: null }); if (!this.isHistoryContextCurrent(context)) return; if (result.ok) { if (result.value.nextCursor) this.historyPages = [{ cursor: result.value.nextCursor }]; this.olderCursor = result.value.nextCursor; this.hasOlderMessages.set(result.value.hasMore); this.hasNewerMessages.set(false); this.messages.set(result.value.items.slice(-200)); } else this.error.set(result.error.message); } finally { if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false); } }
-  async loadOlderMessages(conversationId: string): Promise<void> { await this.loadHistoryPage(conversationId, 'older'); }
-  async loadNewerMessages(conversationId: string): Promise<void> { await this.loadHistoryPage(conversationId, 'newer'); }
-  private async loadHistoryPage(conversationId: string, direction: 'older' | 'newer'): Promise<void> { const context = this.historyContext; const cursor = direction === 'older' ? this.olderCursor : this.newerCursor; if (!window.atomicChat || !conversationId || this.historyLoading() || !cursor || !context || context.conversationId !== this.bareConversation(conversationId)) return; const accountId = this.accountId(); const requestId = createOpaqueId('history'); this.historyLoading.set(true); try { const result = await window.atomicChat.history.listPage({ version: 1, requestId, accountId, conversationId: context.conversationId, limit: 50, direction, cursor }); if (!this.isHistoryContextCurrent(context)) return; if (!result.ok) { this.error.set(result.error.message); return; } const previous = this.messages(); const merged = [...previous, ...result.value.items].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id || candidate.clientMessageId === item.clientMessageId) === index).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)); const progressed = merged.length > previous.length; if (!progressed || !result.value.nextCursor) { if (direction === 'older') this.hasOlderMessages.set(false); else this.hasNewerMessages.set(false); return; } const page = { cursor: result.value.nextCursor }; if (direction === 'older') { this.historyPages.unshift(page); if (this.historyPages.length > 4) this.historyPages.pop(); this.olderCursor = this.historyPages[0]?.cursor || null; this.newerCursor = this.historyPages.length === 4 ? this.historyPages[this.historyPages.length - 1]?.cursor || null : null; this.hasOlderMessages.set(result.value.hasMore); this.hasNewerMessages.set(this.historyPages.length === 4); this.messages.set(merged.slice(0, 200)); } else { this.historyPages.push(page); if (this.historyPages.length > 4) this.historyPages.shift(); this.olderCursor = this.historyPages.length === 4 ? this.historyPages[0]?.cursor || null : this.olderCursor; this.newerCursor = this.historyPages[this.historyPages.length - 1]?.cursor || null; this.hasNewerMessages.set(result.value.hasMore); this.hasOlderMessages.set(this.historyPages.length === 4 || this.hasOlderMessages()); this.messages.set(merged.slice(-200)); } } finally { if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false); } }
-  private bareConversation(conversationId: string): string { return conversationId.split('/')[0].toLowerCase(); }
-  private isHistoryContextCurrent(context: { accountId: string; conversationId: string; generation: number; requestId: string }): boolean { return this.isCurrent(context.generation, context.accountId) && this.historyContext?.requestId === context.requestId && this.historyContext.conversationId === context.conversationId; }
-  async loadPreferences(generation = this.identityGeneration, accountId = this.accountId()): Promise<void> { if (!window.atomicChat) return; await this.loadStoredConversations(accountId, generation); const result = await window.atomicChat.preferences.get({ accountId }); if (!this.isCurrent(generation, accountId)) return; if (result.ok) this.preferences.set(result.value); else this.error.set(result.error.message); }
-  async updatePreferences(changes: Partial<Preferences>): Promise<void> { if (!window.atomicChat) return; const result = await window.atomicChat.preferences.update({ accountId: this.accountId(), changes }); if (result.ok) this.preferences.update((current) => ({ ...current, ...result.value })); else this.error.set(result.error.message); }
-  async resetPreferences(): Promise<void> { if (!window.atomicChat) return; const result = await window.atomicChat.preferences.reset({ accountId: this.accountId() }); if (result.ok) this.preferences.set(result.value); else this.error.set(result.error.message); }
-  async setPresence(mode: PresenceInput['mode'], status = ''): Promise<void> { const result = await this.xmpp.setPresence({ version: 1, requestId: createOpaqueId('req'), accountId: this.accountId(), availability: 'available', mode, status: status || undefined }); if (result.ok) this.presence.set(result.value); else this.error.set(result.error.message); }
-  async setAvailability(availability: PresenceInput['availability']): Promise<void> { return this.setPresence(availability === 'unavailable' ? 'away' : undefined); }
-  async send(text: string, conversationId: string): Promise<boolean> { const cleanText = text.trim(); const recipient = conversationId.trim(); if (!cleanText || !recipient || !this.accountId().trim()) return false; try { const result = await this.xmpp.sendMessage({ version: 1, requestId: createOpaqueId('req'), accountId: this.accountId(), conversationId: recipient, clientMessageId: createOpaqueId('client-msg'), body: { kind: 'text', text: cleanText } }); if (result.ok) { this.upsertMessage(result.value, recipient); return true; } this.error.set(result.error.message); return false; } catch { this.error.set('No fue posible enviar el mensaje.'); return false; } }
+
+  private mergeRoster(roster: Contact[]): void {
+    const accountId = this.accountId();
+    if (this.contactsOwner !== accountId) {
+      this.contacts.set([]);
+      this.contactsOwner = accountId;
+    }
+    const previous = new Map(
+      this.contacts().map((contact) => [contact.jid.split('/')[0].toLowerCase(), contact]),
+    );
+    const normalized = new Map<string, Contact>();
+    for (const contact of roster) {
+      const jid = contact.jid.split('/')[0].toLowerCase();
+      const authorized = contact.subscription === 'to' || contact.subscription === 'both';
+      const old = previous.get(jid);
+      normalized.set(jid, {
+        ...contact,
+        jid,
+        source: 'roster',
+        ...(authorized && old?.presence ? { presence: old.presence } : {}),
+      });
+    }
+    this.contacts.update((items) => {
+      const local = items.filter(
+        (item) =>
+          item.source === 'conversation' && !normalized.has(item.jid.split('/')[0].toLowerCase()),
+      );
+      return [...normalized.values(), ...local];
+    });
+  }
+
+  private bareConversation(conversationId: string): string {
+    return conversationId.split('/')[0].toLowerCase();
+  }
 }

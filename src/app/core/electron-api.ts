@@ -20,3 +20,11 @@ export interface AtomicChatApi {
 }
 
 declare global { interface Window { atomicChat?: AtomicChatApi; } }
+
+export function hasAtomicChatApi(): boolean {
+  return typeof window !== 'undefined' && window.atomicChat !== undefined;
+}
+
+export function getAtomicChatApi(): AtomicChatApi | undefined {
+  return hasAtomicChatApi() ? window.atomicChat : undefined;
+}

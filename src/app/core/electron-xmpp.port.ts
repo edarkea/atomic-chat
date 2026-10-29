@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { ConnectInput, ConnectionState, Contact, DomainEvent, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Result, RoomRef, RoomSendReceipt, RoomState } from './domain';
 import { MucPort, XmppPort } from './ports';
-import './electron-api';
+import { getAtomicChatApi } from './electron-api';
 
 @Injectable({ providedIn: 'root' })
 export class ElectronXmppPort implements XmppPort, MucPort {
@@ -16,5 +16,5 @@ export class ElectronXmppPort implements XmppPort, MucPort {
   async leave(input: MucLeaveInput): Promise<Result<RoomState>> { return this.api().muc.leave(input); }
   async sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>> { return this.api().muc.sendMessage(input); }
   subscribe(listener: (event: DomainEvent<unknown>) => void): () => void { return this.api().subscribe(listener); }
-  private api() { if (!window.atomicChat) throw new Error('electron_api_unavailable'); return window.atomicChat; }
+  private api() { const api = getAtomicChatApi(); if (!api) throw new Error('electron_api_unavailable'); return api; }
 }

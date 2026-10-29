@@ -1,3 +1,107 @@
-import { ConnectInput, ConnectionState, Contact, DomainEvent, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Result, RoomRef, RoomSendReceipt, RoomState } from './domain';
-export interface XmppPort { connect(input: ConnectInput): Promise<Result<ConnectionState>>; disconnect(accountId: string): Promise<Result<void>>; getState(accountId: string): Promise<Result<ConnectionState>>; setPresence(input: PresenceInput): Promise<Result<Presence>>; listRoster(accountId: string): Promise<Result<Contact[]>>; sendMessage(input: MessageSendInput): Promise<Result<Message>>; subscribe(listener: (event: DomainEvent<unknown>) => void): () => void; }
-export interface MucPort { discover(input: MucDiscoverInput): Promise<Result<ReadonlyArray<RoomRef>>>; join(input: MucJoinInput): Promise<Result<RoomState>>; leave(input: MucLeaveInput): Promise<Result<RoomState>>; sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>>; subscribe(listener: (event: DomainEvent<unknown>) => void): () => void; }
+import { InjectionToken } from '@angular/core';
+import {
+  CertificateTrustDecisionInput,
+  ConnectInput,
+  ConnectionState,
+  Contact,
+  DomainEvent,
+  FileActiveInput,
+  FileRequest,
+  FileSendInput,
+  FileTransfer,
+  HistoryPage,
+  HistoryPageInput,
+  Message,
+  MessageSendInput,
+  MucDiscoverInput,
+  MucJoinInput,
+  MucLeaveInput,
+  MucSendInput,
+  Presence,
+  PresenceInput,
+  Preferences,
+  Result,
+  RoomRef,
+  RoomSendReceipt,
+  RoomState,
+} from './domain';
+
+export interface XmppPort {
+  connect(input: ConnectInput): Promise<Result<ConnectionState>>;
+  disconnect(accountId: string): Promise<Result<void>>;
+  getState(accountId: string): Promise<Result<ConnectionState>>;
+  setPresence(input: PresenceInput): Promise<Result<Presence>>;
+  listRoster(accountId: string): Promise<Result<Contact[]>>;
+  sendMessage(input: MessageSendInput): Promise<Result<Message>>;
+  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
+}
+
+export interface MucPort {
+  discover(input: MucDiscoverInput): Promise<Result<ReadonlyArray<RoomRef>>>;
+  join(input: MucJoinInput): Promise<Result<RoomState>>;
+  leave(input: MucLeaveInput): Promise<Result<RoomState>>;
+  sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>>;
+  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
+}
+
+export interface AccountConfig {
+  readonly accountId: string;
+  readonly endpoint: ConnectInput['endpoint'];
+}
+
+export interface AccountPort {
+  getConfig(): AccountConfig | undefined;
+  setSecret(input: {
+    version: 1;
+    requestId: string;
+    credentialRef: string;
+    secret: string;
+  }): Promise<Result<{ stored: true }>>;
+}
+
+export interface HistoryPort {
+  list(input: {
+    version: 1;
+    requestId: string;
+    accountId: string;
+    conversationId: string;
+  }): Promise<Result<Message[]>>;
+  listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>;
+  conversations(input: {
+    version: 1;
+    requestId: string;
+    accountId: string;
+  }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>>>;
+}
+
+export interface PreferencesPort {
+  get(input: { accountId: string }): Promise<Result<Preferences>>;
+  update(input: {
+    accountId: string;
+    changes: Partial<Preferences>;
+  }): Promise<Result<Partial<Preferences>>>;
+  reset(input: { accountId: string }): Promise<Result<Preferences>>;
+}
+
+export interface CertificatePort {
+  decide(input: CertificateTrustDecisionInput): Promise<Result<void>>;
+}
+
+export interface FileTransferPort {
+  send(input: FileSendInput): Promise<Result<FileTransfer | null>>;
+  accept(input: FileRequest): Promise<Result<FileTransfer>>;
+  reject(input: FileRequest): Promise<Result<FileTransfer>>;
+  cancel(input: FileRequest): Promise<Result<FileTransfer>>;
+  listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>>;
+  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
+}
+
+export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');
+export const MUC_PORT = new InjectionToken<MucPort>('AtomicChat MucPort');
+export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountPort');
+export const HISTORY_PORT = new InjectionToken<HistoryPort>('AtomicChat HistoryPort');
+export const PREFERENCES_PORT = new InjectionToken<PreferencesPort>('AtomicChat PreferencesPort');
+export const CERTIFICATE_PORT = new InjectionToken<CertificatePort>('AtomicChat CertificatePort');
+export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
+  'AtomicChat FileTransferPort',
+);
