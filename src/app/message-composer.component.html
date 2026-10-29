@@ -1,0 +1,28 @@
+<form class="composer" (ngSubmit)="messageSubmitted.emit()">
+  @if (showAttach()) {
+    <button
+      class="composer-icon"
+      type="button"
+      aria-label="Adjuntar"
+      (click)="attach.emit()"
+      [disabled]="disabled()"
+    >
+      ＋
+    </button>
+  }
+  <input
+    [attr.name]="inputName()"
+    [ngModel]="draft()"
+    [ngModelOptions]="{ standalone: true }"
+    (ngModelChange)="draftChange.emit($event)"
+    [placeholder]="placeholder()"
+    autocomplete="off"
+    [disabled]="disabled()"
+  />
+  @if (showEmoji()) {
+    <button class="emoji" type="button" aria-label="Emoji">☺</button>
+  }
+  <button class="send" type="submit" aria-label="Enviar" [disabled]="disabled() || !draft().trim()">
+    ➤
+  </button>
+</form>

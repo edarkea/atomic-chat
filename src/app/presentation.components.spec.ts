@@ -10,9 +10,12 @@ import {
 } from './core/domain';
 import { CertificateDialogComponent } from './certificate-dialog.component';
 import { ConversationTimelineItem, ConversationViewComponent } from './conversation-view.component';
+import { FileTransferCardComponent } from './file-transfer-card.component';
 import { LoginPanelComponent } from './login-panel.component';
+import { MessageComposerComponent } from './message-composer.component';
 import { MucViewComponent } from './muc-view.component';
-import { PresenceOption, SidebarComponent } from './sidebar.component';
+import { SidebarComponent } from './sidebar.component';
+import { PresenceOption } from './sidebar.models';
 
 const room: RoomRef = {
   service: 'conference.example.invalid',
@@ -77,28 +80,36 @@ describe('extracted Angular presentation components', () => {
     const contacts: ReadonlyArray<Contact> = [
       { jid: 'contact@example.invalid', name: 'Contacto', groups: [], source: 'roster' },
     ];
-    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
-    fixture.componentRef.setInput('connectionLabel', 'Conectado');
-    fixture.componentRef.setInput('presenceLabel', 'En línea');
-    fixture.componentRef.setInput('presenceDot', 'online');
-    fixture.componentRef.setInput('presenceOpen', false);
-    fixture.componentRef.setInput('presenceOptions', options);
-    fixture.componentRef.setInput('presenceStatus', '');
-    fixture.componentRef.setInput('settingsOpen', false);
-    fixture.componentRef.setInput('preferences', {
-      theme: 'atomic',
-      notifications: true,
-      autoLogin: false,
+    fixture.componentRef.setInput('model', {
+      operator: {
+        accountId: 'operator@example.invalid',
+        connectionLabel: 'Conectado',
+        presenceLabel: 'En línea',
+        presenceDot: 'online',
+        presenceOpen: false,
+        presenceOptions: options,
+        presenceOptionId: 'online',
+        presenceStatus: '',
+        settingsOpen: false,
+        preferences: { theme: 'atomic', notifications: true, autoLogin: false },
+      },
+      muc: {
+        nickname: '',
+        discovering: false,
+        error: null,
+        services: [room],
+        states: [],
+        selectedRoomJid: '',
+        activeRoomState: undefined,
+      },
+      conversations: {
+        search: '',
+        joinedRooms: [],
+        filteredContacts: contacts,
+        selectedJid: '',
+        selectedRoomJid: '',
+      },
     });
-    fixture.componentRef.setInput('search', '');
-    fixture.componentRef.setInput('mucNickname', '');
-    fixture.componentRef.setInput('mucDiscovering', false);
-    fixture.componentRef.setInput('mucServices', [room]);
-    fixture.componentRef.setInput('mucStates', []);
-    fixture.componentRef.setInput('selectedRoomJid', '');
-    fixture.componentRef.setInput('joinedRooms', []);
-    fixture.componentRef.setInput('filteredContacts', contacts);
-    fixture.componentRef.setInput('selectedJid', '');
     const selectRoom = vi.fn();
     const selectContact = vi.fn();
     fixture.componentInstance.selectRoom.subscribe(selectRoom);
@@ -187,6 +198,79 @@ describe('extracted Angular presentation components', () => {
     expect(fixture.nativeElement.textContent).toContain('mensaje');
     (fixture.nativeElement.querySelector('.muc-room-meta button') as HTMLButtonElement).click();
     expect(leave).toHaveBeenCalledOnce();
+  });
+
+  it('keeps transfer actions limited to the offered state', async () => {
+    await TestBed.configureTestingModule({
+      imports: [FileTransferCardComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FileTransferCardComponent);
+    const transfer = {
+      offer: {
+        transferId: 'file-1',
+        accountId: 'operator@example.invalid',
+        conversationId: 'contact@example.invalid',
+        senderJid: 'contact@example.invalid',
+        name: 'demo.txt',
+        sizeBytes: '4',
+        transport: 'ibb' as const,
+        offeredAt: new Date().toISOString(),
+      },
+      direction: 'incoming' as const,
+      state: 'offered' as const,
+      bytesTransferred: '0',
+      updatedAt: new Date().toISOString(),
+    };
+    fixture.componentRef.setInput('transfer', transfer);
+    fixture.componentRef.setInput('label', 'Archivo ofrecido');
+    const accepted = vi.fn();
+    const rejected = vi.fn();
+    const cancelled = vi.fn();
+    fixture.componentInstance.accepted.subscribe(accepted);
+    fixture.componentInstance.rejected.subscribe(rejected);
+    fixture.componentInstance.cancelled.subscribe(cancelled);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.file-actions button')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelector('button:not(.file-actions button)')).toBeNull();
+    (fixture.nativeElement.querySelector('.file-actions button') as HTMLButtonElement).click();
+    (
+      fixture.nativeElement.querySelectorAll('.file-actions button')[1] as HTMLButtonElement
+    ).click();
+    expect(accepted).toHaveBeenCalledWith('file-1');
+    expect(rejected).toHaveBeenCalledWith('file-1');
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
+  it('reuses the composer for attachable direct chat and text-only MUC input', async () => {
+    await TestBed.configureTestingModule({
+      imports: [MessageComposerComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(MessageComposerComponent);
+    fixture.componentRef.setInput('inputName', 'message');
+    fixture.componentRef.setInput('placeholder', 'Escribir');
+    fixture.componentRef.setInput('draft', 'texto');
+    fixture.componentRef.setInput('disabled', false);
+    fixture.componentRef.setInput('showAttach', true);
+    fixture.componentRef.setInput('showEmoji', true);
+    const submitted = vi.fn();
+    const attached = vi.fn();
+    fixture.componentInstance.messageSubmitted.subscribe(submitted);
+    fixture.componentInstance.attach.subscribe(attached);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="message"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.composer-icon')).toBeTruthy();
+    (fixture.nativeElement.querySelector('.composer-icon') as HTMLButtonElement).click();
+    (fixture.nativeElement.querySelector('form') as HTMLFormElement).dispatchEvent(
+      new Event('submit'),
+    );
+    expect(attached).toHaveBeenCalledOnce();
+    expect(submitted).toHaveBeenCalledOnce();
+    fixture.componentRef.setInput('inputName', 'muc-message');
+    fixture.componentRef.setInput('showAttach', false);
+    fixture.componentRef.setInput('showEmoji', false);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="muc-message"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.composer-icon')).toBeNull();
   });
 
   it('renders the certificate decisions and emits the selected policy', async () => {

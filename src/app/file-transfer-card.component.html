@@ -1,0 +1,35 @@
+<article
+  class="message file-message"
+  [class.outgoing]="transfer().direction === 'outgoing'"
+  [class.incoming]="transfer().direction === 'incoming'"
+  role="group"
+  [attr.aria-label]="
+    (transfer().direction === 'outgoing' ? 'Archivo saliente ' : 'Archivo entrante ') +
+    transfer().offer.name
+  "
+>
+  <p class="message-sender">
+    {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
+  </p>
+  <p class="file-title">▤ {{ transfer().offer.name }}</p>
+  <small>{{ transfer().offer.sizeBytes }} bytes · {{ label() }}</small>
+  @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
+    <p class="file-security">
+      Sin cifrado de extremo a extremo. Solo archivos ficticios de laboratorio.
+    </p>
+    <div class="file-actions">
+      <button type="button" (click)="accepted.emit(transfer().offer.transferId)">
+        Aceptar y guardar</button
+      ><button type="button" (click)="rejected.emit(transfer().offer.transferId)">Rechazar</button>
+    </div>
+  }
+  @if (isInProgress()) {
+    <p aria-live="polite">
+      {{ label() }} · {{ transfer().bytesTransferred }} / {{ transfer().offer.sizeBytes }} bytes
+    </p>
+    <button type="button" (click)="cancelled.emit(transfer().offer.transferId)">Cancelar</button>
+  }
+  @if (isTerminal()) {
+    <p aria-live="polite">{{ label() }}</p>
+  }
+</article>

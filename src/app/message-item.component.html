@@ -1,0 +1,5 @@
+<article class="message" [class.outgoing]="outgoing()" [class.incoming]="!outgoing()">
+  <p class="message-sender">{{ sender() }}</p>
+  <p>{{ body() }}</p>
+  <small>{{ metadata() }}</small>
+</article>

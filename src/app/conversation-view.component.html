@@ -1,8 +1,10 @@
 <header class="chat-header">
   <span class="avatar header-avatar">♙</span>
   <div>
-    <strong>{{ activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto' }}</strong
-    ><small>{{ selectedJid() ? 'Conversación individual' : 'Sin destinatario' }}</small>
+    <strong>{{
+      activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
+    }}</strong>
+    <small>{{ selectedJid() ? 'Conversación individual' : 'Sin destinatario' }}</small>
   </div>
   <button class="more" type="button">•••</button>
 </header>
@@ -24,78 +26,34 @@
   }
   @for (item of timeline(); track item.id) {
     @if (item.kind === 'text') {
-      <article class="message" [class.outgoing]="item.outgoing" [class.incoming]="!item.outgoing">
-        <p class="message-sender">{{ item.senderLabel }}</p>
-        <p>{{ item.message.body.text }}</p>
-        <small>{{ item.outgoing ? item.message.status : 'recibido' }}</small>
-      </article>
+      <app-message-item
+        [sender]="item.senderLabel"
+        [body]="item.message.body.text"
+        [outgoing]="item.outgoing"
+        [metadata]="item.outgoing ? item.message.status : 'recibido'"
+      />
     } @else {
-      <article
-        class="message file-message"
-        [class.outgoing]="item.outgoing"
-        [class.incoming]="!item.outgoing"
-        role="group"
-        [attr.aria-label]="
-          (item.outgoing ? 'Archivo saliente ' : 'Archivo entrante ') + item.transfer.offer.name
-        "
-      >
-        <p class="message-sender">{{ item.senderLabel }}</p>
-        <p class="file-title">▤ {{ item.transfer.offer.name }}</p>
-        <small>{{ item.transfer.offer.sizeBytes }} bytes · {{ item.label }}</small>
-        @if (!item.outgoing && item.transfer.state === 'offered') {
-          <p class="file-security">
-            Sin cifrado de extremo a extremo. Solo archivos ficticios de laboratorio.
-          </p>
-          <div class="file-actions">
-            <button type="button" (click)="accept.emit(item.transfer.offer.transferId)">
-              Aceptar y guardar</button
-            ><button type="button" (click)="reject.emit(item.transfer.offer.transferId)">
-              Rechazar
-            </button>
-          </div>
-        }
-        @if (isFileInProgress(item.transfer.state)) {
-          <p aria-live="polite">
-            {{ item.label }} · {{ item.transfer.bytesTransferred }} /
-            {{ item.transfer.offer.sizeBytes }} bytes
-          </p>
-          <button type="button" (click)="fileCancel.emit(item.transfer.offer.transferId)">
-            Cancelar
-          </button>
-        }
-        @if (isFileTerminal(item.transfer.state)) {
-          <p aria-live="polite">{{ item.label }}</p>
-        }
-      </article>
+      <app-file-transfer-card
+        [transfer]="item.transfer"
+        [label]="item.label"
+        (accepted)="accept.emit($event)"
+        (rejected)="reject.emit($event)"
+        (cancelled)="fileCancel.emit($event)"
+      />
     }
   }
 </div>
 @if (error()) {
   <p class="composer-error" role="alert">{{ error() }}</p>
 }
-<form class="composer" (ngSubmit)="messageSend.emit()">
-  <button
-    class="composer-icon"
-    type="button"
-    aria-label="Adjuntar"
-    (click)="attach.emit()"
-    [disabled]="!selectedJid()"
-  >
-    ＋</button
-  ><input
-    name="message"
-    [ngModel]="draft()"
-    (ngModelChange)="draftChange.emit($event)"
-    placeholder="Escribir mensaje..."
-    autocomplete="off"
-    [disabled]="!selectedJid()"
-  /><button class="emoji" type="button" aria-label="Emoji">☺</button
-  ><button
-    class="send"
-    type="submit"
-    aria-label="Enviar"
-    [disabled]="!selectedJid() || !draft().trim()"
-  >
-    ➤
-  </button>
-</form>
+<app-message-composer
+  [inputName]="'message'"
+  [placeholder]="'Escribir mensaje...'"
+  [draft]="draft()"
+  [disabled]="!selectedJid()"
+  [showAttach]="true"
+  [showEmoji]="true"
+  (draftChange)="draftChange.emit($event)"
+  (messageSubmitted)="messageSend.emit()"
+  (attach)="attach.emit()"
+/>

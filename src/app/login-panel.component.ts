@@ -1,10 +1,11 @@
-import { Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 @Component({
   selector: 'app-login-panel',
   imports: [FormsModule],
   templateUrl: './login-panel.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginPanelComponent {
   readonly accountId = input.required<string>();

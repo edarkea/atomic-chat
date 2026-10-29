@@ -1,0 +1,88 @@
+<section class="muc-panel" aria-labelledby="muc-panel-title">
+  <header class="muc-heading">
+    <div>
+      <p id="muc-panel-title" class="section-label">SALAS</p>
+      <span class="muc-subtitle">Conferencias disponibles</span>
+    </div>
+    <button
+      class="muc-discover"
+      type="button"
+      (click)="discover.emit()"
+      [disabled]="model().discovering"
+      [attr.aria-label]="model().discovering ? 'Actualizando salas' : 'Actualizar salas'"
+    >
+      <span aria-hidden="true">↻</span
+      ><span>{{ model().discovering ? 'Actualizando…' : 'Actualizar' }}</span>
+    </button>
+  </header>
+  <div class="muc-nickname">
+    <label for="muc-nickname">Apodo en salas</label
+    ><input
+      id="muc-nickname"
+      name="muc-nickname"
+      placeholder="Ej. operador"
+      [ngModel]="model().nickname"
+      (ngModelChange)="nicknameChange.emit($event)"
+    /><small>Se usará al entrar en una sala.</small>
+  </div>
+  @if (model().error) {
+    <p class="muc-error" role="alert">{{ model().error }}</p>
+  }
+  @if (model().discovering) {
+    <p class="muc-loading" role="status"><span aria-hidden="true">◌</span> Consultando salas…</p>
+  }
+  @if (!model().discovering && !model().services.length) {
+    <p class="muc-empty">No hay salas descubiertas todavía.</p>
+  }
+  @if (model().services.length) {
+    <nav class="room-list" aria-label="Salas disponibles">
+      @for (room of model().services; track room.jid) {
+        <article class="room-item" [class.active]="isSelected(room.jid)">
+          <button
+            class="room-select"
+            type="button"
+            [class.active]="isSelected(room.jid)"
+            (click)="selectRoom.emit(room.jid)"
+            [attr.aria-pressed]="isSelected(room.jid)"
+            [attr.aria-label]="'Seleccionar sala ' + room.room"
+          >
+            <span class="room-symbol" aria-hidden="true">⌂</span
+            ><span class="room-copy"
+              ><strong>{{ room.room }}</strong
+              ><small>{{ room.service }}</small></span
+            ><span class="room-status">{{ roomStatus(room.jid) }}</span></button
+          ><button
+            class="room-join"
+            type="button"
+            (click)="joinRoom.emit(room.jid)"
+            [disabled]="
+              roomStatus(room.jid) === 'joined' ||
+              roomStatus(room.jid) === 'joining' ||
+              roomStatus(room.jid) === 'leaving'
+            "
+            [attr.aria-label]="
+              roomStatus(room.jid) === 'joined'
+                ? 'Ya estás dentro de ' + room.room
+                : 'Entrar en ' + room.room
+            "
+          >
+            {{
+              roomStatus(room.jid) === 'joined'
+                ? 'Dentro'
+                : roomStatus(room.jid) === 'joining'
+                  ? 'Entrando…'
+                  : roomStatus(room.jid) === 'leaving'
+                    ? 'Saliendo…'
+                    : 'Entrar'
+            }}
+          </button>
+        </article>
+      }
+    </nav>
+  }
+  @if (model().activeRoomState; as roomState) {
+    <button class="leave-room" type="button" (click)="leaveRoom.emit()">
+      Salir de {{ roomState.room.room }}
+    </button>
+  }
+</section>

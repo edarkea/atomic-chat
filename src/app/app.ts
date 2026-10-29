@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   computed,
   effect,
@@ -19,7 +20,8 @@ import {
 } from './conversation-view.component';
 import { LoginPanelComponent } from './login-panel.component';
 import { MucViewComponent } from './muc-view.component';
-import { PresenceOption, SidebarComponent } from './sidebar.component';
+import { SidebarComponent, SidebarModel } from './sidebar.component';
+import { PresenceOption } from './sidebar.models';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -38,6 +40,7 @@ type ConversationSelection =
   templateUrl: './app.html',
   styleUrls: ['./app.scss', './certificate-dialog.scss', './file-transfer.scss'],
   encapsulation: ViewEncapsulation.None,
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {
   protected readonly chat = inject(ChatFacade);
@@ -142,6 +145,36 @@ export class App {
     { id: 'xa', mode: 'xa', label: 'Ausencia extendida', dot: 'xa' },
     { id: 'dnd', mode: 'dnd', label: 'No molestar', dot: 'dnd' },
   ];
+  protected readonly sidebarModel = computed<SidebarModel>(() => ({
+    operator: {
+      accountId: this.chat.accountId(),
+      connectionLabel: this.connectionLabel(),
+      presenceLabel: this.presenceLabel(),
+      presenceDot: this.presenceDot(),
+      presenceOpen: this.presenceOpen(),
+      presenceOptions: this.presenceOptions,
+      presenceOptionId: this.selectedPresenceOption().id,
+      presenceStatus: this.presenceStatus(),
+      settingsOpen: this.settingsOpen(),
+      preferences: this.chat.preferences(),
+    },
+    muc: {
+      nickname: this.mucNickname(),
+      discovering: this.mucDiscovering(),
+      error: this.muc.error(),
+      services: this.muc.services(),
+      states: this.muc.states(),
+      selectedRoomJid: this.muc.selectedRoomJid(),
+      activeRoomState: this.activeRoomState(),
+    },
+    conversations: {
+      search: this.search(),
+      joinedRooms: this.joinedRooms(),
+      filteredContacts: this.filteredContacts(),
+      selectedJid: this.selectedJid(),
+      selectedRoomJid: this.muc.selectedRoomJid(),
+    },
+  }));
   @ViewChild(ConversationViewComponent) private conversationView?: ConversationViewComponent;
 
   constructor() {

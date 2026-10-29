@@ -1,0 +1,68 @@
+<div class="operator-card">
+  <span class="avatar operator-avatar">♙</span>
+  <div>
+    <strong>{{ model().accountId }}</strong
+    ><small>{{ model().connectionLabel }} · {{ model().presenceLabel }}</small>
+  </div>
+  <span class="online-dot" [class]="'online-dot ' + model().presenceDot" aria-hidden="true"></span>
+</div>
+<div class="presence-control">
+  <span>Estado</span
+  ><button
+    type="button"
+    class="presence-trigger"
+    aria-haspopup="listbox"
+    [attr.aria-expanded]="model().presenceOpen"
+    (click)="presenceToggle.emit()"
+  >
+    <i class="presence-dot" [class]="'presence-dot ' + model().presenceDot"></i
+    ><span>{{ model().presenceLabel }}</span
+    ><span class="presence-arrow" aria-hidden="true">⌄</span>
+  </button>
+  @if (model().presenceOpen) {
+    <div class="presence-menu" role="listbox" aria-label="Estado de presencia">
+      @for (option of model().presenceOptions; track option.id) {
+        <button
+          type="button"
+          role="option"
+          [attr.aria-selected]="model().presenceOptionId === option.id"
+          (click)="presenceSelected.emit(option)"
+          (keydown.enter)="presenceSelected.emit(option)"
+          (keydown.space)="presenceSelected.emit(option)"
+        >
+          <i class="presence-dot" [class]="'presence-dot ' + option.dot"></i>{{ option.label }}
+        </button>
+      }
+      <input
+        aria-label="Mensaje de estado"
+        placeholder="Mensaje opcional"
+        [ngModel]="model().presenceStatus"
+        (ngModelChange)="presenceStatusChange.emit($event)"
+      />
+    </div>
+  }
+</div>
+@if (model().settingsOpen) {
+  <section class="preferences-panel" aria-label="Preferencias">
+    <strong>Preferencias</strong
+    ><label
+      >Tema<select [ngModel]="model().preferences.theme" disabled>
+        <option value="atomic">Atomic</option>
+      </select></label
+    ><label class="check-preference"
+      ><input
+        type="checkbox"
+        [ngModel]="model().preferences.notifications"
+        (ngModelChange)="preferencesChange.emit({ notifications: $event })"
+      />
+      Notificaciones</label
+    ><label class="check-preference"
+      ><input
+        type="checkbox"
+        [ngModel]="model().preferences.autoLogin"
+        (ngModelChange)="preferencesChange.emit({ autoLogin: $event })"
+      />
+      Inicio automático</label
+    ><button type="button" (click)="resetPreferences.emit()">Restablecer</button>
+  </section>
+}

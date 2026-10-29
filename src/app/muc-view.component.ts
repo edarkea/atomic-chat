@@ -1,11 +1,13 @@
-import { Component, input, output } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { MucNotice, RoomMessage, RoomParticipant, RoomState } from './core/domain';
+import { MessageComposerComponent } from './message-composer.component';
+import { MessageItemComponent } from './message-item.component';
 
 @Component({
   selector: 'app-muc-view',
-  imports: [FormsModule],
+  imports: [MessageComposerComponent, MessageItemComponent],
   templateUrl: './muc-view.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MucViewComponent {
   readonly roomState = input.required<RoomState>();

@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
@@ -9,8 +10,10 @@ import {
   output,
   ViewChild,
 } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Contact, FileTransfer, Message } from './core/domain';
+import { FileTransferCardComponent } from './file-transfer-card.component';
+import { MessageComposerComponent } from './message-composer.component';
+import { MessageItemComponent } from './message-item.component';
 
 export type ConversationTimelineItem =
   | {
@@ -40,8 +43,9 @@ export interface OlderMessagesRequest {
 
 @Component({
   selector: 'app-conversation-view',
-  imports: [FormsModule],
+  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent],
   templateUrl: './conversation-view.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConversationViewComponent {
   readonly activeContact = input<Contact>();
@@ -89,12 +93,6 @@ export class ConversationViewComponent {
 
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
-  }
-  protected isFileInProgress(state: FileTransfer['state']): boolean {
-    return ['accepted', 'offering', 'awaiting_acceptance', 'transferring'].includes(state);
-  }
-  protected isFileTerminal(state: FileTransfer['state']): boolean {
-    return ['completed', 'failed', 'cancelled'].includes(state);
   }
 
   public onUserScrollIntent(): void {

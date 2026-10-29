@@ -51,29 +51,23 @@
   </div>
   <div class="muc-messages" aria-live="polite">
     @for (message of messages(); track message.id) {
-      <article
-        class="message"
-        [class.outgoing]="isOutgoing(message)"
-        [class.incoming]="!isOutgoing(message)"
-      >
-        <p class="message-sender">{{ senderLabel(message) }}</p>
-        <p>{{ message.body.text }}</p>
-        <small>{{ message.source === 'live' ? 'recibido' : 'histórico' }}</small>
-      </article>
+      <app-message-item
+        [sender]="senderLabel(message)"
+        [body]="message.body.text"
+        [outgoing]="isOutgoing(message)"
+        [metadata]="message.source === 'live' ? 'recibido' : 'histórico'"
+      />
     }
     @if (!messages().length) {
       <p class="reference-message incoming">No hay mensajes todavía.</p>
     }
   </div>
-  <form class="composer" (ngSubmit)="send.emit()">
-    <input
-      name="muc-message"
-      [ngModel]="draft()"
-      (ngModelChange)="draftChange.emit($event)"
-      placeholder="Escribir en la sala..."
-      autocomplete="off"
-    /><button class="send" type="submit" aria-label="Enviar a la sala" [disabled]="!draft().trim()">
-      ➤
-    </button>
-  </form>
+  <app-message-composer
+    [inputName]="'muc-message'"
+    [placeholder]="'Escribir en la sala...'"
+    [draft]="draft()"
+    [disabled]="false"
+    (draftChange)="draftChange.emit($event)"
+    (messageSubmitted)="send.emit()"
+  />
 </section>

@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
@@ -13,6 +14,7 @@ import { CertificateTrustDecision, CertificateTrustRequest } from './core/domain
 @Component({
   selector: 'app-certificate-dialog',
   templateUrl: './certificate-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CertificateDialogComponent {
   readonly request = input.required<CertificateTrustRequest>();

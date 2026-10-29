@@ -1,230 +1,28 @@
 <aside class="sidebar">
-  <div class="operator-card">
-    <span class="avatar operator-avatar">♙</span>
-    <div>
-      <strong>{{ accountId() }}</strong
-      ><small>{{ connectionLabel() }} · {{ presenceLabel() }}</small>
-    </div>
-    <span class="online-dot" [class]="'online-dot ' + presenceDot()" aria-hidden="true"></span>
-  </div>
-  <div class="presence-control">
-    <span>Estado</span
-    ><button
-      type="button"
-      class="presence-trigger"
-      aria-haspopup="listbox"
-      [attr.aria-expanded]="presenceOpen()"
-      (click)="togglePresence.emit()"
-    >
-      <i class="presence-dot" [class]="'presence-dot ' + presenceDot()"></i
-      ><span>{{ presenceLabel() }}</span
-      ><span class="presence-arrow" aria-hidden="true">⌄</span>
-    </button>
-    @if (presenceOpen()) {
-      <div class="presence-menu" role="listbox" aria-label="Estado de presencia">
-        @for (option of presenceOptions(); track option.id) {
-          <button
-            type="button"
-            role="option"
-            [attr.aria-selected]="isPresenceSelected(option.id)"
-            (click)="presenceSelected.emit(option)"
-            (keydown.enter)="presenceSelected.emit(option)"
-            (keydown.space)="presenceSelected.emit(option)"
-          >
-            <i class="presence-dot" [class]="'presence-dot ' + option.dot"></i>{{ option.label }}
-          </button>
-        }
-        <input
-          aria-label="Mensaje de estado"
-          placeholder="Mensaje opcional"
-          [ngModel]="presenceStatus()"
-          (ngModelChange)="presenceStatusChange.emit($event)"
-        />
-      </div>
-    }
-  </div>
-  @if (settingsOpen()) {
-    <section class="preferences-panel" aria-label="Preferencias">
-      <strong>Preferencias</strong
-      ><label
-        >Tema<select [ngModel]="preferences().theme" disabled>
-          <option value="atomic">Atomic</option>
-        </select></label
-      ><label class="check-preference"
-        ><input
-          type="checkbox"
-          [ngModel]="preferences().notifications"
-          (ngModelChange)="preferencesChange.emit({ notifications: $event })"
-        />
-        Notificaciones</label
-      ><label class="check-preference"
-        ><input
-          type="checkbox"
-          [ngModel]="preferences().autoLogin"
-          (ngModelChange)="preferencesChange.emit({ autoLogin: $event })"
-        />
-        Inicio automático</label
-      ><button type="button" (click)="resetPreferences.emit()">Restablecer</button>
-    </section>
-  }
-  <label class="search-box"
-    ><span>⌕</span
-    ><input
-      placeholder="Buscar usuario o JID..."
-      aria-label="Buscar conversaciones"
-      [ngModel]="search()"
-      (ngModelChange)="searchChange.emit($event)"
-      (keyup.enter)="useJid.emit()"
-  /></label>
-  <section class="muc-panel" aria-labelledby="muc-panel-title">
-    <header class="muc-heading">
-      <div>
-        <p id="muc-panel-title" class="section-label">SALAS</p>
-        <span class="muc-subtitle">Conferencias disponibles</span>
-      </div>
-      <button
-        class="muc-discover"
-        type="button"
-        (click)="discoverRooms.emit()"
-        [disabled]="mucDiscovering()"
-        [attr.aria-label]="mucDiscovering() ? 'Actualizando salas' : 'Actualizar salas'"
-      >
-        <span aria-hidden="true">↻</span
-        ><span>{{ mucDiscovering() ? 'Actualizando…' : 'Actualizar' }}</span>
-      </button>
-    </header>
-    <div class="muc-nickname">
-      <label for="muc-nickname">Apodo en salas</label
-      ><input
-        id="muc-nickname"
-        name="muc-nickname"
-        placeholder="Ej. operador"
-        [ngModel]="mucNickname()"
-        (ngModelChange)="mucNicknameChange.emit($event)"
-      /><small>Se usará al entrar en una sala.</small>
-    </div>
-    @if (mucError()) {
-      <p class="muc-error" role="alert">{{ mucError() }}</p>
-    }
-    @if (mucDiscovering()) {
-      <p class="muc-loading" role="status"><span aria-hidden="true">◌</span> Consultando salas…</p>
-    }
-    @if (!mucDiscovering() && !mucServices().length) {
-      <p class="muc-empty">No hay salas descubiertas todavía.</p>
-    }
-    @if (mucServices().length) {
-      <nav class="room-list" aria-label="Salas disponibles">
-        @for (room of mucServices(); track room.jid) {
-          <article class="room-item" [class.active]="isRoomSelected(room.jid)">
-            <button
-              class="room-select"
-              type="button"
-              [class.active]="isRoomSelected(room.jid)"
-              (click)="selectRoom.emit(room.jid)"
-              [attr.aria-pressed]="isRoomSelected(room.jid)"
-              [attr.aria-label]="'Seleccionar sala ' + room.room"
-            >
-              <span class="room-symbol" aria-hidden="true">⌂</span
-              ><span class="room-copy"
-                ><strong>{{ room.room }}</strong
-                ><small>{{ room.service }}</small></span
-              ><span class="room-status">{{ roomStatus(room.jid) }}</span></button
-            ><button
-              class="room-join"
-              type="button"
-              (click)="joinRoom.emit(room.jid)"
-              [disabled]="
-                roomStatus(room.jid) === 'joined' ||
-                roomStatus(room.jid) === 'joining' ||
-                roomStatus(room.jid) === 'leaving'
-              "
-              [attr.aria-label]="
-                roomStatus(room.jid) === 'joined'
-                  ? 'Ya estás dentro de ' + room.room
-                  : 'Entrar en ' + room.room
-              "
-            >
-              {{
-                roomStatus(room.jid) === 'joined'
-                  ? 'Dentro'
-                  : roomStatus(room.jid) === 'joining'
-                    ? 'Entrando…'
-                    : roomStatus(room.jid) === 'leaving'
-                      ? 'Saliendo…'
-                      : 'Entrar'
-              }}
-            </button>
-          </article>
-        }
-      </nav>
-    }
-    @if (activeRoomState(); as roomState) {
-      <button class="leave-room" type="button" (click)="leaveRoom.emit()">
-        Salir de {{ roomState.room.room }}
-      </button>
-    }
-  </section>
-  <p class="section-label">CONVERSACIONES</p>
-  <nav class="conversation-list" aria-label="Conversaciones">
-    @for (roomState of joinedRooms(); track roomState.room.jid) {
-      <button
-        class="conversation-item muc-conversation-item"
-        [class.active]="isRoomSelected(roomState.room.jid)"
-        type="button"
-        (click)="selectJoinedRoom.emit(roomState.room.jid)"
-        [attr.aria-label]="'Abrir sala ' + roomState.room.room"
-      >
-        <span class="avatar muc-avatar" aria-hidden="true">⌂</span
-        ><span class="contact-copy"
-          ><strong>{{ roomState.room.room }}</strong
-          ><small>{{ roomState.room.service }}</small
-          ><small class="contact-groups">{{ participantSummary(roomState) }}</small></span
-        >
-      </button>
-    }
-    @for (contact of filteredContacts(); track contact.jid) {
-      <button
-        class="conversation-item"
-        [class.active]="isDirectSelected(contact.jid)"
-        type="button"
-        (click)="selectContact.emit(contact)"
-      >
-        <span class="avatar">♙</span
-        ><span class="contact-copy"
-          ><strong
-            ><i
-              class="contact-presence"
-              [class]="'contact-presence ' + remotePresenceDot(contact)"
-              aria-hidden="true"
-            ></i
-            >{{ contactName(contact) }}</strong
-          ><small>{{ contact.jid }}</small
-          ><small class="contact-groups"
-            >{{ contactKind(contact) }} · {{ remotePresenceLabel(contact) }}</small
-          ></span
-        >
-      </button>
-    }
-    @if (filteredContacts().length === 0 && search().includes('@')) {
-      <button
-        class="conversation-item"
-        [class.active]="isDirectSelected(search())"
-        type="button"
-        (click)="useJid.emit()"
-      >
-        <span class="avatar">＋</span
-        ><span
-          ><strong>Nuevo chat</strong><small>{{ search() }}</small></span
-        >
-      </button>
-    }
-    @if (filteredContacts().length === 0 && !search()) {
-      <p class="empty">No hay contactos cargados.</p>
-    }
-  </nav>
-  <div class="sidebar-actions">
-    <button type="button" aria-label="Preferencias" (click)="toggleSettings.emit()">⚙</button
-    ><button type="button" aria-label="Actualizar roster" (click)="refreshRoster.emit()">↻</button
-    ><button type="button" aria-label="Desconectar" (click)="disconnect.emit()">⇥</button>
-  </div>
+  <app-operator-presence
+    [model]="model().operator"
+    (presenceToggle)="presenceToggle.emit()"
+    (presenceSelected)="presenceSelected.emit($event)"
+    (presenceStatusChange)="presenceStatusChange.emit($event)"
+    (settingsToggle)="settingsToggle.emit()"
+    (preferencesChange)="preferencesChange.emit($event)"
+    (resetPreferences)="resetPreferences.emit()"
+  />
+  <app-muc-navigation
+    [model]="model().muc"
+    (nicknameChange)="nicknameChange.emit($event)"
+    (discover)="discoverRooms.emit()"
+    (selectRoom)="selectRoom.emit($event)"
+    (joinRoom)="joinRoom.emit($event)"
+    (leaveRoom)="leaveRoom.emit()"
+  />
+  <app-conversation-list
+    [model]="model().conversations"
+    (searchChange)="searchChange.emit($event)"
+    (useJid)="useJid.emit()"
+    (selectRoom)="selectRoom.emit($event)"
+    (selectContact)="selectContact.emit($event)"
+    (refreshRoster)="refreshRoster.emit()"
+    (disconnect)="disconnect.emit()"
+  />
 </aside>
