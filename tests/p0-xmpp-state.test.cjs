@@ -69,6 +69,18 @@ test('away, xa and dnd never become unavailable presence', async () => {
   assert.ok(sent.every((stanza) => stanza.attrs.type === undefined));
 });
 
+test('chat states use XEP-0085 and never become message history', async () => {
+  const adapter = new XmppAdapter(); const sent = []; const states = [];
+  adapter.states.set('a@example.invalid', { status: 'connected' });
+  adapter.sessions.set('a@example.invalid', { send: async (stanza) => sent.push(stanza) });
+  adapter.onEvent((event) => { if (event.type === 'chatState.changed') states.push(event.payload); });
+  await adapter.sendChatState('a@example.invalid', { to: 'b@example.invalid', state: 'composing' });
+  assert.equal(sent[0].attrs.type, 'chat'); assert.equal(sent[0].getChild('composing').attrs.xmlns, 'http://jabber.org/protocol/chatstates');
+  adapter.handleStanza('a@example.invalid', xml('message', { from: 'b@example.invalid/phone', type: 'chat' }, xml('composing', { xmlns: 'http://jabber.org/protocol/chatstates' })));
+  adapter.handleStanza('a@example.invalid', xml('message', { from: 'a@example.invalid/other', type: 'chat' }, xml('composing', { xmlns: 'http://jabber.org/protocol/chatstates' })));
+  assert.deepEqual(states.map((state) => state.state), ['composing']);
+});
+
 test('production rejects an unsupported cleartext transport before opening a session', async () => {
   const adapter = new XmppAdapter(true);
   await assert.rejects(() => adapter.connect({ accountId: 'a@example.invalid', endpoint: { host: 'example.invalid', port: 5222, tls: true, transport: 'plain' } }, 'synthetic'), /TRANSPORT_INCOMPATIBLE/);

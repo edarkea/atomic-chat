@@ -3,9 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { Contact, RoomState } from './core/domain';
 
 export interface ConversationListModel {
+  readonly accountId?: string;
   readonly search: string;
   readonly joinedRooms: ReadonlyArray<RoomState>;
   readonly filteredContacts: ReadonlyArray<Contact>;
+  readonly workspaceContacts?: ReadonlyArray<Contact>;
+  readonly directoryOpen?: boolean;
+  readonly unreadCounts?: ReadonlyMap<string, number>;
   readonly selectedJid: string;
   readonly selectedRoomJid: string;
 }
@@ -23,6 +27,7 @@ export class ConversationListComponent {
   readonly useJid = output<void>();
   readonly selectRoom = output<string>();
   readonly selectContact = output<Contact>();
+  readonly directoryToggle = output<void>();
   readonly refreshRoster = output<void>();
   readonly disconnect = output<void>();
 
@@ -44,7 +49,11 @@ export class ConversationListComponent {
   protected remotePresenceLabel(contact: Contact): string {
     const presence = contact.presence;
     if (!presence) return 'Estado desconocido';
+    if (presence.availability === 'unknown') return 'Estado desconocido';
     if (presence.availability === 'unavailable') return 'No disponible';
+    if (presence.availability === 'away') return 'Ausente';
+    if (presence.availability === 'extended-away') return 'Ausencia extendida';
+    if (presence.availability === 'dnd') return 'No molestar';
     return (
       (
         {
@@ -59,7 +68,13 @@ export class ConversationListComponent {
   protected remotePresenceDot(contact: Contact): string {
     const presence = contact.presence;
     if (!presence || presence.availability === 'unavailable') return 'unknown';
-    return presence.mode || 'online';
+    return presence.availability === 'available' ? presence.mode || 'online' : presence.availability;
+  }
+  protected unreadCount(kind: 'direct' | 'muc', jid: string): number {
+    const model = this.model();
+    return model.unreadCounts?.get(
+      `${model.accountId?.toLowerCase() || ''}|${kind}|${jid.split('/')[0].toLowerCase()}`,
+    ) || 0;
   }
   protected isDirectSelected(jid: string): boolean {
     return this.model().selectedJid.split('/')[0].toLowerCase() === jid.split('/')[0].toLowerCase();

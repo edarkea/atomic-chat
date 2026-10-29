@@ -35,6 +35,7 @@ export class SidebarComponent {
   readonly searchChange = output<string>();
   readonly useJid = output<void>();
   readonly selectContact = output<Contact>();
+  readonly directoryToggle = output<void>();
   readonly refreshRoster = output<void>();
   readonly disconnect = output<void>();
 }

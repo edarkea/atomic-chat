@@ -1,5 +1,6 @@
 import {
   CertificateTrustDecisionInput,
+  ChatStateInput,
   ConnectInput,
   ConnectionState,
   Contact,
@@ -72,6 +73,7 @@ export interface AtomicChatApi {
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };
   messaging: { send(input: MessageSendInput): Promise<Result<Message>> };
+  chatState: { send(input: ChatStateInput): Promise<Result<void>> };
   muc: {
     discover(input: MucDiscoverInput): Promise<Result<ReadonlyArray<RoomRef>>>;
     join(input: MucJoinInput): Promise<Result<RoomState>>;

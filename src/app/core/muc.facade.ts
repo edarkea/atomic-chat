@@ -11,14 +11,17 @@ import {
   TypedDomainEvent,
 } from './domain';
 import { ACCOUNT_PORT, MUC_PORT, AccountPort, MucPort } from './ports';
+import { UnreadStore } from './unread.store';
 
 @Injectable({ providedIn: 'root' })
 export class MucFacade {
   private readonly account = inject<AccountPort>(ACCOUNT_PORT);
   private readonly port = inject<MucPort>(MUC_PORT);
+  private readonly unread = inject(UnreadStore);
   readonly services = signal<ReadonlyArray<RoomRef>>([]);
   readonly states = signal<ReadonlyArray<RoomState>>([]);
   readonly selectedRoomJid = signal('');
+  readonly roomActivity = signal<ReadonlyMap<string, number>>(new Map());
   private readonly messageBuffers = new Map<string, ReadonlyArray<RoomMessage>>();
   private readonly messageVersion = signal(0);
   readonly messages = computed<ReadonlyArray<RoomMessage>>(() => {
@@ -80,6 +83,8 @@ export class MucFacade {
     this.notices.set([]);
     this.selectedRoomJid.set('');
     this.roomGenerations.clear();
+    this.roomActivity.set(new Map());
+    this.unread.resetAccount(accountId);
     this.error.set(null);
   }
 
@@ -143,6 +148,7 @@ export class MucFacade {
   select(roomJid: string): void {
     this.selectedRoomJid.set(roomJid);
     this.participantPage.set(0);
+    this.unread.markRead(this.accountId(), 'muc', roomJid);
   }
   nextParticipantPage(): void {
     if (this.hasMoreParticipants()) this.participantPage.update((page) => page + 1);
@@ -163,6 +169,7 @@ export class MucFacade {
         this.states.set([]);
         this.services.set([]);
         this.clearAccountMessages(state.accountId);
+        this.unread.resetAccount(state.accountId);
         this.notices.set([]);
         this.selectedRoomJid.set('');
         this.roomGenerations.clear();
@@ -218,6 +225,21 @@ export class MucFacade {
           [...(this.messageBuffers.get(key) || []), message].slice(-200),
         );
         this.messageVersion.update((version) => version + 1);
+        const room = this.states().find((item) => item.room.jid === message.roomJid);
+        const visible = this.selectedRoomJid().toLowerCase() === message.roomJid.toLowerCase();
+        if (room?.selfOccupantJid !== message.occupantJid)
+          this.unread.recordIncoming(
+            message.accountId,
+            'muc',
+            message.roomJid,
+            message.clientMessageId || message.id,
+            visible,
+          );
+        this.roomActivity.update((current) => {
+          const next = new Map(current);
+          next.set(message.roomJid.toLowerCase(), Date.parse(message.receivedAt) || Date.now());
+          return next;
+        });
       }
     }
     if (event.type === 'muc.notice') {

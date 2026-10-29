@@ -1,7 +1,14 @@
 export type ContractVersion = 1;
 export type RequestId = string;
 export type ClientMessageId = string;
-export type Availability = 'available' | 'unavailable';
+export type ContactAvailability =
+  | 'available'
+  | 'away'
+  | 'extended-away'
+  | 'dnd'
+  | 'unavailable'
+  | 'unknown';
+export type Availability = ContactAvailability;
 export type PresenceMode = 'chat' | 'away' | 'dnd' | 'xa';
 export type XmppTransport = 'starttls' | 'direct-tls';
 export type ConnectionMode = 'automatic' | 'manual';
@@ -286,6 +293,13 @@ export interface RoomSendReceipt {
   clientMessageId: ClientMessageId;
   status: 'sent';
 }
+export type ChatState = 'active' | 'composing' | 'paused' | 'inactive' | 'gone';
+export interface ChatStateEvent {
+  accountId: string;
+  conversationId: string;
+  senderJid: string;
+  state: ChatState;
+}
 export interface MucParticipantChangedPayload {
   accountId: string;
   room: RoomRef;
@@ -298,6 +312,7 @@ export interface DomainEventPayloadMap {
   'roster.changed': unknown;
   'message.stateChanged': Message;
   'message.received': Message;
+  'chatState.changed': ChatStateEvent;
   'certificate.trustRequired': CertificateTrustRequest;
   'muc.stateChanged': RoomState;
   'muc.participantChanged': MucParticipantChangedPayload;
@@ -337,9 +352,33 @@ export interface PresenceInput {
   version: ContractVersion;
   requestId: RequestId;
   accountId: string;
-  availability: Availability;
+  availability: Exclude<Availability, 'unknown'>;
   mode?: PresenceMode;
   status?: string;
+}
+
+export interface ChatStateInput {
+  version: ContractVersion;
+  requestId: RequestId;
+  accountId: string;
+  conversationId: string;
+  state: ChatState;
+}
+
+export interface ConversationSummary {
+  id: string;
+  accountId: string;
+  kind: 'direct' | 'muc';
+  jid: string;
+  title: string;
+  unreadCount: number;
+  lastMessageAt?: number;
+}
+
+export interface AttentionState {
+  accountId: string;
+  unreadTotal: number;
+  attentionRequested: boolean;
 }
 export interface MessageSendInput {
   version: ContractVersion;

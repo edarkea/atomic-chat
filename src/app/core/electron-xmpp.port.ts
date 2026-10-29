@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { ConnectInput, ConnectionState, Contact, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Result, RoomRef, RoomSendReceipt, RoomState, TypedDomainEvent } from './domain';
+import { ChatStateInput, ConnectInput, ConnectionState, Contact, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Result, RoomRef, RoomSendReceipt, RoomState, TypedDomainEvent } from './domain';
 import { subscribeToDomainEvents } from './domain-event.validation';
 import { getAtomicChatApi } from './electron-api';
 import { MucPort, XmppPort } from './ports';
@@ -12,6 +12,7 @@ export class ElectronXmppPort implements XmppPort, MucPort {
   async setPresence(input: PresenceInput): Promise<Result<Presence>> { return this.api().presence.set(input); }
   async listRoster(accountId: string): Promise<Result<Contact[]>> { return this.api().roster.list(accountId); }
   async sendMessage(input: MessageSendInput): Promise<Result<Message>> { return this.api().messaging.send(input); }
+  async sendChatState(input: ChatStateInput): Promise<Result<void>> { return this.api().chatState.send(input); }
   async discover(input: MucDiscoverInput): Promise<Result<ReadonlyArray<RoomRef>>> { return this.api().muc.discover(input); }
   async join(input: MucJoinInput): Promise<Result<RoomState>> { return this.api().muc.join(input); }
   async leave(input: MucLeaveInput): Promise<Result<RoomState>> { return this.api().muc.leave(input); }

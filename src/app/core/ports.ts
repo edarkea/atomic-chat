@@ -1,6 +1,7 @@
 import { InjectionToken } from '@angular/core';
 import {
   CertificateTrustDecisionInput,
+  ChatStateInput,
   ConnectInput,
   ConnectionState,
   Contact,
@@ -34,6 +35,7 @@ export interface XmppPort {
   setPresence(input: PresenceInput): Promise<Result<Presence>>;
   listRoster(accountId: string): Promise<Result<Contact[]>>;
   sendMessage(input: MessageSendInput): Promise<Result<Message>>;
+  sendChatState?(input: ChatStateInput): Promise<Result<void>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 

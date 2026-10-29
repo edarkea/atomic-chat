@@ -58,8 +58,11 @@ export class ConversationViewComponent {
   readonly historyLoading = input.required<boolean>();
   readonly hasOlderMessages = input.required<boolean>();
   readonly hasNewerMessages = input.required<boolean>();
+  readonly typing = input(false);
 
   readonly draftChange = output<string>();
+  readonly typingFocus = output<void>();
+  readonly typingBlur = output<void>();
   readonly messageSend = output<void>();
   readonly attach = output<void>();
   readonly accept = output<string>();

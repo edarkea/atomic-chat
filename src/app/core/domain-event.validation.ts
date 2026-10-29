@@ -4,6 +4,7 @@ import {
   ConnectionState,
   AppErrorCode,
   CertificateVerificationErrorCode,
+  ChatStateEvent,
   DomainEventPayloadMap,
   DomainEventType,
   FileOffer,
@@ -165,6 +166,7 @@ const domainEventTypes: readonly DomainEventType[] = [
   'roster.changed',
   'message.stateChanged',
   'message.received',
+  'chatState.changed',
   'certificate.trustRequired',
   'muc.stateChanged',
   'muc.participantChanged',
@@ -200,11 +202,21 @@ function isPresence(value: unknown): value is Presence & { accountId?: string } 
   if (!isRecord(value)) return false;
   return (
     isString(value.jid) &&
-    isOneOf(value.availability, ['available', 'unavailable']) &&
+    isOneOf(value.availability, ['available', 'away', 'extended-away', 'dnd', 'unavailable', 'unknown']) &&
     isOptionalOneOf(value.mode, ['chat', 'away', 'dnd', 'xa']) &&
     isOptionalString(value.status) &&
     isString(value.updatedAt) &&
     isOptionalString(value.accountId)
+  );
+}
+
+function isChatStateEvent(value: unknown): value is ChatStateEvent {
+  return (
+    isRecord(value) &&
+    isString(value.accountId) &&
+    isString(value.conversationId) &&
+    isString(value.senderJid) &&
+    isOneOf(value.state, ['active', 'composing', 'paused', 'inactive', 'gone'])
   );
 }
 
@@ -449,6 +461,8 @@ export function validateDomainEvent(value: unknown): TypedDomainEvent | undefine
     case 'message.stateChanged':
     case 'message.received':
       return isMessage(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
+    case 'chatState.changed':
+      return isChatStateEvent(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
     case 'certificate.trustRequired':
       return isCertificateTrustRequest(value.payload)
         ? typedEvent(value, value.type, value.payload)

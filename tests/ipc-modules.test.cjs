@@ -23,6 +23,7 @@ const channels = [
   'presence.set',
   'roster.list',
   'message.send',
+  'chatState.send',
   'muc.discover',
   'muc.join',
   'muc.leave',
@@ -159,12 +160,12 @@ test('registers every existing IPC channel exactly once', () => {
 test('each domain registrar owns only its assigned channels', () => {
   const harness = createHarness();
   const groups = [
-    [registerAccountHandlers, channels.slice(0, 9)],
-    [registerMucHandlers, channels.slice(9, 13)],
-    [registerFileHandlers, channels.slice(13, 18)],
-    [registerHistoryHandlers, channels.slice(18, 21)],
-    [registerPreferenceHandlers, channels.slice(21, 24)],
-    [registerConnectionProfileHandlers, channels.slice(24, 28)],
+    [registerAccountHandlers, channels.slice(0, 10)],
+    [registerMucHandlers, channels.slice(10, 14)],
+    [registerFileHandlers, channels.slice(14, 19)],
+    [registerHistoryHandlers, channels.slice(19, 22)],
+    [registerPreferenceHandlers, channels.slice(22, 25)],
+    [registerConnectionProfileHandlers, channels.slice(25, 29)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();

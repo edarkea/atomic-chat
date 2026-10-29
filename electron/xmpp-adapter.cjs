@@ -127,6 +127,9 @@ class XmppAdapter {
   sendMessage(accountId, input) {
     return this.rosterMessaging.sendMessage(accountId, input);
   }
+  sendChatState(accountId, input) {
+    return this.rosterMessaging.sendChatState(accountId, input);
+  }
 
   sendFile(accountId, input) {
     return this.fileService.sendFile(accountId, input);

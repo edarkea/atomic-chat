@@ -45,6 +45,9 @@
         <span class="brand-mark">⌁</span><strong>ATOMIC CHAT</strong
         ><span class="concept">Concepto</span>
       </div>
+      @if (totalUnread() > 0) {
+        <span class="global-unread" aria-label="Mensajes no leídos">{{ totalUnread() }}</span>
+      }
     </header>
     <section class="workspace">
       <app-sidebar
@@ -64,6 +67,7 @@
         (searchChange)="search.set($event)"
         (useJid)="useJid()"
         (selectContact)="selectContact($event)"
+        (directoryToggle)="toggleDirectory()"
         (refreshRoster)="chat.refreshRoster()"
         (disconnect)="disconnect()"
       />
@@ -95,7 +99,10 @@
             [historyLoading]="chat.historyLoading()"
             [hasOlderMessages]="chat.hasOlderMessages()"
             [hasNewerMessages]="chat.hasNewerMessages()"
-            (draftChange)="draft.set($event)"
+            [typing]="typingContact()"
+            (draftChange)="draftChanged($event)"
+            (typingFocus)="typingFocus()"
+            (typingBlur)="typingBlur()"
             (messageSend)="send()"
             (attach)="attach()"
             (accept)="files.accept($event)"

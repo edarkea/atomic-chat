@@ -7,67 +7,90 @@
     (ngModelChange)="searchChange.emit($event)"
     (keyup.enter)="useJid.emit()"
 /></label>
-<p class="section-label">CONVERSACIONES</p>
+<header class="conversation-heading">
+  <p class="section-label">{{ model().directoryOpen ? 'DIRECTORIO' : 'MI ÁREA DE TRABAJO' }}</p>
+  <button
+    class="directory-toggle"
+    type="button"
+    (click)="directoryToggle.emit()"
+    [attr.aria-label]="model().directoryOpen ? 'Volver a conversaciones' : 'Iniciar o unirse a un chat'"
+  >{{ model().directoryOpen ? '←' : '+' }}</button>
+</header>
 <nav class="conversation-list" aria-label="Conversaciones">
-  @for (roomState of model().joinedRooms; track roomState.room.jid) {
-    <button
-      class="conversation-item muc-conversation-item"
-      [class.active]="isRoomSelected(roomState.room.jid)"
-      [attr.aria-current]="isRoomSelected(roomState.room.jid) ? 'page' : null"
-      type="button"
-      (click)="selectRoom.emit(roomState.room.jid)"
-      [attr.aria-label]="'Abrir sala ' + roomState.room.room"
-    >
-      <span class="avatar muc-avatar" aria-hidden="true">⌂</span
-      ><span class="contact-copy"
-        ><strong>{{ roomState.room.room }}</strong
-        ><small>{{ roomState.room.service }}</small
-        ><small class="contact-groups"
-          >Sala MUC · {{ roomState.participants.length }} participantes</small
-        ></span
+  @if (!model().directoryOpen) {
+    @for (roomState of model().joinedRooms; track roomState.room.jid) {
+      <button
+        class="conversation-item muc-conversation-item"
+        [class.active]="isRoomSelected(roomState.room.jid)"
+        [attr.aria-current]="isRoomSelected(roomState.room.jid) ? 'page' : null"
+        type="button"
+        (click)="selectRoom.emit(roomState.room.jid)"
+        [attr.aria-label]="'Abrir sala ' + roomState.room.room"
       >
-    </button>
-  }
-  @for (contact of model().filteredContacts; track contact.jid) {
-    <button
-      class="conversation-item"
-      [class.active]="isDirectSelected(contact.jid)"
-      [attr.aria-current]="isDirectSelected(contact.jid) ? 'page' : null"
-      type="button"
-      (click)="selectContact.emit(contact)"
-    >
-      <span class="avatar">♙</span
-      ><span class="contact-copy"
-        ><strong
-          ><i
-            class="contact-presence"
-            [class]="'contact-presence ' + remotePresenceDot(contact)"
-            aria-hidden="true"
-          ></i
-          >{{ contactName(contact) }}</strong
-        ><small>{{ contact.jid }}</small
-        ><small class="contact-groups"
-          >{{ contactKind(contact) }} · {{ remotePresenceLabel(contact) }}</small
-        ></span
+        <span class="avatar muc-avatar" aria-hidden="true">⌂</span
+        ><span class="contact-copy"
+          ><strong>{{ roomState.room.room }}</strong
+          ><small>{{ roomState.room.service }}</small
+          ><small class="contact-groups"
+            >Sala MUC · {{ roomState.participants.length }} participantes</small
+          ></span
+        ><strong class="unread-badge" [hidden]="unreadCount('muc', roomState.room.jid) === 0">{{
+          unreadCount('muc', roomState.room.jid)
+        }}</strong>
+      </button>
+    }
+    @for (contact of (model().workspaceContacts || model().filteredContacts); track contact.jid) {
+      <button
+        class="conversation-item"
+        [class.active]="isDirectSelected(contact.jid)"
+        [attr.aria-current]="isDirectSelected(contact.jid) ? 'page' : null"
+        type="button"
+        (click)="selectContact.emit(contact)"
       >
-    </button>
-  }
-  @if (model().filteredContacts.length === 0 && model().search.includes('@')) {
-    <button
-      class="conversation-item"
-      [class.active]="isDirectSelected(model().search)"
-      [attr.aria-current]="isDirectSelected(model().search) ? 'page' : null"
-      type="button"
-      (click)="useJid.emit()"
-    >
-      <span class="avatar">＋</span
-      ><span
-        ><strong>Nuevo chat</strong><small>{{ model().search }}</small></span
+        <span class="avatar">♙</span
+        ><span class="contact-copy"
+          ><strong
+            ><i
+              class="contact-presence"
+              [class]="'contact-presence ' + remotePresenceDot(contact)"
+              aria-hidden="true"
+            ></i
+            >{{ contactName(contact) }}</strong
+          ><small class="contact-groups"
+            >{{ contactKind(contact) }} · {{ remotePresenceLabel(contact) }}</small
+          ></span
+        ><strong class="unread-badge" [hidden]="unreadCount('direct', contact.jid) === 0">{{
+          unreadCount('direct', contact.jid)
+        }}</strong>
+      </button>
+    }
+    @if ((model().workspaceContacts || model().filteredContacts).length === 0) {
+      <p class="empty">No hay conversaciones todavía. Usa + para iniciar un chat.</p>
+    }
+  } @else {
+    @for (contact of model().filteredContacts; track contact.jid) {
+      <button class="conversation-item" type="button" (click)="selectContact.emit(contact)">
+        <span class="avatar">♙</span
+        ><span class="contact-copy"
+          ><strong>{{ contactName(contact) }}</strong
+          ><small class="contact-groups">Contacto conocido del roster</small></span
+        >
+      </button>
+    }
+    @if (model().filteredContacts.length === 0 && model().search.includes('@')) {
+      <button
+        class="conversation-item"
+        [class.active]="isDirectSelected(model().search)"
+        type="button"
+        (click)="useJid.emit()"
       >
-    </button>
-  }
-  @if (model().filteredContacts.length === 0 && !model().search) {
-    <p class="empty">No hay contactos cargados.</p>
+        <span class="avatar">＋</span
+        ><span class="contact-copy"><strong>Nuevo chat</strong><small>{{ model().search }}</small></span>
+      </button>
+    }
+    @if (model().filteredContacts.length === 0 && !model().search) {
+      <p class="empty">No hay contactos cargados.</p>
+    }
   }
 </nav>
 <div class="sidebar-actions">

@@ -74,6 +74,8 @@ export class App {
   protected readonly selectedProfileId = signal('');
   protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
   protected readonly search = signal('');
+  protected readonly directoryOpen = signal(false);
+  protected readonly totalUnread = computed(() => this.chat.unreadTotal?.() ?? 0);
   protected readonly conversationSelection = signal<ConversationSelection>({
     kind: 'none',
     accountId: '',
@@ -110,11 +112,35 @@ export class App {
     const selection = this.activeSelection();
     return selection.kind === 'direct' ? selection.jid : '';
   });
-  protected readonly joinedRooms = computed(() =>
-    this.muc
+  protected readonly joinedRooms = computed(() => {
+    const activity = this.muc.roomActivity?.() ?? new Map<string, number>();
+    return this.muc
       .states()
-      .filter((state) => state.accountId === this.chat.accountId() && state.status === 'joined'),
-  );
+      .filter((state) => state.accountId === this.chat.accountId() && state.status === 'joined')
+      .slice()
+      .sort(
+        (left, right) =>
+          (activity.get(right.room.jid.toLowerCase()) || 0) -
+            (activity.get(left.room.jid.toLowerCase()) || 0) ||
+          left.room.jid.localeCompare(right.room.jid),
+      );
+  });
+  protected readonly workspaceContacts = computed(() => {
+    const term = this.search().trim().toLowerCase();
+    const summariesSignal = this.chat.conversationSummaries;
+    if (!summariesSignal) return undefined;
+    const summaries = summariesSignal();
+    return summaries
+      .slice()
+      .sort((left, right) =>
+        (right.lastMessageAt || 0) - (left.lastMessageAt || 0) || left.jid.localeCompare(right.jid),
+      )
+      .filter((summary) => !term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term))
+      .map((summary) =>
+        this.chat.contacts().find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
+        ({ jid: summary.jid, name: summary.title, groups: [], source: 'conversation' } satisfies Contact),
+      );
+  });
   protected readonly activeRoomState = computed(() => {
     const selection = this.activeSelection();
     return selection.kind === 'muc' ? this.joinedRoom(selection.roomJid) : undefined;
@@ -141,6 +167,10 @@ export class App {
           message.accountId === accountId &&
           (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid),
       );
+  });
+  protected readonly typingContact = computed(() => {
+    const jid = this.bareJid(this.selectedJid());
+    return Boolean(jid && this.chat.chatStates?.().get(jid) === 'composing');
   });
   protected readonly conversationTimeline = computed<ReadonlyArray<ConversationTimelineItem>>(
     () => {
@@ -205,8 +235,12 @@ export class App {
     },
     conversations: {
       search: this.search(),
+      accountId: this.chat.accountId(),
       joinedRooms: this.joinedRooms(),
       filteredContacts: this.filteredContacts(),
+      workspaceContacts: this.workspaceContacts(),
+      directoryOpen: this.directoryOpen(),
+      unreadCounts: this.chat.unreadCounts?.() ?? new Map(),
       selectedJid: this.selectedJid(),
       selectedRoomJid: this.muc.selectedRoomJid(),
     },
@@ -507,19 +541,21 @@ export class App {
     await this.chat.decideCertificate(decision);
   }
   protected selectContact(contact: Contact): void {
+    this.directoryOpen.set(false);
     this.followLatest();
     this.selectedContact.set(contact);
     this.conversationSelection.set({
       kind: 'direct',
       accountId: this.chat.accountId(),
-      jid: contact.jid,
+      jid: this.bareJid(contact.jid),
     });
     void this.scrollAfterConversationLoad(contact.jid);
   }
   protected useJid(): void {
     if (this.search().includes('@')) {
       this.followLatest();
-      const jid = this.search().trim();
+      const jid = this.bareJid(this.search().trim());
+      this.directoryOpen.set(false);
       this.selectedContact.set(undefined);
       this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid });
       void this.scrollAfterConversationLoad(jid);
@@ -548,6 +584,19 @@ export class App {
     } catch {
       this.chat.error.set('No fue posible enviar el mensaje.');
     }
+  }
+  protected toggleDirectory(): void {
+    this.directoryOpen.update((value) => !value);
+  }
+  protected draftChanged(value: string): void {
+    this.draft.set(value);
+    void this.chat.updateTypingState(this.selectedJid(), value);
+  }
+  protected typingFocus(): void {
+    void this.chat.setTypingActivity(this.selectedJid(), 'active');
+  }
+  protected typingBlur(): void {
+    void this.chat.setTypingActivity(this.selectedJid(), 'inactive');
   }
   protected async attach(): Promise<void> {
     await this.files.send(this.selectedJid());

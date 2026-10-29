@@ -4,7 +4,7 @@
     <strong>{{
       activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
     }}</strong>
-    <small>{{ selectedJid() ? 'Conversación individual' : 'Sin destinatario' }}</small>
+    <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
   </div>
   <span class="more" aria-hidden="true">•••</span>
 </header>
@@ -43,6 +43,9 @@
     }
   }
 </div>
+@if (typing()) {
+  <p class="typing-indicator" role="status">Está escribiendo…</p>
+}
 @if (error()) {
   <p class="composer-error" role="alert">{{ error() }}</p>
 }
@@ -54,6 +57,8 @@
   [showAttach]="true"
   [showEmoji]="true"
   (draftChange)="draftChange.emit($event)"
+  (inputFocus)="typingFocus.emit()"
+  (inputBlur)="typingBlur.emit()"
   (messageSubmitted)="messageSend.emit()"
   (attach)="attach.emit()"
 />

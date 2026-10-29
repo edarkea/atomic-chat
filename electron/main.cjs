@@ -30,6 +30,28 @@ const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
 });
 
 let runtime;
+let attentionRequested = false;
+let dockBounceId;
+
+function clearApplicationAttention() {
+  attentionRequested = false;
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) window.flashFrame(false);
+  });
+  if (typeof app.dock?.cancelBounce === 'function' && dockBounceId !== undefined) {
+    app.dock.cancelBounce(dockBounceId);
+    dockBounceId = undefined;
+  }
+}
+
+function requestApplicationAttention() {
+  if (attentionRequested) return;
+  attentionRequested = true;
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed() && !window.isFocused()) window.flashFrame(true);
+  });
+  if (typeof app.dock?.bounce === 'function') dockBounceId = app.dock.bounce('informational');
+}
 
 function assertSender(event) {
   const packagedUrl = pathToFileURL(
@@ -43,13 +65,15 @@ function assertSender(event) {
 }
 
 function createWindow() {
-  return createMainWindow({
+  const mainWindow = createMainWindow({
     BrowserWindow,
     preloadPath: path.join(__dirname, 'preload.cjs'),
     productionHtmlPath: path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html'),
     devServerUrl: process.env.ATOMIC_CHAT_DEV_SERVER,
     onDestroyed: (senderId) => historySecurity.destroySender(senderId),
   });
+  mainWindow.on('focus', clearApplicationAttention);
+  return mainWindow;
 }
 
 function attachEventSources() {
@@ -58,6 +82,7 @@ function attachEventSources() {
   outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
   runtime.xmpp.onEvent((event) => {
     if (event.type === 'message.received') {
+      requestApplicationAttention();
       try {
         const message = event.payload;
         if (

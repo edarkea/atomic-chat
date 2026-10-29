@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld(
     presence: Object.freeze({ set: (input) => invoke('presence.set', input) }),
     roster: Object.freeze({ list: (accountId) => invoke('roster.list', accountId) }),
     messaging: Object.freeze({ send: (input) => invoke('message.send', input) }),
+    chatState: Object.freeze({ send: (input) => invoke('chatState.send', input) }),
     muc: Object.freeze({
       discover: (input) => invoke('muc.discover', input),
       join: (input) => invoke('muc.join', input),

@@ -16,6 +16,8 @@ export class MessageComposerComponent {
   readonly showAttach = input(false);
   readonly showEmoji = input(false);
   readonly draftChange = output<string>();
+  readonly inputFocus = output<void>();
+  readonly inputBlur = output<void>();
   readonly messageSubmitted = output<void>();
   readonly attach = output<void>();
 }

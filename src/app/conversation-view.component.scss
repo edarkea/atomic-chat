@@ -32,6 +32,11 @@
 .chat-content::-webkit-scrollbar-thumb:hover {
   background: var(--atomic-green);
 }
+.typing-indicator {
+  color: var(--atomic-green-soft);
+  font-size: 12px;
+  margin: 0 16px 8px;
+}
 .composer-error {
   background: var(--atomic-danger-surface);
   border: 1px solid #a64d4d;

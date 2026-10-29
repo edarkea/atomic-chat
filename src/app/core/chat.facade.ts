@@ -3,8 +3,11 @@ import { createOpaqueId } from './ids';
 import {
   CertificateTrustDecision,
   CertificateTrustRequest,
+  ChatState,
+  ChatStateInput,
   ConnectionState,
   Contact,
+  ConversationSummary,
   Message,
   Presence,
   PresenceInput,
@@ -12,6 +15,7 @@ import {
   Result,
   XmppConnectionProfile,
 } from './domain';
+import { UnreadStore } from './unread.store';
 import {
   ACCOUNT_PORT,
   CERTIFICATE_PORT,
@@ -40,6 +44,7 @@ export class ChatFacade {
   private readonly history = inject<HistoryPort>(HISTORY_PORT);
   private readonly preferencesPort = inject<PreferencesPort>(PREFERENCES_PORT);
   private readonly xmpp = inject<XmppPort>(XMPP_PORT);
+  private readonly unread = inject(UnreadStore);
   readonly accountId = signal(this.account.getConfig()?.accountId || '');
   readonly connection = signal<ConnectionState>({
     accountId: this.accountId(),
@@ -48,6 +53,7 @@ export class ChatFacade {
     since: new Date().toISOString(),
   });
   readonly contacts = signal<Contact[]>([]);
+  readonly conversationSummaries = signal<ReadonlyArray<ConversationSummary>>([]);
   readonly messages = signal<Message[]>([]);
   readonly historyLoading = signal(false);
   readonly hasOlderMessages = signal(false);
@@ -66,15 +72,22 @@ export class ChatFacade {
     autoLogin: false,
   });
   readonly profiles = signal<ReadonlyArray<XmppConnectionProfile>>([]);
+  readonly unreadCounts = this.unread.counts.asReadonly();
+  readonly unreadTotal = this.unread.total;
+  readonly chatStates = signal<ReadonlyMap<string, ChatState>>(new Map());
   private identityGeneration = 0;
   private contactsOwner = '';
   private olderCursor: string | null = null;
   private newerCursor: string | null = null;
   private historyPages: Array<{ cursor: string }> = [];
   private historyContext: HistoryContext | null = null;
+  private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly typingStates = new Map<string, ChatState>();
+  private readonly outgoingChatStates = new Map<string, ChatState>();
   private readonly accountContactReset = effect(() => {
     this.accountId();
     this.contacts.set([]);
+    this.conversationSummaries.set([]);
   });
 
   constructor() {
@@ -86,6 +99,10 @@ export class ChatFacade {
       if (event.type === 'connection.stateChanged') {
         const state = event.payload;
         if (state.accountId === this.accountId()) this.connection.set(state);
+        if (state.accountId === this.accountId() && ['idle', 'failed'].includes(state.status)) {
+          this.clearChatStates();
+          this.unread.resetAccount(state.accountId);
+        }
       }
       if (event.type === 'presence.changed') {
         const presence = event.payload;
@@ -107,10 +124,22 @@ export class ChatFacade {
         const message = event.payload;
         if (message.accountId === this.accountId()) {
           this.upsertMessage(message, message.conversationId || message.senderJid);
+          if (event.type === 'message.received' && !this.isOwnMessage(message))
+            this.unread.recordIncoming(
+              message.accountId,
+              'direct',
+              message.conversationId || message.senderJid,
+              message.clientMessageId || message.id,
+              this.historyContext?.conversationId === this.bareConversation(message.conversationId),
+            );
         }
       }
+      if (event.type === 'chatState.changed') this.receiveChatState(event.payload);
     });
-    this.destroyRef.onDestroy(unsubscribe);
+    this.destroyRef.onDestroy(() => {
+      unsubscribe();
+      this.clearChatStates();
+    });
   }
 
   async decideCertificate(decision: CertificateTrustDecision): Promise<void> {
@@ -241,6 +270,8 @@ export class ChatFacade {
   ): Promise<boolean> {
     const generation = ++this.identityGeneration;
     const requestedAccount = accountId.trim();
+    const previousAccount = this.accountId();
+    if (previousAccount && previousAccount !== requestedAccount) this.unread.resetAccount(previousAccount);
     this.error.set(null);
     this.certificateRequest.set(null);
     this.accountId.set(requestedAccount);
@@ -337,6 +368,16 @@ export class ChatFacade {
       }
       if (!this.isCurrent(generation, requestedAccount)) return false;
       this.connection.set(result.value);
+      this.contacts.update((items) =>
+        items.map((contact) => ({
+          ...contact,
+          presence: {
+            jid: contact.jid,
+            availability: 'unknown' as const,
+            updatedAt: new Date().toISOString(),
+          },
+        })),
+      );
       const roster = await this.xmpp.listRoster(requestedAccount);
       if (roster.ok && this.isCurrent(generation, requestedAccount)) this.mergeRoster(roster.value);
       if (this.isCurrent(generation, requestedAccount)) {
@@ -360,6 +401,8 @@ export class ChatFacade {
         status: 'idle',
         since: new Date().toISOString(),
       });
+      this.clearChatStates();
+      this.unread.resetAccount(this.accountId());
     }
   }
 
@@ -415,6 +458,7 @@ export class ChatFacade {
         this.hasOlderMessages.set(result.value.hasMore);
         this.hasNewerMessages.set(false);
         this.messages.set(result.value.items.slice(-200));
+        this.unread.markRead(accountId, 'direct', context.conversationId);
       } else this.error.set(result.error.message);
     } finally {
       if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false);
@@ -486,6 +530,7 @@ export class ChatFacade {
         body: { kind: 'text', text: cleanText },
       });
       if (result.ok) {
+        await this.sendChatState(conversationId, 'active');
         this.upsertMessage(result.value, recipient);
         return true;
       }
@@ -497,6 +542,36 @@ export class ChatFacade {
     }
   }
 
+  async updateTypingState(conversationId: string, draft: string): Promise<void> {
+    const state: ChatState = draft.trim() ? 'composing' : 'active';
+    await this.sendChatState(conversationId, state);
+    const key = this.bareConversation(conversationId);
+    const previous = this.typingTimers.get(key);
+    if (previous) clearTimeout(previous);
+    if (state === 'composing') {
+      this.typingTimers.set(
+        key,
+        setTimeout(() => {
+          void this.sendChatState(conversationId, 'paused');
+          this.typingTimers.delete(key);
+        }, 1200),
+      );
+    }
+  }
+
+  async setTypingActivity(conversationId: string, state: Extract<ChatState, 'active' | 'inactive'>): Promise<void> {
+    const timer = this.typingTimers.get(this.bareConversation(conversationId));
+    if (timer) {
+      clearTimeout(timer);
+      this.typingTimers.delete(this.bareConversation(conversationId));
+    }
+    await this.sendChatState(conversationId, state);
+  }
+
+  markConversationRead(conversationId: string): void {
+    this.unread.markRead(this.accountId(), 'direct', conversationId);
+  }
+
   private async loadStoredConversations(accountId: string, generation: number): Promise<void> {
     try {
       const result = await this.history.conversations({
@@ -505,7 +580,19 @@ export class ChatFacade {
         accountId,
       });
       if (!this.isCurrent(generation, accountId) || !result.ok) return;
-      for (const conversation of result.value) this.addConversation(accountId, conversation.jid);
+      this.conversationSummaries.set(
+        result.value.map((conversation) => ({
+          id: `${accountId}|direct|${conversation.jid}`,
+          accountId,
+          kind: 'direct' as const,
+          jid: this.bareConversation(conversation.jid),
+          title: this.contactTitle(conversation.jid),
+          unreadCount: this.unreadCount(accountId, 'direct', conversation.jid),
+          lastMessageAt: Date.parse(conversation.lastActivity) || undefined,
+        })),
+      );
+      for (const conversation of result.value)
+        this.addConversation(accountId, conversation.jid, Date.parse(conversation.lastActivity));
     } catch {
       // History recovery is best effort; it must not turn a valid login into a failure.
     }
@@ -620,17 +707,35 @@ export class ChatFacade {
       next.splice(low, 0, message);
       return next.length > 200 ? next.slice(next.length - 200) : next;
     });
-    if (conversationId) this.addConversation(message.accountId, conversationId);
+    if (conversationId) this.addConversation(message.accountId, conversationId, Date.parse(message.createdAt));
   }
 
-  private addConversation(accountId: string, jid: string): void {
+  private addConversation(accountId: string, jid: string, activity = Date.now()): void {
     if (accountId !== this.accountId() || !jid) return;
+    const safeActivity = Number.isFinite(activity) ? activity : Date.now();
     const bare = jid.split('/')[0].toLowerCase();
     this.contacts.update((items) =>
       items.some((item) => item.jid.split('/')[0].toLowerCase() === bare)
         ? items
         : [...items, { jid: bare, name: bare, groups: [], source: 'conversation' }],
     );
+    this.conversationSummaries.update((items) => {
+      const existing = items.find(
+        (item) => item.accountId === accountId && item.kind === 'direct' && item.jid === bare,
+      );
+      const next: ConversationSummary = {
+        id: `${accountId}|direct|${bare}`,
+        accountId,
+        kind: 'direct',
+        jid: bare,
+        title: this.contactTitle(bare),
+        unreadCount: this.unreadCount(accountId, 'direct', bare),
+        lastMessageAt: Math.max(existing?.lastMessageAt || 0, safeActivity),
+      };
+      return existing
+        ? items.map((item) => (item.id === existing.id ? next : item))
+        : [...items, next];
+    });
   }
 
   private mergeRoster(roster: Contact[]): void {
@@ -651,7 +756,14 @@ export class ChatFacade {
         ...contact,
         jid,
         source: 'roster',
-        ...(authorized && old?.presence ? { presence: old.presence } : {}),
+        presence:
+          authorized && old?.presence
+            ? old.presence
+            : {
+                jid,
+                availability: 'unknown',
+                updatedAt: new Date().toISOString(),
+              },
       });
     }
     this.contacts.update((items) => {
@@ -665,5 +777,76 @@ export class ChatFacade {
 
   private bareConversation(conversationId: string): string {
     return conversationId.split('/')[0].toLowerCase();
+  }
+
+  private contactTitle(jid: string): string {
+    const bare = this.bareConversation(jid);
+    return this.contacts().find((contact) => this.bareConversation(contact.jid) === bare)?.name?.trim() || bare;
+  }
+
+  private unreadCount(accountId: string, kind: 'direct' | 'muc', jid: string): number {
+    return this.unread.counts().get(`${accountId.toLowerCase()}|${kind}|${this.bareConversation(jid)}`) || 0;
+  }
+
+  private isOwnMessage(message: Message): boolean {
+    return this.bareConversation(message.senderJid) === this.bareConversation(message.accountId);
+  }
+
+  private async sendChatState(conversationId: string, state: ChatState): Promise<void> {
+    const send = this.xmpp.sendChatState;
+    if (!send || !this.isConnected() || !conversationId.trim()) return;
+    const key = this.bareConversation(conversationId);
+    if (this.outgoingChatStates.get(key) === state) return;
+    this.outgoingChatStates.set(key, state);
+    const input: ChatStateInput = {
+      version: 1,
+      requestId: createOpaqueId('chat-state'),
+      accountId: this.accountId(),
+      conversationId: conversationId.trim(),
+      state,
+    };
+    try {
+      await send.call(this.xmpp, input);
+    } catch {
+      if (this.outgoingChatStates.get(key) === state) this.outgoingChatStates.delete(key);
+      // Typing notifications are best effort and must never block chat messages.
+    }
+  }
+
+  private receiveChatState(event: { accountId: string; conversationId: string; senderJid: string; state: ChatState }): void {
+    if (event.accountId !== this.accountId() || this.isOwnJid(event.senderJid)) return;
+    const key = this.bareConversation(event.conversationId);
+    const previous = this.typingTimers.get(`incoming:${key}`);
+    if (previous) clearTimeout(previous);
+    if (event.state === 'composing') {
+      this.typingStates.set(key, event.state);
+      this.typingTimers.set(
+        `incoming:${key}`,
+        setTimeout(() => {
+          this.typingStates.delete(key);
+          this.publishChatStates();
+        }, 6000),
+      );
+    } else {
+      this.typingStates.delete(key);
+      this.typingTimers.delete(`incoming:${key}`);
+    }
+    this.publishChatStates();
+  }
+
+  private isOwnJid(jid: string): boolean {
+    return this.bareConversation(jid) === this.bareConversation(this.accountId());
+  }
+
+  private publishChatStates(): void {
+    this.chatStates.set(new Map(this.typingStates));
+  }
+
+  private clearChatStates(): void {
+    for (const timer of this.typingTimers.values()) clearTimeout(timer);
+    this.typingTimers.clear();
+    this.outgoingChatStates.clear();
+    this.typingStates.clear();
+    this.publishChatStates();
   }
 }

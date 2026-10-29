@@ -229,6 +229,27 @@ function registerAccountHandlers({
     persistence.saveMessage(value);
     return { ok: true, value, version: 1, requestId: requestId(event, input) };
   });
+  ipcMain.handle('chatState.send', async (event, input) => {
+    assertSender(event);
+    if (
+      !validVersion(input) ||
+      typeof input.accountId !== 'string' ||
+      !input.accountId.trim() ||
+      typeof input.conversationId !== 'string' ||
+      !input.conversationId.trim() ||
+      !['active', 'composing', 'paused', 'inactive', 'gone'].includes(input.state)
+    )
+      throw new Error('INVALID_INPUT');
+    const { xmpp } = getRuntime();
+    if (!historySecurity.authorize(event.sender.id, input.accountId)) throw new Error('UNAUTHORIZED');
+    if (!xmpp.sessions.has(input.accountId) || xmpp.states.get(input.accountId)?.status !== 'connected')
+      throw new Error('NOT_CONNECTED');
+    await xmpp.sendChatState(input.accountId, {
+      to: input.conversationId,
+      state: input.state,
+    });
+    return { ok: true, value: undefined, version: 1, requestId: requestId(event, input) };
+  });
 }
 
 module.exports = { registerAccountHandlers };

@@ -2,6 +2,13 @@ const crypto = require('node:crypto');
 const { xml } = require('@xmpp/client');
 
 function createRosterMessaging(adapter) {
+  const CHAT_STATES_NS = 'http://jabber.org/protocol/chatstates';
+  const availabilityFrom = (mode) =>
+    mode === 'away' ? 'away' : mode === 'xa' ? 'extended-away' : mode === 'dnd' ? 'dnd' : 'available';
+  const stateFromStanza = (stanza) =>
+    ['active', 'composing', 'paused', 'inactive', 'gone'].find(
+      (state) => Boolean(stanza.getChild(state, CHAT_STATES_NS)),
+    );
   return {
     async setPresence(accountId, presence) {
       const session = adapter.require(accountId);
@@ -64,6 +71,13 @@ function createRosterMessaging(adapter) {
       );
       return { ...input, status: 'sent', createdAt: new Date().toISOString() };
     },
+    async sendChatState(accountId, input) {
+      if (adapter.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
+      const session = adapter.require(accountId);
+      await session.send(
+        xml('message', { type: 'chat', to: input.to }, xml(input.state, { xmlns: CHAT_STATES_NS })),
+      );
+    },
     handlePresence(accountId, stanza) {
       const type = stanza.attrs.type;
       if (
@@ -80,16 +94,19 @@ function createRosterMessaging(adapter) {
         resources.set(`${jid}/${resource}`, {
           mode: stanza.getChildText('show') || undefined,
           status: stanza.getChildText('status') || undefined,
+          priority: Number.parseInt(stanza.getChildText('priority') || '0', 10) || 0,
         });
       adapter.remoteResources.set(accountId, resources);
       const active = [...resources.entries()].filter(([key]) => key.startsWith(`${jid}/`));
-      const latest = active[active.length - 1]?.[1];
+      const latest = active
+        .slice()
+        .sort((left, right) => (right[1].priority || 0) - (left[1].priority || 0))[0]?.[1];
       adapter.emit({
         type: 'presence.changed',
         payload: {
           accountId,
           jid,
-          availability: active.length ? 'available' : 'unavailable',
+          availability: active.length ? availabilityFrom(latest?.mode) : 'unavailable',
           mode: latest?.mode,
           status: latest?.status,
           updatedAt: new Date().toISOString(),
@@ -98,8 +115,22 @@ function createRosterMessaging(adapter) {
       return true;
     },
     handleMessage(accountId, stanza) {
-      if (!stanza.getChildText('body')) return false;
       const senderJid = adapter.bareJid(stanza.attrs.from || accountId);
+      if (stanza.attrs.type === 'groupchat' || senderJid.toLowerCase() === accountId.toLowerCase())
+        return false;
+      const chatState = stateFromStanza(stanza);
+      if (chatState) {
+        adapter.emit({
+          type: 'chatState.changed',
+          payload: {
+            accountId,
+            conversationId: senderJid,
+            senderJid,
+            state: chatState,
+          },
+        });
+      }
+      if (!stanza.getChildText('body')) return Boolean(chatState);
       const bodyText = stanza.getChildText('body');
       const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id;
       const identity = `${accountId}|${senderJid}|${explicitId || crypto.randomUUID()}`;

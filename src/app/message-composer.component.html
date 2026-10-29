@@ -15,6 +15,8 @@
     [ngModel]="draft()"
     [ngModelOptions]="{ standalone: true }"
     (ngModelChange)="draftChange.emit($event)"
+    (focus)="inputFocus.emit()"
+    (blur)="inputBlur.emit()"
     [placeholder]="placeholder()"
     autocomplete="off"
     [disabled]="disabled()"

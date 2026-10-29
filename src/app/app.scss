@@ -33,6 +33,16 @@
   gap: var(--atomic-space-2);
   letter-spacing: 0.01em;
 }
+.global-unread {
+  background: var(--atomic-green);
+  border-radius: 999px;
+  color: var(--atomic-bg);
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 22px;
+  padding: 4px 7px;
+  text-align: center;
+}
 
 .workspace {
   display: grid;
