@@ -22,15 +22,18 @@ function fileMetadata(stats) {
     ino: String(stats.ino),
     size: String(stats.size),
     mtimeMs: String(stats.mtimeMs),
-    ctimeMs: String(stats.ctimeMs),
     birthtimeMs: String(stats.birthtimeMs),
   };
 }
 
 function sameMetadata(left, right) {
-  return ['dev', 'ino', 'size', 'mtimeMs', 'ctimeMs', 'birthtimeMs'].every(
-    (key) => left[key] === right[key],
-  );
+  return ['dev', 'ino', 'size', 'mtimeMs', 'birthtimeMs'].every((key) => left[key] === right[key]);
+}
+
+function localActionError(code, message, reason) {
+  const error = transferError(code, message);
+  error.reason = reason;
+  return error;
 }
 
 class FileLocalActionRegistry {
@@ -87,20 +90,38 @@ class FileLocalActionRegistry {
     if (!this.shell || typeof this.shell.openPath !== 'function')
       throw transferError('UNSUPPORTED', 'abrir archivos no está disponible');
     const failure = await this.shell.openPath(reference.path);
-    if (failure) throw transferError('STORAGE_FAILED', 'no fue posible abrir el archivo');
+    if (failure)
+      throw localActionError(
+        'STORAGE_FAILED',
+        'no fue posible abrir el archivo',
+        'shell_open_failed',
+      );
   }
 
   async reveal(senderId, input) {
     const reference = await this.resolve(senderId, input);
     this.assertSafeToOpen(reference);
     if (this.shell && typeof this.shell.showItemInFolder === 'function') {
-      this.shell.showItemInFolder(reference.path);
+      try {
+        this.shell.showItemInFolder(reference.path);
+      } catch {
+        throw localActionError(
+          'STORAGE_FAILED',
+          'no fue posible mostrar el archivo en su carpeta',
+          'shell_reveal_failed',
+        );
+      }
       return;
     }
     if (!this.shell || typeof this.shell.openPath !== 'function')
       throw transferError('UNSUPPORTED', 'abrir carpetas no está disponible');
     const failure = await this.shell.openPath(path.dirname(reference.path));
-    if (failure) throw transferError('STORAGE_FAILED', 'no fue posible abrir la carpeta');
+    if (failure)
+      throw localActionError(
+        'STORAGE_FAILED',
+        'no fue posible abrir la carpeta',
+        'shell_reveal_failed',
+      );
   }
 
   async resolve(senderId, input) {
@@ -120,7 +141,11 @@ class FileLocalActionRegistry {
       throw transferError('UNAUTHORIZED', 'la transferencia no está autorizada');
     const stats = await this.inspect(reference.path);
     if (!sameMetadata(reference.metadata, fileMetadata(stats)))
-      throw transferError('STORAGE_FAILED', 'el archivo ya no coincide con la transferencia');
+      throw localActionError(
+        'STORAGE_FAILED',
+        'el archivo ya no coincide con la transferencia',
+        'metadata_mismatch',
+      );
     reference.sequence = ++this.sequence;
     return reference;
   }
@@ -130,10 +155,18 @@ class FileLocalActionRegistry {
     try {
       stats = await this.lstat(filePath);
     } catch {
-      throw transferError('STORAGE_FAILED', 'el archivo ya no está disponible');
+      throw localActionError(
+        'STORAGE_FAILED',
+        'el archivo ya no está disponible',
+        'file_unavailable',
+      );
     }
     if (stats.isSymbolicLink() || !stats.isFile())
-      throw transferError('STORAGE_FAILED', 'la referencia no es un archivo regular');
+      throw localActionError(
+        'STORAGE_FAILED',
+        'la referencia no es un archivo regular',
+        'file_type_invalid',
+      );
     return stats;
   }
 
