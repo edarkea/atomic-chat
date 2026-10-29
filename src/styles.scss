@@ -23,6 +23,17 @@
   --atomic-danger: #ffb4b4;
   --atomic-danger-surface: #3d1c1c;
   --atomic-focus: #8dffa0;
+  --atomic-bubble-incoming: #0e3a21;
+  --atomic-bubble-outgoing: #267342;
+  --atomic-surface-concept: #24332b;
+  --atomic-border-avatar: #1b7540;
+  --atomic-message-outgoing-text: #effff0;
+  --atomic-action: #2d8b4b;
+  --atomic-action-hover: #3da85c;
+  --atomic-disabled-surface: #123c25;
+  --atomic-disabled-border: #28623b;
+  --atomic-disabled-text: #78a57f;
+  --atomic-panel-dialog: #061d10;
   --atomic-radius-sm: 5px;
   --atomic-radius-md: 8px;
   --atomic-radius-lg: 14px;
@@ -106,7 +117,7 @@ select:focus-visible {
   width: 27px;
 }
 .concept {
-  background: #24332b;
+  background: var(--atomic-surface-concept);
   border-radius: 999px;
   color: var(--atomic-text-muted);
   font-size: 12px;
@@ -123,7 +134,7 @@ select:focus-visible {
 .avatar {
   align-items: center;
   background: var(--atomic-surface);
-  border: 1px solid #1b7540;
+  border: 1px solid var(--atomic-border-avatar);
   border-radius: 50%;
   color: var(--atomic-green);
   display: inline-flex;
@@ -232,7 +243,7 @@ select:focus-visible {
 }
 
 .message {
-  background: #267342;
+  background: var(--atomic-bubble-outgoing);
   border-radius: var(--atomic-radius-lg);
   color: var(--atomic-text);
   font-size: 14px;
@@ -243,7 +254,7 @@ select:focus-visible {
   width: fit-content;
 }
 .message.incoming {
-  background: #0e3a21;
+  background: var(--atomic-bubble-incoming);
   margin-left: 0;
   margin-right: auto;
 }
@@ -269,7 +280,7 @@ select:focus-visible {
   color: var(--atomic-green-soft);
 }
 .message.outgoing .message-sender {
-  color: #effff0;
+  color: var(--atomic-message-outgoing-text);
 }
 
 .reference-message {
@@ -281,7 +292,7 @@ select:focus-visible {
   padding: 11px 13px;
 }
 .reference-message.incoming {
-  background: #0e3a21;
+  background: var(--atomic-bubble-incoming);
   margin-bottom: 8px;
 }
 

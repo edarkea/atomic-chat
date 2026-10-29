@@ -9,7 +9,7 @@
   z-index: 1000;
 }
 .certificate-dialog {
-  background: #061d10;
+  background: var(--atomic-panel-dialog);
   border: 1px solid var(--atomic-warning-strong);
   border-radius: var(--atomic-radius-md);
   box-shadow:
@@ -74,7 +74,7 @@
   overflow-x: hidden;
   overflow-y: auto;
   padding: 0 8px 4px 0;
-  scrollbar-color: var(--atomic-border) #061d10;
+  scrollbar-color: var(--atomic-border) var(--atomic-panel-dialog);
   scrollbar-width: thin;
 }
 .certificate-details dt {
@@ -110,7 +110,7 @@
   word-break: break-word;
 }
 .certificate-actions {
-  background: #061d10;
+  background: var(--atomic-panel-dialog);
   border-top: 1px solid var(--atomic-border);
   display: flex;
   flex: 0 0 auto;
@@ -138,9 +138,9 @@
   outline-offset: 1px;
 }
 .certificate-actions button.primary {
-  background: #2d8b4b;
+  background: var(--atomic-action);
   border-color: var(--atomic-green);
-  color: #effff0;
+  color: var(--atomic-message-outgoing-text);
 }
 @media (max-width: 520px), (max-height: 520px) {
   .certificate-dialog {

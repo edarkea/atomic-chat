@@ -53,9 +53,17 @@
   <section class="preferences-panel" aria-label="Preferencias">
     <strong>Preferencias</strong
     ><label
-      >Tema<select [ngModel]="model().preferences.theme" disabled>
-        <option value="atomic">Atomic</option>
+      >Tema<select [ngModel]="theme.themeId()" disabled>
+        <option value="atomic">Wasteland Terminal</option>
+        <option value="custom">Personalizado</option>
       </select></label
+    ><button
+      #themeStudioTrigger
+      type="button"
+      class="theme-studio-trigger"
+      (click)="openThemeStudio()"
+    >
+      Personalizar tema</button
     ><label class="check-preference"
       ><input
         type="checkbox"
@@ -73,3 +81,4 @@
     ><button type="button" (click)="resetPreferences.emit()">Restablecer</button>
   </section>
 }
+<app-theme-studio />

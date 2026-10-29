@@ -5,10 +5,13 @@ import {
   ElementRef,
   input,
   output,
+  inject,
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Preferences } from './core/domain';
+import { ThemeService } from './core/theme.service';
+import { ThemeStudioComponent } from './theme-studio.component';
 import { PresenceOption } from './sidebar.models';
 
 export interface OperatorPresenceModel {
@@ -26,7 +29,7 @@ export interface OperatorPresenceModel {
 
 @Component({
   selector: 'app-operator-presence',
-  imports: [FormsModule],
+  imports: [FormsModule, ThemeStudioComponent],
   templateUrl: './operator-presence.component.html',
   styleUrls: ['./operator-presence.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -34,7 +37,10 @@ export interface OperatorPresenceModel {
 export class OperatorPresenceComponent {
   @ViewChild('presenceTrigger') private readonly presenceTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('presenceMenu') private readonly presenceMenu?: ElementRef<HTMLElement>;
+  @ViewChild('themeStudioTrigger')
+  private readonly themeStudioTrigger?: ElementRef<HTMLButtonElement>;
 
+  protected readonly theme = inject(ThemeService);
   readonly model = input.required<OperatorPresenceModel>();
   readonly presenceToggle = output<void>();
   readonly presenceClose = output<void>();
@@ -45,6 +51,7 @@ export class OperatorPresenceComponent {
   readonly resetPreferences = output<void>();
 
   private presenceWasOpen = false;
+  private themeStudioWasOpen = false;
 
   constructor() {
     effect(() => {
@@ -55,6 +62,10 @@ export class OperatorPresenceComponent {
         queueMicrotask(() => this.presenceTrigger?.nativeElement.focus());
       }
       this.presenceWasOpen = isOpen;
+      const themeStudioOpen = this.theme.editorOpen();
+      if (!themeStudioOpen && this.themeStudioWasOpen)
+        queueMicrotask(() => this.themeStudioTrigger?.nativeElement.focus());
+      this.themeStudioWasOpen = themeStudioOpen;
     });
   }
 
@@ -105,6 +116,9 @@ export class OperatorPresenceComponent {
     if (event.key !== 'Escape') return;
     event.preventDefault();
     this.presenceClose.emit();
+  }
+  protected openThemeStudio(): void {
+    this.theme.openStudio();
   }
   private focusSelectedOption(): void {
     const options =

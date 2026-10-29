@@ -3,7 +3,7 @@
 }
 .composer {
   align-items: center;
-  border: 1px solid #388b50;
+  border: 1px solid var(--atomic-border);
   border-radius: var(--atomic-radius-md);
   display: flex;
   flex: 0 0 auto;
@@ -14,7 +14,7 @@
 }
 .composer:focus-within {
   border-color: var(--atomic-focus);
-  box-shadow: 0 0 0 3px #8dffa026;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--atomic-focus) 15%, transparent);
 }
 .composer input {
   background: transparent;

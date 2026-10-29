@@ -63,7 +63,7 @@
 }
 .composer-error {
   background: var(--atomic-danger-surface);
-  border: 1px solid #a64d4d;
+  border: 1px solid var(--atomic-danger);
   border-radius: var(--atomic-radius-sm);
   color: var(--atomic-danger);
   font-size: 13px;

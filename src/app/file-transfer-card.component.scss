@@ -3,16 +3,16 @@
 }
 .file-message {
   align-self: flex-start;
-  background: #0e3a21;
-  border: 1px solid #3f8f52;
+  background: var(--atomic-bubble-incoming);
+  border: 1px solid var(--atomic-border);
   display: grid;
   gap: 6px;
   max-width: min(420px, 82%);
   overflow-wrap: anywhere;
 }
 .file-message.outgoing {
-  background: #214f2f;
-  border-color: #74b85e;
+  background: var(--atomic-bubble-outgoing);
+  border-color: var(--atomic-border);
   margin-left: auto;
   margin-right: 0;
 }
@@ -39,7 +39,7 @@
 }
 .file-actions button,
 .file-message > button {
-  background: #17291b;
+  background: var(--atomic-surface);
   border: 1px solid var(--atomic-green);
   border-radius: var(--atomic-radius-sm);
   color: var(--atomic-text);

@@ -37,7 +37,9 @@
   display: flex;
   justify-content: space-between;
 }
-.conversation-heading .section-label { margin-bottom: 0; }
+.conversation-heading .section-label {
+  margin-bottom: 0;
+}
 .directory-toggle {
   background: transparent;
   border: 1px solid var(--atomic-border);
@@ -151,15 +153,15 @@
   background: #78927f;
 }
 .muc-conversation-item {
-  border-left: 3px solid #42b866;
+  border-left: 3px solid var(--atomic-green);
 }
 .muc-conversation-item .muc-avatar {
   background: var(--atomic-surface-hover);
-  border-color: #42b866;
-  color: #9bffae;
+  border-color: var(--atomic-green);
+  color: var(--atomic-green-soft);
 }
 .muc-conversation-item.active .muc-avatar {
-  background: #267342;
+  background: var(--atomic-bubble-outgoing);
 }
 .unread-badge {
   align-items: center;

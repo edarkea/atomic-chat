@@ -36,6 +36,7 @@ import { SidebarComponent, SidebarModel } from './sidebar.component';
 import { PresenceOption } from './sidebar.models';
 import { ActiveConversationStore } from './core/active-conversation.store';
 import { WindowFocusStore } from './core/window-focus.store';
+import { ThemeService } from './core/theme.service';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -62,6 +63,7 @@ export class App {
   private readonly activeConversation = inject(ActiveConversationStore);
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
+  protected readonly theme = inject(ThemeService);
   protected readonly fileActionPending = (transferId: string): boolean =>
     this.files.isLocalActionPending(transferId);
   protected readonly draft = signal('');
@@ -266,7 +268,11 @@ export class App {
       presenceOptionId: this.selectedPresenceOption().id,
       presenceStatus: this.presenceStatus(),
       settingsOpen: this.settingsOpen(),
-      preferences: this.chat.preferences(),
+      preferences: {
+        ...this.chat.preferences(),
+        theme: this.theme.themeId(),
+        ...(this.theme.themeId() === 'custom' ? { customTheme: this.theme.activePalette() } : {}),
+      },
     },
     muc: {
       nickname: this.mucNickname(),
@@ -764,6 +770,10 @@ export class App {
   protected updatePreferences(changes: Partial<Preferences>): void {
     void this.chat.updatePreferences(changes);
   }
+  protected async resetPreferences(): Promise<void> {
+    await this.chat.resetPreferences();
+    await this.theme.restoreOriginal();
+  }
   protected onUserScrollIntent(): void {
     this.conversationView?.onUserScrollIntent();
   }
@@ -842,6 +852,11 @@ export class App {
   @HostListener('document:keydown', ['$event'])
   protected onDocumentKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+    if (this.theme.editorOpen()) {
+      event.preventDefault();
+      this.theme.cancelStudio();
+      return;
+    }
     if (
       this.certificateRequest() ||
       this.settingsOpen() ||

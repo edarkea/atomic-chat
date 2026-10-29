@@ -418,8 +418,24 @@ export interface MessageSendInput {
   clientMessageId: ClientMessageId;
   body: { kind: 'text'; text: string };
 }
+export type ThemeId = 'atomic' | 'custom';
+export type ThemeColorKey =
+  | 'background'
+  | 'surface'
+  | 'surfaceRaised'
+  | 'accent'
+  | 'text'
+  | 'textSecondary'
+  | 'border'
+  | 'incomingBubble'
+  | 'outgoingBubble'
+  | 'focus';
+export type HexColor = string;
+export type ThemePalette = Readonly<Record<ThemeColorKey, HexColor>>;
+
 export interface Preferences {
-  theme: 'atomic';
+  theme: ThemeId;
+  customTheme?: ThemePalette;
   notifications: boolean;
   autoLogin: boolean;
 }

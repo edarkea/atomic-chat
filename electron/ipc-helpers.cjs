@@ -1,4 +1,30 @@
 const preferenceDefaults = { theme: 'atomic', notifications: true, autoLogin: false };
+const preferenceKeys = ['theme', 'customTheme', 'notifications', 'autoLogin'];
+const themeColorKeys = [
+  'background',
+  'surface',
+  'surfaceRaised',
+  'accent',
+  'text',
+  'textSecondary',
+  'border',
+  'incomingBubble',
+  'outgoingBubble',
+  'focus',
+];
+
+function isHexColor(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function validateThemePalette(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_INPUT');
+  const keys = Object.keys(value);
+  if (keys.length !== themeColorKeys.length || keys.some((key) => !themeColorKeys.includes(key)))
+    throw new Error('INVALID_INPUT');
+  for (const key of themeColorKeys) if (!isHexColor(value[key])) throw new Error('INVALID_INPUT');
+  return value;
+}
 
 function createIpcHelpers({
   assertSender,
@@ -387,12 +413,14 @@ function createIpcHelpers({
 
   function validatePreferences(changes) {
     const allowed = {
-      theme: (value) => value === 'atomic',
+      theme: (value) => value === 'atomic' || value === 'custom',
+      customTheme: validateThemePalette,
       notifications: (value) => typeof value === 'boolean',
       autoLogin: (value) => typeof value === 'boolean',
     };
     for (const [key, value] of Object.entries(changes || {}))
       if (!allowed[key] || !allowed[key](value)) throw new Error('INVALID_INPUT');
+    if (changes?.theme === 'custom' && !changes.customTheme) throw new Error('INVALID_INPUT');
   }
 
   return {
@@ -412,6 +440,8 @@ function createIpcHelpers({
     historyError,
     preferenceScope,
     validatePreferences,
+    preferenceKeys,
+    validateThemePalette,
   };
 }
 

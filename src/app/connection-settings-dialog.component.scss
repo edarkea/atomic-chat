@@ -42,7 +42,7 @@
 }
 
 h2 {
-  color: #f4efe7;
+  color: var(--atomic-text);
   font-size: 24px;
   margin: 0;
 }
@@ -111,7 +111,7 @@ input:focus,
 select:focus,
 button:focus-visible {
   border-color: var(--atomic-focus);
-  box-shadow: 0 0 0 3px #8dffa033;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--atomic-focus) 20%, transparent);
   outline: 0;
 }
 
@@ -146,9 +146,9 @@ button:focus-visible {
 }
 
 .settings-actions .primary {
-  background: #2d8b4b;
+  background: var(--atomic-action);
   border-color: var(--atomic-green);
-  color: #effff0;
+  color: var(--atomic-message-outgoing-text);
 }
 
 .settings-actions-spacer {

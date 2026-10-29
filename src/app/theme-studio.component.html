@@ -1,0 +1,133 @@
+@if (theme.editorOpen()) {
+  <div class="theme-backdrop" role="presentation">
+    <section
+      #dialog
+      class="theme-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="theme-studio-title"
+      (keydown)="onKeydown($event)"
+    >
+      <header class="theme-dialog-header">
+        <div>
+          <span class="eyebrow">E7 / C8</span>
+          <h2 id="theme-studio-title">Theme Studio</h2>
+          <p>Personaliza los colores sin cambiar la estructura del chat.</p>
+        </div>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Cancelar personalización"
+          (click)="cancel()"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      </header>
+
+      <div class="theme-dialog-body">
+        <form class="theme-controls" (submit)="$event.preventDefault(); apply()">
+          <fieldset>
+            <legend>Paleta</legend>
+            @for (field of theme.fields; track field.key) {
+              <label class="theme-color-control" [for]="'theme-' + field.key">
+                <span>{{ field.label }}</span>
+                <span class="theme-color-inputs">
+                  <input
+                    type="color"
+                    [id]="'theme-' + field.key + '-picker'"
+                    [value]="color(field.key)"
+                    [attr.aria-label]="field.label + ' selector'"
+                    (input)="changeColor(field.key, $event)"
+                  />
+                  <input
+                    type="text"
+                    [id]="'theme-' + field.key"
+                    inputmode="text"
+                    autocomplete="off"
+                    maxlength="7"
+                    pattern="^#[0-9a-fA-F]{6}$"
+                    [value]="color(field.key)"
+                    [attr.aria-label]="field.label + ' hexadecimal'"
+                    (input)="changeColor(field.key, $event)"
+                  />
+                </span>
+              </label>
+            }
+          </fieldset>
+          @if (theme.validationError(); as error) {
+            <p class="theme-error" role="alert">{{ error }}</p>
+          }
+          @if (theme.persistenceError(); as error) {
+            <p class="theme-error" role="alert">{{ error }}</p>
+          }
+          <div class="theme-actions">
+            <button
+              type="button"
+              class="secondary"
+              [disabled]="theme.saving()"
+              (click)="restoreOriginal()"
+            >
+              Restaurar original
+            </button>
+            <span class="theme-actions-spacer"></span>
+            <button type="button" class="secondary" [disabled]="theme.saving()" (click)="cancel()">
+              Cancelar
+            </button>
+            <button type="submit" class="primary" [disabled]="theme.saving()">
+              {{ theme.saving() ? 'Guardando…' : 'Aplicar' }}
+            </button>
+          </div>
+        </form>
+
+        <section class="theme-preview" aria-label="Vista previa del chat">
+          <h3>Vista previa</h3>
+          <div class="preview-window" [style.background-color]="color('background')">
+            <div class="preview-header" [style.background-color]="color('surfaceRaised')">
+              <span class="preview-avatar" [style.background-color]="color('accent')">A</span>
+              <span
+                ><strong [style.color]="color('text')">Contacto</strong
+                ><small [style.color]="color('textSecondary')">en línea</small></span
+              >
+            </div>
+            <div class="preview-content">
+              <aside [style.background-color]="color('surface')">
+                <span
+                  class="preview-contact"
+                  [style.border-color]="color('border')"
+                  [style.color]="color('text')"
+                  >Contacto seleccionado</span
+                >
+                <span [style.color]="color('textSecondary')">Canal general</span>
+              </aside>
+              <div class="preview-chat">
+                <span
+                  class="preview-bubble incoming"
+                  [style.background-color]="color('incomingBubble')"
+                  [style.color]="color('text')"
+                  >Mensaje recibido</span
+                >
+                <span
+                  class="preview-bubble outgoing"
+                  [style.background-color]="color('outgoingBubble')"
+                  [style.color]="color('text')"
+                  >Mensaje enviado</span
+                >
+                <div class="preview-composer" [style.border-color]="color('border')">
+                  <span [style.color]="color('textSecondary')">Escribir un mensaje…</span>
+                  <button
+                    type="button"
+                    aria-label="Botón de acción de vista previa"
+                    [style.background-color]="color('accent')"
+                    [style.color]="color('background')"
+                  >
+                    ↑
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+}

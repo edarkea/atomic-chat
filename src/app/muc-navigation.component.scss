@@ -194,8 +194,8 @@
   padding: 7px 8px;
 }
 .room-join:hover:not(:disabled) {
-  background: #267342;
-  color: #effff0;
+  background: var(--atomic-bubble-outgoing);
+  color: var(--atomic-message-outgoing-text);
 }
 .room-join:disabled {
   color: var(--atomic-text-secondary);

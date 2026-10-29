@@ -55,7 +55,7 @@
   padding: 9px 16px;
 }
 .muc-participants span {
-  background: #0e3a21;
+  background: var(--atomic-bubble-incoming);
   border-radius: var(--atomic-radius-sm);
   padding: 4px 6px;
 }
