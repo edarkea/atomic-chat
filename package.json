@@ -8,10 +8,16 @@
     "build:electron": "npm run build",
     "electron": "node --env-file=.env node_modules/electron/cli.js electron/main.cjs",
     "test:p0": "node --env-file=.env --test tests/*.test.cjs",
+    "test:p0:outgoing": "node --env-file=.env --test tests/file-transfer.outgoing.test.cjs",
+    "test:p0:outgoing:cal01": "node --env-file=.env --test --test-name-pattern=\"C5-OUT-(06|07|08|09|10|11|12)\" tests/file-transfer.outgoing.test.cjs",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:angular": "ng test --no-watch --no-progress",
-    "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\""
+    "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\"",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"src/**/*.html\"",
+    "format:check": "prettier --check \"eslint.config.mjs\" \"vitest.config.ts\" \"package.json\" \"angular.json\"",
+    "format:check:all": "prettier --check \"src/**/*.{ts,html,scss}\" \"electron/**/*.cjs\" \"tests/**/*.cjs\" \"*.{json,mjs,ts}\""
   },
   "private": true,
   "packageManager": "npm@11.19.0",
@@ -31,10 +37,13 @@
     "@angular/build": "^21.2.14",
     "@angular/cli": "^21.2.14",
     "@angular/compiler-cli": "^21.2.0",
+    "angular-eslint": "^21.4.0",
     "electron": "^39.0.0",
+    "eslint": "^9.39.5",
     "jsdom": "^27.0.1",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2",
+    "typescript-eslint": "^8.72.1",
     "vitest": "^4.0.8"
   }
 }

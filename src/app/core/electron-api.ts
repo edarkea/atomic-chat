@@ -1,4 +1,4 @@
-import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, FileActiveInput, FileRequest, FileSendInput, FileTransfer, HistoryPage, HistoryPageInput, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Preferences, Result, RoomMessage, RoomRef, RoomSendReceipt, RoomState, XmppTransport } from './domain';
+import { CertificateTrustDecisionInput, ConnectInput, ConnectionState, Contact, DomainEvent, FileActiveInput, FileRequest, FileSendInput, FileTransfer, HistoryPage, HistoryPageInput, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Preferences, Result, RoomRef, RoomSendReceipt, RoomState, XmppTransport } from './domain';
 
 export interface AtomicChatApi {
   config: { accountId: string; endpoint: { host: string; domain: string; port: number; tls: boolean; transport: XmppTransport; allowInsecureTls: boolean } };

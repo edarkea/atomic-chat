@@ -236,7 +236,6 @@ class OutgoingFileTransferCoordinator {
     return new Promise((resolve, reject) => {
       let settled = false;
       const timer = this.scheduleTimeout(() => { if (settled) return; settled = true; reject(transferError('TIMEOUT', message)); }, milliseconds);
-      timer?.unref?.();
       Promise.resolve().then(operation).then((value) => { if (settled) return; settled = true; this.cancelTimeout(timer); resolve(value); }, (cause) => { if (settled) return; settled = true; this.cancelTimeout(timer); reject(cause); });
     });
   }
