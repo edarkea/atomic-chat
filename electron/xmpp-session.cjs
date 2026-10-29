@@ -1,5 +1,10 @@
 const { client } = require('@xmpp/client');
+const crypto = require('node:crypto');
 const { validateXmppTransport } = require('./security-policy.cjs');
+
+function createXmppResource() {
+  return `atomic-${crypto.randomBytes(8).toString('hex')}`;
+}
 
 function taggedError(code, message, phase) {
   const error = new Error(message);
@@ -34,13 +39,16 @@ function createXmppSession(adapter) {
       });
       const tlsOptions = await adapter.resolveTlsOptions(input, senderId, transport);
       const service = `${transport.transport === 'direct-tls' ? 'xmpps' : 'xmpp'}://${transport.host}:${transport.port}`;
+      const domain = input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host;
       const session = client({
         service,
-        domain: input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host,
+        domain,
         username: input.accountId.split('@')[0],
         password,
+        // A new resource is generated for every binding/reconnect, so a server-side
+        // conflict does not reuse Spark's resource or create an infinite retry loop here.
+        resource: createXmppResource,
       });
-      const domain = input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host;
       if (transport.transport === 'direct-tls')
         adapter.installTlsTransport(session, service, tlsOptions, domain);
       else adapter.installStartTlsTransport(session, service, tlsOptions, domain);
@@ -62,7 +70,8 @@ function createXmppSession(adapter) {
       session.on('offline', () => {
         adapter.handleSessionEvent(input.accountId, session, 'offline');
       });
-      session.on('online', () => {
+      session.on('online', (address) => {
+        if (address) adapter.sessionJids.set(input.accountId, String(address));
         adapter.handleSessionEvent(input.accountId, session, 'online');
       });
       adapter.fileOwners.set(input.accountId, senderId);
@@ -84,6 +93,7 @@ function createXmppSession(adapter) {
       adapter.initialPresencePublished.delete(input.accountId);
       adapter.sessions.set(input.accountId, session);
       adapter.sessionDomains.set(input.accountId, domain);
+      if (session.jid) adapter.sessionJids.set(input.accountId, String(session.jid));
       adapter.sessionEndpoints.set(input.accountId, {
         host: transport.host,
         port: transport.port,
@@ -100,6 +110,9 @@ function createXmppSession(adapter) {
         since: new Date().toISOString(),
       };
       adapter.states.set(input.accountId, state);
+      void adapter.carbons
+        .negotiate(input.accountId, session, domain, adapter.sessionGenerations.get(input.accountId))
+        .catch(() => undefined);
       return state;
     },
     async disconnect(accountId) {
@@ -124,6 +137,8 @@ function createXmppSession(adapter) {
       adapter.initialPresencePublished.delete(accountId);
       adapter.sessionDomains.delete(accountId);
       adapter.sessionEndpoints.delete(accountId);
+      adapter.sessionJids.delete(accountId);
+      adapter.carbons.clear(accountId);
       adapter.sessionGenerations.set(
         accountId,
         (adapter.sessionGenerations.get(accountId) || 0) + 1,
@@ -174,6 +189,8 @@ function createXmppSession(adapter) {
         adapter.initialPresencePublished.delete(accountId);
         adapter.sessionDomains.delete(accountId);
         adapter.sessionEndpoints.delete(accountId);
+        adapter.sessionJids.delete(accountId);
+        adapter.carbons.clear(accountId);
         adapter.sessionGenerations.set(
           accountId,
           (adapter.sessionGenerations.get(accountId) || 0) + 1,
@@ -187,4 +204,4 @@ function createXmppSession(adapter) {
   };
 }
 
-module.exports = { createXmppSession };
+module.exports = { createXmppResource, createXmppSession };

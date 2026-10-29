@@ -1,6 +1,7 @@
 const { createXmppTransport, negotiateStartTls } = require('./xmpp-transport.cjs');
 const { createXmppSession } = require('./xmpp-session.cjs');
 const { createRosterMessaging } = require('./xmpp-roster-messaging.cjs');
+const { createXmppCarbons } = require('./xmpp-carbons.cjs');
 const { createMucService } = require('./xmpp-muc.cjs');
 const { createFileService } = require('./xmpp-file.cjs');
 
@@ -29,6 +30,7 @@ class XmppAdapter {
     this.sessionGenerations = new Map();
     this.sessionDomains = new Map();
     this.sessionEndpoints = new Map();
+    this.sessionJids = new Map();
     this.mucDiscoveries = new Map();
     this.mucRooms = new Map();
     this.filePending = new Map();
@@ -40,6 +42,7 @@ class XmppAdapter {
     this.transport = createXmppTransport(this);
     this.sessionService = createXmppSession(this);
     this.rosterMessaging = createRosterMessaging(this);
+    this.carbons = createXmppCarbons(this);
     this.mucService = createMucService(this);
     this.fileService = createFileService(this);
     if (this.fileTransfers)
@@ -261,6 +264,7 @@ class XmppAdapter {
       return;
     if (this.handleMucStanza(accountId, stanza)) return;
     if (this.handleFileStanza(accountId, stanza)) return;
+    if (stanza.is('message') && this.carbons.handleMessage(accountId, stanza)) return;
     if (stanza.is('presence')) {
       this.rosterMessaging.handlePresence(accountId, stanza);
       return;

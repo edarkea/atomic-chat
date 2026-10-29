@@ -113,7 +113,12 @@ function createRosterMessaging(adapter) {
       if (adapter.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
       const session = adapter.require(accountId);
       await session.send(
-        xml('message', { type: 'chat', to: input.to }, xml('body', {}, input.body.text)),
+        xml(
+          'message',
+          { type: 'chat', to: input.to, id: input.clientMessageId },
+          xml('body', {}, input.body.text),
+          xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }),
+        ),
       );
       return { ...input, status: 'sent', createdAt: new Date().toISOString() };
     },
@@ -160,7 +165,8 @@ function createRosterMessaging(adapter) {
       }
       if (!stanza.getChildText('body')) return Boolean(chatState);
       const bodyText = stanza.getChildText('body');
-      const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id;
+      const explicitId =
+        stanza.attrs.id || stanza.getChild('origin-id', 'urn:xmpp:sid:0')?.attrs?.id;
       const identity = `${accountId}|${senderJid}|${explicitId || crypto.randomUUID()}`;
       const stanzaId = explicitId
         ? `received_${crypto.createHash('sha256').update(identity).digest('hex')}`
