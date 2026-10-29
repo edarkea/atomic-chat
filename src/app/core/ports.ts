@@ -24,6 +24,7 @@ import {
   RoomSendReceipt,
   RoomState,
   TypedDomainEvent,
+  XmppConnectionProfile,
 } from './domain';
 
 export interface XmppPort {
@@ -50,12 +51,22 @@ export interface AccountConfig {
 }
 
 export interface AccountPort {
+  isAvailable?(): boolean;
   getConfig(): AccountConfig | undefined;
+  listProfiles?(requestId?: string): Promise<Result<ReadonlyArray<XmppConnectionProfile>>>;
+  saveProfile?(
+    profile: XmppConnectionProfile,
+    requestId?: string,
+  ): Promise<Result<XmppConnectionProfile>>;
+  deleteProfile?(accountId: string, requestId?: string): Promise<Result<void>>;
+  forgetSecret?(input: { version: 1; requestId: string; accountId: string }): Promise<Result<void>>;
   setSecret(input: {
     version: 1;
     requestId: string;
     credentialRef: string;
     secret: string;
+    accountId?: string;
+    remember?: boolean;
   }): Promise<Result<{ stored: true }>>;
 }
 

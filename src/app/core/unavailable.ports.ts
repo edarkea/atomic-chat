@@ -18,6 +18,7 @@ import {
   MucJoinInput,
   MucLeaveInput,
   MucSendInput,
+  XmppConnectionProfile,
 } from './domain';
 import {
   AccountConfig,
@@ -42,14 +43,34 @@ const unsupported = <T>(requestId: string): Result<T> => ({
 
 @Injectable({ providedIn: 'root' })
 export class UnavailableAccountPort implements AccountPort {
+  isAvailable(): boolean {
+    return false;
+  }
   getConfig(): AccountConfig | undefined {
     return undefined;
+  }
+  listProfiles(_requestId?: string): Promise<Result<ReadonlyArray<XmppConnectionProfile>>> {
+    return Promise.resolve(unsupported('profiles-list'));
+  }
+  saveProfile(
+    _profile: XmppConnectionProfile,
+    _requestId?: string,
+  ): Promise<Result<XmppConnectionProfile>> {
+    return Promise.resolve(unsupported('profiles-save'));
+  }
+  deleteProfile(accountId: string, _requestId?: string): Promise<Result<void>> {
+    return Promise.resolve(unsupported(accountId));
+  }
+  forgetSecret(input: { version: 1; requestId: string; accountId: string }): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
   }
   setSecret(input: {
     version: 1;
     requestId: string;
     credentialRef: string;
     secret: string;
+    accountId?: string;
+    remember?: boolean;
   }): Promise<Result<{ stored: true }>> {
     return Promise.resolve(unsupported(input.requestId));
   }

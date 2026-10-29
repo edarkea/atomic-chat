@@ -8,6 +8,9 @@ const { registerIpcHandlers } = require('../electron/ipc-handlers.cjs');
 const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
 const { registerMucHandlers } = require('../electron/ipc-muc-handlers.cjs');
 const { registerPreferenceHandlers } = require('../electron/ipc-preference-handlers.cjs');
+const {
+  registerConnectionProfileHandlers,
+} = require('../electron/ipc-connection-profile-handlers.cjs');
 const { createEventRouter } = require('../electron/event-router.cjs');
 
 const channels = [
@@ -35,6 +38,10 @@ const channels = [
   'preferences.get',
   'preferences.update',
   'preferences.reset',
+  'connectionProfiles.list',
+  'connectionProfiles.save',
+  'connectionProfiles.delete',
+  'account.forgetSecret',
 ];
 
 function createHarness() {
@@ -157,6 +164,7 @@ test('each domain registrar owns only its assigned channels', () => {
     [registerFileHandlers, channels.slice(13, 18)],
     [registerHistoryHandlers, channels.slice(18, 21)],
     [registerPreferenceHandlers, channels.slice(21, 24)],
+    [registerConnectionProfileHandlers, channels.slice(24, 28)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();

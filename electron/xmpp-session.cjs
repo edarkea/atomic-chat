@@ -40,15 +40,10 @@ function createXmppSession(adapter) {
         username: input.accountId.split('@')[0],
         password,
       });
+      const domain = input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host;
       if (transport.transport === 'direct-tls')
-        adapter.installTlsTransport(session, service, tlsOptions);
-      else
-        adapter.installStartTlsTransport(
-          session,
-          service,
-          tlsOptions,
-          input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host,
-        );
+        adapter.installTlsTransport(session, service, tlsOptions, domain);
+      else adapter.installStartTlsTransport(session, service, tlsOptions, domain);
       adapter.installFileIqHandlers(input.accountId, session);
       adapter.states.set(input.accountId, {
         accountId: input.accountId,
@@ -87,10 +82,7 @@ function createXmppSession(adapter) {
       adapter.remoteResources.set(input.accountId, new Map());
       adapter.initialPresencePublished.delete(input.accountId);
       adapter.sessions.set(input.accountId, session);
-      adapter.sessionDomains.set(
-        input.accountId,
-        input.endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || transport.host,
-      );
+      adapter.sessionDomains.set(input.accountId, domain);
       adapter.sessionEndpoints.set(input.accountId, {
         host: transport.host,
         port: transport.port,

@@ -10,7 +10,14 @@ import {
 import { ChatFacade } from './core/chat.facade';
 import { MucFacade } from './core/muc.facade';
 import { FileFacade } from './core/file.facade';
-import { CertificateTrustDecision, Contact, Message, Preferences, RoomState } from './core/domain';
+import {
+  CertificateTrustDecision,
+  Contact,
+  Message,
+  Preferences,
+  RoomState,
+  XmppTransport,
+} from './core/domain';
 import { CertificateDialogComponent } from './certificate-dialog.component';
 import {
   ConversationTimelineItem,
@@ -45,7 +52,20 @@ export class App {
   protected readonly muc = inject(MucFacade);
   protected readonly files = inject(FileFacade);
   protected readonly draft = signal('');
-  protected readonly login = signal({ accountId: '', password: '' });
+  protected readonly login = signal({
+    accountId: '',
+    domain: '',
+    password: '',
+    host: '',
+    port: 5222,
+    transport: 'starttls' as XmppTransport,
+    automatic: true,
+    remember: false,
+    autoLogin: false,
+  });
+  protected readonly loginBusy = signal(false);
+  protected readonly selectedProfileId = signal('');
+  protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
   protected readonly search = signal('');
   protected readonly conversationSelection = signal<ConversationSelection>({
     kind: 'none',
@@ -186,8 +206,71 @@ export class App {
   protected setLoginAccount(accountId: string): void {
     this.login.update((value) => ({ ...value, accountId }));
   }
+  protected setLoginDomain(domain: string): void {
+    this.login.update((value) => ({ ...value, domain }));
+  }
   protected setLoginPassword(password: string): void {
     this.login.update((value) => ({ ...value, password }));
+  }
+  protected setLoginHost(host: string): void {
+    this.login.update((value) => ({ ...value, host }));
+  }
+  protected setLoginPort(port: number): void {
+    this.login.update((value) => ({ ...value, port }));
+  }
+  protected setLoginTransport(transport: XmppTransport): void {
+    this.login.update((value) => ({
+      ...value,
+      transport,
+      port:
+        value.port === (transport === 'direct-tls' ? 5222 : 5223)
+          ? transport === 'direct-tls'
+            ? 5223
+            : 5222
+          : value.port,
+    }));
+  }
+  protected setLoginAutomatic(automatic: boolean): void {
+    this.login.update((value) => ({ ...value, automatic }));
+  }
+  protected setLoginRemember(remember: boolean): void {
+    this.login.update((value) => ({
+      ...value,
+      remember,
+      autoLogin: remember ? value.autoLogin : false,
+    }));
+  }
+  protected setLoginAutoLogin(autoLogin: boolean): void {
+    this.login.update((value) => ({ ...value, autoLogin }));
+  }
+  protected selectLoginProfile(accountId: string): void {
+    this.selectedProfileId.set(accountId);
+    const profile = this.loginProfiles().find((item) => item.accountId === accountId);
+    if (!profile) return;
+    const at = profile.accountId.lastIndexOf('@');
+    this.login.update((value) => ({
+      ...value,
+      accountId: at > 0 ? profile.accountId.slice(0, at) : profile.accountId,
+      domain: profile.domain,
+      host: profile.manualEndpoint?.host || '',
+      port: profile.manualEndpoint?.port || 5222,
+      transport: profile.manualEndpoint?.transport || 'starttls',
+      automatic: profile.mode === 'automatic',
+      password: '',
+    }));
+  }
+  protected async forgetLoginSecret(): Promise<void> {
+    const accountId = this.selectedProfileId();
+    if (!accountId) return;
+    await this.chat.forgetSecret(accountId);
+    this.login.update((value) => ({ ...value, autoLogin: false, remember: false }));
+  }
+  protected async deleteLoginProfile(): Promise<void> {
+    const accountId = this.selectedProfileId();
+    if (!accountId) return;
+    await this.chat.deleteProfile(accountId);
+    this.selectedProfileId.set('');
+    this.login.update((value) => ({ ...value, accountId: '', domain: '', host: '', password: '' }));
   }
   protected connectionLabel(): string {
     const labels: Record<string, string> = {
@@ -213,9 +296,50 @@ export class App {
     this.presenceOpen.set(false);
   }
   protected async connect(): Promise<void> {
+    const login = this.login() as typeof this.login extends () => infer Value
+      ? Value &
+          Partial<{
+            domain: string;
+            host: string;
+            port: number;
+            transport: XmppTransport;
+            automatic: boolean;
+            remember: boolean;
+            autoLogin: boolean;
+          }>
+      : never;
+    const rawUser = login.accountId.trim();
+    const suppliedDomain = (login.domain || '').trim().toLowerCase().replace(/\.$/, '');
+    const at = rawUser.indexOf('@');
+    if (
+      at >= 0 &&
+      (at !== rawUser.lastIndexOf('@') || !rawUser.slice(0, at) || !rawUser.slice(at + 1))
+    ) {
+      this.chat.error.set('Introduce un usuario XMPP o un JID completo válido.');
+      return;
+    }
+    const localpart = at >= 0 ? rawUser.slice(0, at) : rawUser;
+    const domain = at >= 0 ? rawUser.slice(at + 1).toLowerCase() : suppliedDomain;
+    if (!localpart || /[\s/@]/.test(localpart) || !domain || /[\s/@]/.test(domain)) {
+      this.chat.error.set('El usuario y el dominio XMPP son obligatorios.');
+      return;
+    }
+    const accountId = `${localpart}@${domain}`;
     this.resetConversationSelection();
-    this.muc.setAccount(this.login().accountId.trim());
-    const connected = await this.chat.connect(this.login().accountId, this.login().password);
+    this.muc.setAccount(accountId);
+    this.loginBusy.set(true);
+    const connected = await this.chat.connect(accountId, login.password, {
+      domain,
+      mode: login.automatic !== false ? 'automatic' : 'manual',
+      manualEndpoint: {
+        host: (login.host || '').trim(),
+        port: login.port || 5222,
+        transport: login.transport || 'starttls',
+      },
+      remember: login.remember === true,
+      autoLogin: login.autoLogin === true,
+    });
+    this.loginBusy.set(false);
     if (connected) {
       this.login.update((value) => ({ ...value, password: '' }));
       await this.files.setAccount(this.chat.accountId());

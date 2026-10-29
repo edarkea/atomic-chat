@@ -86,14 +86,14 @@ class XmppAdapter {
     return this.sessionService.bareJid(jid);
   }
 
-  installTlsTransport(session, service, tlsOptions) {
-    return this.transport.installTlsTransport(session, service, tlsOptions);
+  installTlsTransport(session, service, tlsOptions, domain) {
+    return this.transport.installTlsTransport(session, service, tlsOptions, domain);
   }
   installStartTlsTransport(session, service, tlsOptions, domain) {
     return this.transport.installStartTlsTransport(session, service, tlsOptions, domain);
   }
-  probeDirectCertificate(endpoint) {
-    return this.transport.probeDirectCertificate(endpoint);
+  probeDirectCertificate(endpoint, domain) {
+    return this.transport.probeDirectCertificate(endpoint, domain);
   }
   probeStartTlsCertificate(endpoint, domain) {
     return this.transport.probeStartTlsCertificate(endpoint, domain);

@@ -7,13 +7,36 @@
   <h1>Iniciar sesión</h1>
   <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
   <form class="login-form" (ngSubmit)="submitted.emit()">
+    @if (profiles().length) {
+      <label
+        >Perfil guardado<select
+          name="profile"
+          [ngModel]="selectedProfileId()"
+          (ngModelChange)="profileSelected.emit($event)"
+        >
+          <option value="">Nueva cuenta</option>
+          @for (profile of profiles(); track profile.accountId) {
+            <option [value]="profile.accountId">{{ profile.accountId }}</option>
+          }
+        </select></label
+      >
+    }
     <label
       >Usuario XMPP<input
         name="account"
         [ngModel]="accountId()"
         (ngModelChange)="accountIdChange.emit($event)"
         autocomplete="username"
-        placeholder="usuario"
+        placeholder="usuario o usuario@dominio"
+    /></label>
+    <label
+      >Dominio XMPP<input
+        name="domain"
+        [ngModel]="domain()"
+        (ngModelChange)="domainChange.emit($event)"
+        autocomplete="organization"
+        placeholder="empresa.com"
+        [attr.aria-invalid]="!domain() ? 'true' : null"
     /></label>
     <label
       >Contraseña<input
@@ -24,11 +47,81 @@
         autocomplete="current-password"
         placeholder="••••••••"
     /></label>
+    <label class="check-row"
+      ><input
+        type="checkbox"
+        name="remember"
+        [ngModel]="remember()"
+        (ngModelChange)="rememberChange.emit($event)"
+      />
+      Recordar contraseña</label
+    >
+    <label class="check-row"
+      ><input
+        type="checkbox"
+        name="autoLogin"
+        [ngModel]="autoLogin()"
+        [disabled]="!remember()"
+        (ngModelChange)="autoLoginChange.emit($event)"
+      />
+      Iniciar sesión automáticamente</label
+    >
+    <details>
+      <summary>Configuración avanzada</summary>
+      <label class="check-row"
+        ><input
+          type="checkbox"
+          name="automatic"
+          [ngModel]="automatic()"
+          (ngModelChange)="automaticChange.emit($event)"
+        />
+        Descubrir servidor y puerto automáticamente</label
+      >
+      <fieldset [disabled]="automatic()">
+        <legend>Endpoint manual</legend>
+        <label
+          >Host<input
+            name="host"
+            [ngModel]="host()"
+            (ngModelChange)="hostChange.emit($event)"
+            placeholder="chat.empresa.com"
+        /></label>
+        <label
+          >Puerto<input
+            name="port"
+            type="number"
+            min="1"
+            max="65535"
+            [ngModel]="port()"
+            (ngModelChange)="portChange.emit(+$event)"
+        /></label>
+        <label
+          >Transporte<select
+            name="transport"
+            [ngModel]="transport()"
+            (ngModelChange)="transportChange.emit($event)"
+          >
+            <option value="starttls">STARTTLS</option>
+            <option value="direct-tls">TLS directo</option>
+          </select></label
+        >
+      </fieldset>
+    </details>
+    @if (selectedProfileId()) {
+      <div class="profile-actions">
+        <button type="button" (click)="forgetSecret.emit()">Olvidar contraseña</button>
+        <button type="button" (click)="deleteProfile.emit()">Eliminar perfil</button>
+      </div>
+    }
     @if (error()) {
       <p class="login-error" role="alert">{{ error() }}</p>
     }
-    <button class="primary login-button" type="submit" [disabled]="!accountId() || !password()">
-      Entrar
+    <button
+      class="primary login-button"
+      type="submit"
+      [disabled]="busy() || !accountId() || !domain() || (!password() && !profiles().length)"
+    >
+      {{ busy() ? 'Conectando…' : 'Entrar' }}
     </button>
   </form>
   <small class="login-footnote"

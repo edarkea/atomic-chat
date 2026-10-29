@@ -26,7 +26,12 @@ function syntheticCertificate(overrides = {}) {
 }
 
 test('classifies a self-signed certificate without trusting it automatically', () => {
-  const result = assessCertificate('xmpp.example.invalid', syntheticCertificate(), false, 'DEPTH_ZERO_SELF_SIGNED_CERT');
+  const result = assessCertificate(
+    'xmpp.example.invalid',
+    syntheticCertificate(),
+    false,
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+  );
   assert.equal(result.trustable, true);
   assert.equal(result.error.code, 'CERTIFICATE_UNTRUSTED');
   assert.match(result.info.pem, /BEGIN CERTIFICATE/);
@@ -34,28 +39,99 @@ test('classifies a self-signed certificate without trusting it automatically', (
 });
 
 test('blocks expired, identity-mismatched, and insecure certificates', () => {
-  assert.equal(assessCertificate('xmpp.example.invalid', syntheticCertificate({ valid_to: 'Jan 01 00:00:00 2021 GMT' }), false, 'DEPTH_ZERO_SELF_SIGNED_CERT').error.code, 'CERTIFICATE_EXPIRED');
-  assert.equal(assessCertificate('xmpp.example.invalid', syntheticCertificate({ subjectaltname: 'DNS:other.example.invalid' }), true, undefined).error.code, 'CERTIFICATE_IDENTITY_MISMATCH');
-  assert.equal(assessCertificate('xmpp.example.invalid', syntheticCertificate({ sigalg: 'RSA-SHA1' }), false, 'DEPTH_ZERO_SELF_SIGNED_CERT').error.code, 'CERTIFICATE_INSECURE_ALGORITHM');
+  assert.equal(
+    assessCertificate(
+      'xmpp.example.invalid',
+      syntheticCertificate({ valid_to: 'Jan 01 00:00:00 2021 GMT' }),
+      false,
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+    ).error.code,
+    'CERTIFICATE_EXPIRED',
+  );
+  assert.equal(
+    assessCertificate(
+      'xmpp.example.invalid',
+      syntheticCertificate({ subjectaltname: 'DNS:other.example.invalid' }),
+      true,
+      undefined,
+    ).error.code,
+    'CERTIFICATE_IDENTITY_MISMATCH',
+  );
+  assert.equal(
+    assessCertificate(
+      'xmpp.example.invalid',
+      syntheticCertificate({ sigalg: 'RSA-SHA1' }),
+      false,
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+    ).error.code,
+    'CERTIFICATE_INSECURE_ALGORITHM',
+  );
 });
 
 test('certificate decisions are correlated to the exact pending request and sender', async () => {
   const adapter = new XmppAdapter();
   const events = [];
   adapter.onEvent((event) => events.push(event));
-  const input = { requestId: 'req-cert-1', accountId: 'a@example.invalid', endpoint: { host: 'xmpp.example.invalid', port: 5222 } };
-  const pending = adapter.awaitTrustDecision(input, 'direct-tls', { fingerprintSha256: 'AA:BB' }, undefined, undefined, 7);
+  const input = {
+    requestId: 'req-cert-1',
+    accountId: 'a@example.invalid',
+    endpoint: { host: 'xmpp.example.invalid', port: 5222 },
+  };
+  const pending = adapter.awaitTrustDecision(
+    input,
+    'direct-tls',
+    { fingerprintSha256: 'AA:BB' },
+    undefined,
+    undefined,
+    7,
+  );
   assert.equal(events[0].type, 'certificate.trustRequired');
-  assert.throws(() => adapter.decideCertificateTrust(8, { requestId: input.requestId, accountId: input.accountId, fingerprintSha256: 'AA:BB', decision: 'trust_once' }), /CERTIFICATE_DECISION_CONFLICT/);
-  adapter.decideCertificateTrust(7, { requestId: input.requestId, accountId: input.accountId, fingerprintSha256: 'AA:BB', decision: 'trust_once' });
+  assert.throws(
+    () =>
+      adapter.decideCertificateTrust(8, {
+        requestId: input.requestId,
+        accountId: input.accountId,
+        fingerprintSha256: 'AA:BB',
+        decision: 'trust_once',
+      }),
+    /CERTIFICATE_DECISION_CONFLICT/,
+  );
+  adapter.decideCertificateTrust(7, {
+    requestId: input.requestId,
+    accountId: input.accountId,
+    fingerprintSha256: 'AA:BB',
+    decision: 'trust_once',
+  });
   assert.equal(await pending, 'trust_once');
 });
 
 test('reuses an approved certificate without showing a second warning', async () => {
   const certificate = syntheticCertificate();
-  const adapter = new XmppAdapter(false, { getTrustedCertificate: () => ({ accountId: 'a@example.invalid', host: 'xmpp.example.invalid', port: 5222, transport: 'direct-tls', fingerprintSha256: certificate.fingerprint256, certificatePem: 'approved-pem', approvedAt: new Date().toISOString() }) });
-  adapter.probeDirectCertificate = async () => ({ certificate, authorized: false, authorizationError: 'DEPTH_ZERO_SELF_SIGNED_CERT' });
-  const options = await adapter.resolveTlsOptions({ requestId: 'req-cert-2', accountId: 'a@example.invalid', endpoint: { host: 'xmpp.example.invalid', port: 5222 } }, 7, { transport: 'direct-tls' });
+  const adapter = new XmppAdapter(false, {
+    getTrustedCertificate: () => ({
+      accountId: 'a@example.invalid',
+      host: 'xmpp.example.invalid',
+      port: 5222,
+      transport: 'direct-tls',
+      fingerprintSha256: certificate.fingerprint256,
+      certificatePem: 'approved-pem',
+      approvedAt: new Date().toISOString(),
+    }),
+  });
+  adapter.probeDirectCertificate = async () => ({
+    certificate,
+    authorized: false,
+    authorizationError: 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  });
+  const options = await adapter.resolveTlsOptions(
+    {
+      requestId: 'req-cert-2',
+      accountId: 'a@example.invalid',
+      endpoint: { host: 'xmpp.example.invalid', port: 5222 },
+    },
+    7,
+    { transport: 'direct-tls' },
+  );
   assert.equal(options.ca, 'approved-pem');
   assert.equal(adapter.pendingDecisions.size, 0);
 });
@@ -65,13 +141,26 @@ test('STARTTLS certificate approval emits the same single trust dialog event', a
   const adapter = new XmppAdapter(false, { getTrustedCertificate: () => null });
   const events = [];
   adapter.onEvent((event) => events.push(event));
-  adapter.probeStartTlsCertificate = async () => ({ certificate, authorized: false, authorizationError: 'DEPTH_ZERO_SELF_SIGNED_CERT' });
-  const input = { requestId: 'req-starttls-cert', accountId: 'a@example.invalid', endpoint: { host: 'xmpp.example.invalid', domain: 'example.invalid', port: 5222 } };
+  adapter.probeStartTlsCertificate = async () => ({
+    certificate,
+    authorized: false,
+    authorizationError: 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  });
+  const input = {
+    requestId: 'req-starttls-cert',
+    accountId: 'a@example.invalid',
+    endpoint: { host: 'xmpp.example.invalid', domain: 'xmpp.example.invalid', port: 5222 },
+  };
   const pending = adapter.resolveTlsOptions(input, 7, { transport: 'starttls' });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(events[0].type, 'certificate.trustRequired');
   assert.equal(events[0].payload.transport, 'starttls');
-  adapter.decideCertificateTrust(7, { requestId: input.requestId, accountId: input.accountId, fingerprintSha256: certificate.fingerprint256, decision: 'trust_once' });
+  adapter.decideCertificateTrust(7, {
+    requestId: input.requestId,
+    accountId: input.accountId,
+    fingerprintSha256: certificate.fingerprint256,
+    decision: 'trust_once',
+  });
   const options = await pending;
   assert.match(options.ca, /BEGIN CERTIFICATE/);
 });
@@ -79,12 +168,46 @@ test('STARTTLS certificate approval emits the same single trust dialog event', a
 test('persistent trust is scoped to account, endpoint, transport, and fingerprint', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-cert-trust-'));
   const store = new PersistenceStore(directory);
-  store.upsertAccount({ accountId: 'a@example.invalid', host: 'xmpp.example.invalid', port: 5222, tls: 1, credentialRef: null, createdAt: new Date().toISOString() });
-  store.upsertTrustedCertificate({ accountId: 'a@example.invalid', host: 'xmpp.example.invalid', port: 5222, transport: 'direct-tls', fingerprintSha256: 'AA:BB', certificatePem: 'pem', approvedAt: new Date().toISOString() });
-  store.upsertTrustedCertificate({ accountId: 'a@example.invalid', host: 'xmpp.example.invalid', port: 5222, transport: 'starttls', fingerprintSha256: 'CC:DD', certificatePem: 'pem-starttls', approvedAt: new Date().toISOString() });
-  assert.equal(store.getTrustedCertificate('a@example.invalid', 'xmpp.example.invalid', 5222, 'direct-tls').fingerprintSha256, 'AA:BB');
-  assert.equal(store.getTrustedCertificate('a@example.invalid', 'xmpp.example.invalid', 5222, 'starttls').fingerprintSha256, 'CC:DD');
-  assert.equal(store.getTrustedCertificate('b@example.invalid', 'xmpp.example.invalid', 5222, 'direct-tls'), null);
+  store.upsertAccount({
+    accountId: 'a@example.invalid',
+    host: 'xmpp.example.invalid',
+    port: 5222,
+    tls: 1,
+    credentialRef: null,
+    createdAt: new Date().toISOString(),
+  });
+  store.upsertTrustedCertificate({
+    accountId: 'a@example.invalid',
+    host: 'xmpp.example.invalid',
+    port: 5222,
+    transport: 'direct-tls',
+    fingerprintSha256: 'AA:BB',
+    certificatePem: 'pem',
+    approvedAt: new Date().toISOString(),
+  });
+  store.upsertTrustedCertificate({
+    accountId: 'a@example.invalid',
+    host: 'xmpp.example.invalid',
+    port: 5222,
+    transport: 'starttls',
+    fingerprintSha256: 'CC:DD',
+    certificatePem: 'pem-starttls',
+    approvedAt: new Date().toISOString(),
+  });
+  assert.equal(
+    store.getTrustedCertificate('a@example.invalid', 'xmpp.example.invalid', 5222, 'direct-tls')
+      .fingerprintSha256,
+    'AA:BB',
+  );
+  assert.equal(
+    store.getTrustedCertificate('a@example.invalid', 'xmpp.example.invalid', 5222, 'starttls')
+      .fingerprintSha256,
+    'CC:DD',
+  );
+  assert.equal(
+    store.getTrustedCertificate('b@example.invalid', 'xmpp.example.invalid', 5222, 'direct-tls'),
+    null,
+  );
   store.close();
   fs.rmSync(directory, { recursive: true, force: true });
 });
@@ -94,8 +217,12 @@ test('STARTTLS probe negotiates XMPP TLS before any SASL data', async () => {
     let request = '';
     socket.on('data', (chunk) => {
       request += chunk.toString();
-      if (request.includes('<stream:stream')) socket.write("<stream:stream xmlns:stream='http://etherx.jabber.org/streams'><stream:features><starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/></stream:features>");
-      if (request.includes('<starttls')) socket.write("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>");
+      if (request.includes('<stream:stream'))
+        socket.write(
+          "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'><stream:features><starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/></stream:features>",
+        );
+      if (request.includes('<starttls'))
+        socket.write("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>");
     });
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -107,9 +234,19 @@ test('STARTTLS probe negotiates XMPP TLS before any SASL data', async () => {
 });
 
 test('STARTTLS probe rejects a server that does not advertise STARTTLS', async () => {
-  const server = net.createServer((socket) => socket.once('data', () => { socket.write("<stream:stream xmlns:stream='http://etherx.jabber.org/streams'><stream:features></stream:features>"); setTimeout(() => socket.destroy(), 20); }));
+  const server = net.createServer((socket) =>
+    socket.once('data', () => {
+      socket.write(
+        "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'><stream:features></stream:features>",
+      );
+      setTimeout(() => socket.destroy(), 20);
+    }),
+  );
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
-  await assert.rejects(() => negotiateStartTls('127.0.0.1', port, 'example.invalid'), (error) => error.code === 'STARTTLS_UNAVAILABLE');
+  await assert.rejects(
+    () => negotiateStartTls('127.0.0.1', port, 'example.invalid'),
+    (error) => error.code === 'STARTTLS_UNAVAILABLE',
+  );
   await new Promise((resolve) => server.close(resolve));
 });

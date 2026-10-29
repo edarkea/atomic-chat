@@ -85,6 +85,56 @@
   padding: 0 12px;
   width: 100%;
 }
+.login-form select,
+.login-form fieldset {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  font: inherit;
+  min-height: 42px;
+  padding: 0 10px;
+  width: 100%;
+}
+.login-form fieldset {
+  display: grid;
+  gap: var(--atomic-space-2);
+  margin: 8px 0 0;
+  padding: 10px;
+}
+.login-form legend {
+  color: var(--atomic-text-muted);
+  font-size: 12px;
+  padding: 0 4px;
+}
+.login-form summary {
+  color: var(--atomic-green);
+  cursor: pointer;
+  font-size: 13px;
+}
+.check-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.check-row input {
+  accent-color: var(--atomic-green);
+  height: 16px;
+  margin: 0;
+  width: 16px;
+}
+.profile-actions {
+  display: flex;
+  gap: 8px;
+}
+.profile-actions button {
+  background: transparent;
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  padding: 8px;
+}
 .login-form input:focus {
   border-color: var(--atomic-focus);
   box-shadow: 0 0 0 3px #8dffa033;

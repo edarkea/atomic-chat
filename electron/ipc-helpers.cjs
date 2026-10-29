@@ -25,8 +25,57 @@ function createIpcHelpers({
 
   function validateAccountInput(input) {
     if (!validVersion(input)) throw new Error('UNSUPPORTED');
-    requireText(input.accountId, 'ACCOUNT');
+    requireText(input?.accountId, 'ACCOUNT');
+    if (
+      input.profileId !== undefined &&
+      (typeof input.profileId !== 'string' || input.profileId !== input.accountId)
+    )
+      throw new Error('INVALID_INPUT');
+    if (!input.endpoint) return undefined;
     return validateXmppTransport(input.endpoint, appIsPackaged);
+  }
+
+  function validateConnectionProfile(profile) {
+    if (!profile || typeof profile !== 'object') throw new Error('INVALID_INPUT');
+    if (
+      typeof profile.accountId !== 'string' ||
+      !profile.accountId.trim() ||
+      profile.accountId.length > 512
+    )
+      throw new Error('INVALID_INPUT');
+    if (typeof profile.domain !== 'string' || !profile.domain.trim() || profile.domain.length > 253)
+      throw new Error('INVALID_INPUT');
+    const separator = profile.accountId.indexOf('@');
+    if (
+      separator <= 0 ||
+      separator !== profile.accountId.lastIndexOf('@') ||
+      /[\s/]/.test(profile.accountId.slice(0, separator)) ||
+      profile.accountId
+        .slice(separator + 1)
+        .toLowerCase()
+        .replace(/\.$/, '') !== profile.domain.toLowerCase().replace(/\.$/, '')
+    )
+      throw new Error('INVALID_INPUT');
+    if (
+      !['automatic', 'manual'].includes(profile.mode) ||
+      typeof profile.updatedAt !== 'string' ||
+      !profile.updatedAt.trim()
+    )
+      throw new Error('INVALID_INPUT');
+    if (profile.mode === 'manual') {
+      const endpoint = profile.manualEndpoint;
+      if (
+        !endpoint ||
+        typeof endpoint.host !== 'string' ||
+        !endpoint.host.trim() ||
+        !Number.isInteger(endpoint.port) ||
+        endpoint.port < 1 ||
+        endpoint.port > 65535 ||
+        !['starttls', 'direct-tls'].includes(endpoint.transport)
+      )
+        throw new Error('INVALID_INPUT');
+    } else if (profile.manualEndpoint !== undefined) throw new Error('INVALID_INPUT');
+    return profile;
   }
 
   function validateCertificateDecision(input) {
@@ -55,6 +104,11 @@ function createIpcHelpers({
       'SERVER_UNREACHABLE',
       'AUTH_FAILED',
       'TLS_POLICY',
+      'INVALID_ENDPOINT',
+      'INVALID_DOMAIN',
+      'INVALID_DNS_RESPONSE',
+      'SERVICE_UNAVAILABLE',
+      'DNS_TIMEOUT',
     ]);
     const rawCode = error?.code;
     const code =
@@ -88,6 +142,11 @@ function createIpcHelpers({
       AUTH_FAILED: 'El servidor rechazó la autenticación.',
       STORAGE_FAILED: 'No fue posible acceder al almacenamiento seguro.',
       UNSUPPORTED: 'La política de seguridad no permite este transporte.',
+      INVALID_ENDPOINT: 'La configuración del endpoint XMPP no es válida.',
+      INVALID_DOMAIN: 'El dominio XMPP no es válido.',
+      INVALID_DNS_RESPONSE: 'El descubrimiento del servidor devolvió datos no válidos.',
+      SERVICE_UNAVAILABLE: 'El dominio XMPP rechazó el servicio solicitado.',
+      DNS_TIMEOUT: 'El descubrimiento del servidor excedió el tiempo límite.',
     };
     return {
       ok: false,
@@ -312,6 +371,7 @@ function createIpcHelpers({
     validVersion,
     requireText,
     validateAccountInput,
+    validateConnectionProfile,
     validateCertificateDecision,
     connectionError,
     authorizeMucInput,

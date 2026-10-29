@@ -11,6 +11,7 @@ import {
   Preferences,
   Result,
   TypedDomainEvent,
+  XmppConnectionProfile,
 } from './domain';
 import { subscribeToDomainEvents } from './domain-event.validation';
 import { getAtomicChatApi } from './electron-api';
@@ -36,8 +37,40 @@ const unavailable = <T>(requestId: string): Result<T> => ({
 
 @Injectable({ providedIn: 'root' })
 export class ElectronAccountPort implements AccountPort {
+  isAvailable(): boolean {
+    return getAtomicChatApi() !== undefined;
+  }
   getConfig(): AccountConfig | undefined {
     return getAtomicChatApi()?.config;
+  }
+
+  listProfiles(requestId = 'profiles-list'): Promise<Result<ReadonlyArray<XmppConnectionProfile>>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.connectionProfiles.list({ version: 1, requestId })
+      : Promise.resolve(unavailable(requestId));
+  }
+
+  saveProfile(
+    profile: XmppConnectionProfile,
+    requestId = 'profiles-save',
+  ): Promise<Result<XmppConnectionProfile>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.connectionProfiles.save({ version: 1, requestId, profile })
+      : Promise.resolve(unavailable(requestId));
+  }
+
+  deleteProfile(accountId: string, requestId = 'profiles-delete'): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.connectionProfiles.delete({ version: 1, requestId, accountId })
+      : Promise.resolve(unavailable(requestId));
+  }
+
+  forgetSecret(input: { version: 1; requestId: string; accountId: string }): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.account.forgetSecret(input) : Promise.resolve(unavailable(input.requestId));
   }
 
   setSecret(input: {
@@ -45,6 +78,8 @@ export class ElectronAccountPort implements AccountPort {
     requestId: string;
     credentialRef: string;
     secret: string;
+    accountId?: string;
+    remember?: boolean;
   }): Promise<Result<{ stored: true }>> {
     const api = getAtomicChatApi();
     return api ? api.account.setSecret(input) : Promise.resolve(unavailable(input.requestId));

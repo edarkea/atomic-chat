@@ -15,7 +15,7 @@ function taggedError(code, message, phase, cause) {
 
 function tlsIdentityCheck(tlsOptions) {
   return (host, certificate) => {
-    const identityError = tls.checkServerIdentity(host, certificate);
+    const identityError = tls.checkServerIdentity(tlsOptions.identityHost || host, certificate);
     if (identityError) return identityError;
     if (
       tlsOptions.expectedFingerprint &&
@@ -138,7 +138,7 @@ function upgradeStartTls(rawSocket, host, tlsOptions) {
     const secureSocket = tls.connect({
       socket: rawSocket,
       host,
-      servername: host,
+      servername: tlsOptions.servername || host,
       ...tlsOptions,
       rejectUnauthorized: tlsOptions.rejectUnauthorized !== false,
       checkServerIdentity: tlsOptions.checkServerIdentity || tlsIdentityCheck(tlsOptions),
@@ -209,7 +209,7 @@ function certificateSocket(tlsOptions) {
         ...parameters,
         ...tlsOptions,
         rejectUnauthorized: true,
-        servername: parameters.host,
+        servername: tlsOptions.servername || parameters.host,
         checkServerIdentity: tlsIdentityCheck(tlsOptions),
       });
       this.socket.on('data', (data) => this.emit('data', data));
@@ -228,7 +228,7 @@ function certificateSocket(tlsOptions) {
 
 function createXmppTransport(adapter) {
   return {
-    installTlsTransport(session, service, tlsOptions) {
+    installTlsTransport(session, service, tlsOptions, domain) {
       session.transports = session.transports.map((Transport) => {
         let directTls = false;
         try {
@@ -240,7 +240,11 @@ function createXmppTransport(adapter) {
         }
         if (!directTls) return Transport;
         class SessionTlsTransport extends Transport {}
-        SessionTlsTransport.prototype.Socket = certificateSocket(tlsOptions);
+        SessionTlsTransport.prototype.Socket = certificateSocket({
+          ...tlsOptions,
+          servername: domain || tlsOptions.servername,
+          identityHost: domain || tlsOptions.identityHost,
+        });
         return SessionTlsTransport;
       });
     },
@@ -260,11 +264,12 @@ function createXmppTransport(adapter) {
         return SessionStartTlsTransport;
       });
     },
-    async probeDirectCertificate(endpoint) {
+    async probeDirectCertificate(endpoint, domain) {
       return new Promise((resolve, reject) => {
         const socket = tls.connect({
           host: endpoint.host,
           port: endpoint.port,
+          servername: domain || endpoint.host,
           servername: endpoint.host,
           rejectUnauthorized: false,
         });
@@ -306,7 +311,10 @@ function createXmppTransport(adapter) {
       const rawSocket = await negotiateStartTls(endpoint.host, endpoint.port, domain);
       const secureSocket = await upgradeStartTls(rawSocket, endpoint.host, {
         rejectUnauthorized: false,
-        checkServerIdentity: tls.checkServerIdentity,
+        servername: domain || endpoint.host,
+        identityHost: domain || endpoint.host,
+        checkServerIdentity: (host, certificate) =>
+          tls.checkServerIdentity(domain || host, certificate),
       });
       try {
         return {
@@ -321,6 +329,7 @@ function createXmppTransport(adapter) {
     async resolveTlsOptions(input, senderId, transport) {
       const endpoint = input.endpoint;
       const transportName = transport.transport;
+      const logicalDomain = endpoint.domain || endpoint.host;
       let previous = null;
       try {
         previous =
@@ -335,13 +344,10 @@ function createXmppTransport(adapter) {
       }
       const probe =
         transportName === 'direct-tls'
-          ? await adapter.probeDirectCertificate(endpoint)
-          : await adapter.probeStartTlsCertificate(
-              endpoint,
-              endpoint.domain || process.env.ATOMIC_XMPP_DOMAIN || endpoint.host,
-            );
+          ? await adapter.probeDirectCertificate(endpoint, logicalDomain)
+          : await adapter.probeStartTlsCertificate(endpoint, logicalDomain);
       const assessment = assessCertificate(
-        endpoint.host,
+        logicalDomain,
         probe.certificate,
         probe.authorized,
         probe.authorizationError,
@@ -355,7 +361,12 @@ function createXmppTransport(adapter) {
         );
       const changed = previous && previous.fingerprintSha256 !== assessment.info.fingerprintSha256;
       if (previous && !changed)
-        return { ca: previous.certificatePem, expectedFingerprint: previous.fingerprintSha256 };
+        return {
+          ca: previous.certificatePem,
+          expectedFingerprint: previous.fingerprintSha256,
+          servername: logicalDomain,
+          identityHost: logicalDomain,
+        };
       if (changed || assessment.trustable) {
         const decision = await adapter.awaitTrustDecision(
           input,
@@ -390,9 +401,11 @@ function createXmppTransport(adapter) {
         return {
           ca: assessment.error ? assessment.info.pem : undefined,
           expectedFingerprint: assessment.info.fingerprintSha256,
+          servername: logicalDomain,
+          identityHost: logicalDomain,
         };
       }
-      return {};
+      return { servername: logicalDomain, identityHost: logicalDomain };
     },
     awaitTrustDecision(input, transport, certificate, verificationError, previous, senderId) {
       return new Promise((resolve) => {

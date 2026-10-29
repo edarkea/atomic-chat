@@ -9,6 +9,7 @@ import {
   Presence,
   PresenceInput,
   Preferences,
+  XmppConnectionProfile,
 } from './domain';
 import {
   ACCOUNT_PORT,
@@ -63,6 +64,7 @@ export class ChatFacade {
     notifications: true,
     autoLogin: false,
   });
+  readonly profiles = signal<ReadonlyArray<XmppConnectionProfile>>([]);
   private identityGeneration = 0;
   private contactsOwner = '';
   private olderCursor: string | null = null;
@@ -112,7 +114,7 @@ export class ChatFacade {
 
   async decideCertificate(decision: CertificateTrustDecision): Promise<void> {
     const request = this.certificateRequest();
-    if (!request || !this.account.getConfig()) return;
+    if (!request || !this.isAvailable()) return;
     try {
       const result = await this.certificate.decide({
         version: 1,
@@ -129,12 +131,74 @@ export class ChatFacade {
   }
 
   async tryAutoLogin(): Promise<void> {
-    if (!this.account.getConfig()) return;
-    const result = await this.preferencesPort.get({ accountId: this.accountId() });
-    if (result.ok && result.value.autoLogin) await this.connect(this.accountId());
+    if (!this.isAvailable()) return;
+    const listed = await this.loadProfiles();
+    if (listed.length) {
+      for (const profile of [...listed].sort(
+        (left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          left.accountId.localeCompare(right.accountId),
+      )) {
+        const result = await this.preferencesPort.get({ accountId: profile.accountId });
+        if (result.ok && result.value.autoLogin) {
+          this.preferences.set(result.value);
+          await this.connect(profile.accountId, '', { profile, remember: true, autoLogin: true });
+          return;
+        }
+      }
+      return;
+    }
+    const accountId = this.accountId();
+    if (!accountId) return;
+    const result = await this.preferencesPort.get({ accountId });
+    if (result.ok && result.value.autoLogin) await this.connect(accountId);
   }
 
-  async connect(accountId = this.accountId(), secret = ''): Promise<boolean> {
+  async loadProfiles(): Promise<ReadonlyArray<XmppConnectionProfile>> {
+    const listProfiles = this.account.listProfiles;
+    if (!listProfiles) return this.profiles();
+    const result = await listProfiles.call(this.account, createOpaqueId('profiles-list'));
+    if (result.ok) this.profiles.set(result.value);
+    return result.ok ? result.value : [];
+  }
+
+  async forgetSecret(accountId: string): Promise<boolean> {
+    const result = await this.account.forgetSecret?.({
+      version: 1,
+      requestId: createOpaqueId('forget-secret'),
+      accountId,
+    });
+    if (!result) return false;
+    if (!result.ok) {
+      this.error.set(result.error.message);
+      return false;
+    }
+    return true;
+  }
+
+  async deleteProfile(accountId: string): Promise<boolean> {
+    const result = await this.account.deleteProfile?.(accountId, createOpaqueId('profiles-delete'));
+    if (!result) return false;
+    if (!result.ok) {
+      this.error.set(result.error.message);
+      return false;
+    }
+    this.profiles.update((items) => items.filter((profile) => profile.accountId !== accountId));
+    return true;
+  }
+
+  async connect(
+    accountId = this.accountId(),
+    secret = '',
+    options?: {
+      profile?: XmppConnectionProfile;
+      domain?: string;
+      mode?: 'automatic' | 'manual';
+      manualEndpoint?: XmppConnectionProfile['manualEndpoint'];
+      remember?: boolean;
+      autoLogin?: boolean;
+    },
+  ): Promise<boolean> {
     const generation = ++this.identityGeneration;
     const requestedAccount = accountId.trim();
     this.error.set(null);
@@ -150,12 +214,35 @@ export class ChatFacade {
     try {
       const requestId = createOpaqueId('req');
       const credentialRef = `account:${requestedAccount}`;
+      const profile =
+        options?.profile ||
+        (options?.domain
+          ? {
+              accountId: requestedAccount,
+              domain: options.domain,
+              mode: options.mode || 'automatic',
+              ...(options.mode === 'manual' && options.manualEndpoint
+                ? { manualEndpoint: options.manualEndpoint }
+                : {}),
+              updatedAt: new Date().toISOString(),
+            }
+          : undefined);
+      if (profile && this.account.saveProfile) {
+        const saved = await this.account.saveProfile(profile, createOpaqueId('profiles-save'));
+        if (!saved.ok) throw new Error(saved.error.message);
+        this.profiles.update((items) => [
+          saved.value,
+          ...items.filter((item) => item.accountId !== saved.value.accountId),
+        ]);
+      }
       if (secret) {
         const stored = await this.account.setSecret({
           version: 1,
           requestId,
           credentialRef,
           secret,
+          accountId: requestedAccount,
+          remember: options?.remember ?? true,
         });
         if (!stored.ok) {
           if (this.isCurrent(generation, requestedAccount)) this.error.set(stored.error.message);
@@ -163,12 +250,22 @@ export class ChatFacade {
         }
       }
       const endpoint = this.account.getConfig()?.endpoint;
-      if (!endpoint?.host || !endpoint.port) throw new Error('XMPP endpoint is not configured');
+      if (!profile && (!endpoint?.host || !endpoint.port))
+        throw new Error('XMPP endpoint is not configured');
+      if (profile) {
+        const preference = await this.preferencesPort.update({
+          accountId: requestedAccount,
+          changes: { autoLogin: Boolean(options?.autoLogin && options?.remember) },
+        });
+        if (preference.ok)
+          this.preferences.update((current) => ({ ...current, ...preference.value }));
+      }
       const result = await this.xmpp.connect({
         version: 1,
         requestId,
         accountId: requestedAccount,
-        endpoint,
+        ...(endpoint ? { endpoint } : {}),
+        ...(profile ? { profileId: profile.accountId } : {}),
         credentialRef,
       });
       if (!result.ok) {
@@ -222,7 +319,7 @@ export class ChatFacade {
   }
 
   async loadConversation(conversationId: string): Promise<void> {
-    if (!this.account.getConfig() || !conversationId) return;
+    if (!this.isAvailable() || !conversationId) return;
     const accountId = this.accountId();
     const generation = this.identityGeneration;
     const requestId = createOpaqueId('history');
@@ -273,7 +370,7 @@ export class ChatFacade {
     generation = this.identityGeneration,
     accountId = this.accountId(),
   ): Promise<void> {
-    if (!this.account.getConfig()) return;
+    if (!this.isAvailable()) return;
     await this.loadStoredConversations(accountId, generation);
     const result = await this.preferencesPort.get({ accountId });
     if (!this.isCurrent(generation, accountId)) return;
@@ -282,14 +379,14 @@ export class ChatFacade {
   }
 
   async updatePreferences(changes: Partial<Preferences>): Promise<void> {
-    if (!this.account.getConfig()) return;
+    if (!this.isAvailable()) return;
     const result = await this.preferencesPort.update({ accountId: this.accountId(), changes });
     if (result.ok) this.preferences.update((current) => ({ ...current, ...result.value }));
     else this.error.set(result.error.message);
   }
 
   async resetPreferences(): Promise<void> {
-    if (!this.account.getConfig()) return;
+    if (!this.isAvailable()) return;
     const result = await this.preferencesPort.reset({ accountId: this.accountId() });
     if (result.ok) this.preferences.set(result.value);
     else this.error.set(result.error.message);
@@ -355,7 +452,7 @@ export class ChatFacade {
     conversationId: string,
     direction: 'older' | 'newer',
   ): Promise<void> {
-    if (!this.account.getConfig() || !conversationId || this.historyLoading()) return;
+    if (!this.isAvailable() || !conversationId || this.historyLoading()) return;
     const context = this.historyContext;
     const cursor = direction === 'older' ? this.olderCursor : this.newerCursor;
     if (!cursor || !context || context.conversationId !== this.bareConversation(conversationId))
@@ -423,6 +520,10 @@ export class ChatFacade {
 
   private isCurrent(generation: number, accountId: string): boolean {
     return generation === this.identityGeneration && accountId === this.accountId();
+  }
+
+  private isAvailable(): boolean {
+    return this.account.isAvailable?.() ?? Boolean(this.account.getConfig());
   }
 
   private isHistoryContextCurrent(context: HistoryContext): boolean {
