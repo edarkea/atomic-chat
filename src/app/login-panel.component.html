@@ -36,7 +36,7 @@
         (ngModelChange)="domainChange.emit($event)"
         autocomplete="organization"
         placeholder="empresa.com"
-        [attr.aria-invalid]="!domain() ? 'true' : null"
+        [attr.aria-invalid]="!domain() && !accountId().includes('@') ? 'true' : null"
     /></label>
     <label
       >Contraseña<input
@@ -116,11 +116,7 @@
     @if (error()) {
       <p class="login-error" role="alert">{{ error() }}</p>
     }
-    <button
-      class="primary login-button"
-      type="submit"
-      [disabled]="busy() || !accountId() || !domain() || (!password() && !profiles().length)"
-    >
+    <button class="primary login-button" type="submit" [disabled]="!canSubmit()">
       {{ busy() ? 'Conectando…' : 'Entrar' }}
     </button>
   </form>

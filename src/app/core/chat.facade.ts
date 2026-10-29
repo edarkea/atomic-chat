@@ -214,8 +214,10 @@ export class ChatFacade {
     try {
       const requestId = createOpaqueId('req');
       const credentialRef = `account:${requestedAccount}`;
+      const legacyProfile =
+        options?.profile && !options.profile.accountId.includes('@') ? options.profile : undefined;
       const profile =
-        options?.profile ||
+        legacyProfile ||
         (options?.domain
           ? {
               accountId: requestedAccount,
@@ -227,7 +229,7 @@ export class ChatFacade {
               updatedAt: new Date().toISOString(),
             }
           : undefined);
-      if (profile && this.account.saveProfile) {
+      if (profile && !legacyProfile && this.account.saveProfile) {
         const saved = await this.account.saveProfile(profile, createOpaqueId('profiles-save'));
         if (!saved.ok) throw new Error(saved.error.message);
         this.profiles.update((items) => [
@@ -265,7 +267,10 @@ export class ChatFacade {
         requestId,
         accountId: requestedAccount,
         ...(endpoint ? { endpoint } : {}),
-        ...(profile ? { profileId: profile.accountId } : {}),
+        ...(options?.profile || profile
+          ? { profileId: (options?.profile || profile)?.accountId }
+          : {}),
+        ...(options?.domain ? { profileDomain: options.domain } : {}),
         credentialRef,
       });
       if (!result.ok) {

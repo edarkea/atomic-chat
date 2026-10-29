@@ -324,11 +324,17 @@ export class App {
       this.chat.error.set('El usuario y el dominio XMPP son obligatorios.');
       return;
     }
-    const accountId = `${localpart}@${domain}`;
+    const selectedProfile = this.loginProfiles().find(
+      (profile) => profile.accountId === this.selectedProfileId(),
+    );
+    const legacyProfile =
+      selectedProfile && !selectedProfile.accountId.includes('@') ? selectedProfile : undefined;
+    const accountId = legacyProfile ? legacyProfile.accountId : `${localpart}@${domain}`;
     this.resetConversationSelection();
     this.muc.setAccount(accountId);
     this.loginBusy.set(true);
     const connected = await this.chat.connect(accountId, login.password, {
+      ...(legacyProfile ? { profile: legacyProfile } : {}),
       domain,
       mode: login.automatic !== false ? 'automatic' : 'manual',
       manualEndpoint: {

@@ -36,4 +36,34 @@ export class LoginPanelComponent {
   readonly forgetSecret = output<void>();
   readonly deleteProfile = output<void>();
   readonly submitted = output<void>();
+
+  protected canSubmit(): boolean {
+    const account = this.accountId().trim();
+    const at = account.indexOf('@');
+    const localpart = at >= 0 ? account.slice(0, at) : account;
+    const domain = at >= 0 ? account.slice(at + 1) : this.domain().trim();
+    if (
+      this.busy() ||
+      !account ||
+      !localpart ||
+      !domain ||
+      (at >= 0 && at !== account.lastIndexOf('@')) ||
+      /[\s/@]/.test(localpart) ||
+      /[\s/@]/.test(domain) ||
+      (!this.password().trim() && !this.profiles().length)
+    )
+      return false;
+    if (!this.automatic()) {
+      const endpointPort = this.port();
+      if (
+        !this.host().trim() ||
+        !Number.isInteger(endpointPort) ||
+        endpointPort < 1 ||
+        endpointPort > 65535 ||
+        !['starttls', 'direct-tls'].includes(this.transport())
+      )
+        return false;
+    }
+    return true;
+  }
 }

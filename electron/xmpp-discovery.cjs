@@ -3,11 +3,17 @@ const dns = require('node:dns/promises');
 const MAX_RECORDS = 32;
 const DEFAULT_TIMEOUT_MS = 5000;
 
+function typedError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
 function normalizeXmppDomain(value) {
-  if (typeof value !== 'string') throw new Error('INVALID_DOMAIN');
+  if (typeof value !== 'string') throw typedError('INVALID_DOMAIN');
   const domain = value.trim().replace(/\.$/, '').toLowerCase();
   if (!domain || domain.length > 253 || /[^a-z0-9.:-]/i.test(domain) || domain.includes('..'))
-    throw new Error('INVALID_DOMAIN');
+    throw typedError('INVALID_DOMAIN');
   if (
     domain !== 'localhost' &&
     !/^\[[0-9a-f:]+\]$/i.test(domain) &&
@@ -19,7 +25,7 @@ function normalizeXmppDomain(value) {
         (label) => !label || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label),
       )
     )
-      throw new Error('INVALID_DOMAIN');
+      throw typedError('INVALID_DOMAIN');
   }
   return domain;
 }
@@ -54,17 +60,17 @@ function validateRecord(record, transport) {
     typeof record.name !== 'string' ||
     !record.name.trim()
   )
-    throw new Error('INVALID_DNS_RESPONSE');
+    throw typedError('INVALID_DNS_RESPONSE');
   if (record.name.trim() === '.') return { negative: true };
   const host = record.name.trim().replace(/\.$/, '').toLowerCase();
   if (!host || host.includes('..') || /[^a-z0-9.:[\]-]/i.test(host) || host.length > 253)
-    throw new Error('INVALID_DNS_RESPONSE');
+    throw typedError('INVALID_DNS_RESPONSE');
   if (!Number.isInteger(record.port) || record.port < 1 || record.port > 65535)
-    throw new Error('INVALID_DNS_RESPONSE');
+    throw typedError('INVALID_DNS_RESPONSE');
   if (!Number.isInteger(record.priority) || record.priority < 0 || record.priority > 65535)
-    throw new Error('INVALID_DNS_RESPONSE');
+    throw typedError('INVALID_DNS_RESPONSE');
   if (!Number.isInteger(record.weight) || record.weight < 0 || record.weight > 65535)
-    throw new Error('INVALID_DNS_RESPONSE');
+    throw typedError('INVALID_DNS_RESPONSE');
   return { host, port: record.port, priority: record.priority, weight: record.weight, transport };
 }
 
@@ -97,7 +103,7 @@ async function queryService(domain, transport, resolveSrv, timeoutMs) {
   try {
     const records = await withTimeout(resolveSrv(service), timeoutMs);
     if (!Array.isArray(records) || records.length > MAX_RECORDS)
-      throw new Error('INVALID_DNS_RESPONSE');
+      throw typedError('INVALID_DNS_RESPONSE');
     const validated = records.map((record) => validateRecord(record, transport));
     if (validated.some((record) => record.negative)) return { records: [], negative: true };
     const deduplicated = new Map(
@@ -125,8 +131,7 @@ async function resolveXmppEndpoints(domainInput, options = {}) {
   const records = results.flatMap((result) => result.records);
   if (records.length)
     return { domain, candidates: weightedOrder(records, random), fallback: false };
-  if (results.some((result) => result.negative))
-    throw Object.assign(new Error('SERVICE_UNAVAILABLE'), { code: 'SERVICE_UNAVAILABLE' });
+  if (results.some((result) => result.negative)) throw typedError('SERVICE_UNAVAILABLE');
   return {
     domain,
     fallback: true,

@@ -67,6 +67,17 @@ describe('extracted Angular presentation components', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('input[name="account"]')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('error visible');
+    const submitButton = fixture.nativeElement.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+    fixture.componentRef.setInput('accountId', 'operator@@invalid');
+    fixture.detectChanges();
+    expect(submitButton.disabled).toBe(true);
+    fixture.componentRef.setInput('accountId', 'operator');
+    fixture.componentRef.setInput('domain', '');
+    fixture.detectChanges();
+    expect(submitButton.disabled).toBe(true);
     const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
     form.dispatchEvent(new Event('submit'));
     expect(submit).toHaveBeenCalledOnce();

@@ -31,6 +31,13 @@ function createIpcHelpers({
       (typeof input.profileId !== 'string' || input.profileId !== input.accountId)
     )
       throw new Error('INVALID_INPUT');
+    if (
+      input.profileDomain !== undefined &&
+      (typeof input.profileDomain !== 'string' ||
+        !input.profileDomain.trim() ||
+        input.profileDomain.length > 253)
+    )
+      throw new Error('INVALID_DOMAIN');
     if (!input.endpoint) return undefined;
     return validateXmppTransport(input.endpoint, appIsPackaged);
   }
@@ -109,8 +116,9 @@ function createIpcHelpers({
       'INVALID_DNS_RESPONSE',
       'SERVICE_UNAVAILABLE',
       'DNS_TIMEOUT',
+      'INVALID_INPUT',
     ]);
-    const rawCode = error?.code;
+    const rawCode = error?.code || error?.message;
     const code =
       error?.message === 'secret_unavailable' ||
       error?.message === 'certificate_storage_unavailable'
@@ -147,13 +155,19 @@ function createIpcHelpers({
       INVALID_DNS_RESPONSE: 'El descubrimiento del servidor devolvió datos no válidos.',
       SERVICE_UNAVAILABLE: 'El dominio XMPP rechazó el servicio solicitado.',
       DNS_TIMEOUT: 'El descubrimiento del servidor excedió el tiempo límite.',
+      INVALID_INPUT: 'La solicitud de conexión no es válida.',
     };
     return {
       ok: false,
       version: 1,
       error: {
         code,
-        retryable: code === 'TRANSPORT_FAILED',
+        retryable: [
+          'TRANSPORT_FAILED',
+          'DNS_TIMEOUT',
+          'SERVER_UNREACHABLE',
+          'TLS_NEGOTIATION_FAILED',
+        ].includes(code),
         requestId: requestIdValue,
         message: messages[code] || 'No fue posible conectar con el servidor XMPP.',
         ...(certificate ? { certificate } : {}),

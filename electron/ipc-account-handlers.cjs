@@ -46,18 +46,23 @@ function registerAccountHandlers({
     const { persistence, secrets, xmpp } = getRuntime();
     const connectionRequest = requestId(event, input);
     const connectionToken = historySecurity.beginConnection(event.sender.id, connectionRequest);
-    const credentialRef = input?.credentialRef || `account:${input?.accountId || ''}`;
+    const expectedCredentialRef =
+      typeof input?.accountId === 'string' ? `account:${input.accountId}` : '';
+    const credentialRef = expectedCredentialRef;
     try {
       const validatedInput = validateAccountInput(input);
-      if (input.credentialRef && input.credentialRef !== credentialRef)
+      if (
+        !expectedCredentialRef ||
+        (input.credentialRef && input.credentialRef !== expectedCredentialRef)
+      )
         throw new Error('INVALID_INPUT');
       const profile = input.profileId ? persistence.getConnectionProfile(input.profileId) : null;
       if (input.profileId && (!profile || profile.accountId !== input.accountId))
         throw new Error('INVALID_INPUT');
       let endpoints;
-      let domain = input.endpoint?.domain;
+      let domain = input.profileDomain || input.endpoint?.domain;
       if (profile) {
-        domain = normalizeXmppDomain(profile.domain);
+        domain = normalizeXmppDomain(domain || profile.domain);
         if (profile.mode === 'manual')
           endpoints = [{ ...profile.manualEndpoint, priority: 0, weight: 0 }];
         else endpoints = (await resolveXmppEndpoints(domain)).candidates;
@@ -121,7 +126,7 @@ function registerAccountHandlers({
         transport: input?.endpoint?.transport,
         port: input?.endpoint?.port,
         phase: error?.phase || 'connect',
-        code: error?.code || 'TRANSPORT_FAILED',
+        code: error?.code || error?.message || 'TRANSPORT_FAILED',
       });
       return connectionError(error, connectionRequest);
     } finally {

@@ -270,7 +270,6 @@ function createXmppTransport(adapter) {
           host: endpoint.host,
           port: endpoint.port,
           servername: domain || endpoint.host,
-          servername: endpoint.host,
           rejectUnauthorized: false,
         });
         const timer = setTimeout(() => {

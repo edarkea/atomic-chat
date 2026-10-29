@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const tls = require('node:tls');
+const EventEmitter = require('node:events');
 const { resolveXmppEndpoints } = require('../electron/xmpp-discovery.cjs');
 const { PersistenceStore } = require('../electron/storage.cjs');
 const { SecretStore } = require('../electron/secrets.cjs');
@@ -10,6 +12,7 @@ const {
   registerConnectionProfileHandlers,
 } = require('../electron/ipc-connection-profile-handlers.cjs');
 const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
+const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
 
 function resolver(recordsByService, errorByService = {}) {
   return async (service) => {
@@ -93,6 +96,63 @@ test('DNS SRV rejects explicit service denial, invalid records, and transient er
   );
 });
 
+test('direct TLS probes TCP at the SRV host but sends SNI for the logical XMPP domain', async () => {
+  const certificate = {
+    raw: Buffer.from('synthetic-certificate'),
+    fingerprint256: 'AA:BB:CC:DD',
+    subject: { CN: 'empresa.com' },
+    issuer: { CN: 'empresa.com' },
+    valid_from: 'Jan 01 00:00:00 2020 GMT',
+    valid_to: 'Jan 01 00:00:00 2035 GMT',
+    subjectaltname: 'DNS:empresa.com',
+    sigalg: 'RSA-SHA256',
+    bits: 2048,
+  };
+  certificate.issuerCertificate = certificate;
+  const originalConnect = tls.connect;
+  let options;
+  tls.connect = (connectionOptions) => {
+    options = connectionOptions;
+    const socket = new EventEmitter();
+    socket.getPeerCertificate = () => certificate;
+    socket.authorizationError = undefined;
+    socket.authorized = true;
+    socket.destroy = () => undefined;
+    queueMicrotask(() => socket.emit('secureConnect'));
+    return socket;
+  };
+  try {
+    const adapter = new XmppAdapter();
+    const result = await adapter.probeDirectCertificate(
+      { host: 'srv.empresa.com', port: 5223 },
+      'empresa.com',
+    );
+    assert.equal(options.host, 'srv.empresa.com');
+    assert.equal(options.servername, 'empresa.com');
+    assert.equal(result.certificate, certificate);
+    adapter.probeDirectCertificate = async () => ({
+      certificate: { ...certificate, subjectaltname: 'DNS:srv.empresa.com' },
+      authorized: true,
+      authorizationError: undefined,
+    });
+    await assert.rejects(
+      () =>
+        adapter.resolveTlsOptions(
+          {
+            requestId: 'tls-domain',
+            accountId: 'juan@empresa.com',
+            endpoint: { host: 'srv.empresa.com', domain: 'empresa.com', port: 5223 },
+          },
+          1,
+          { transport: 'direct-tls' },
+        ),
+      (error) => error.code === 'CERTIFICATE_INVALID',
+    );
+  } finally {
+    tls.connect = originalConnect;
+  }
+});
+
 test('connection profiles survive restart without storing credentials and preserve account isolation', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-conn-profile-'));
   let store = new PersistenceStore(directory);
@@ -136,6 +196,119 @@ test('connection profiles survive restart without storing credentials and preser
   assert.equal(store.listMessages(profileA.accountId, 'contact@empresa-a.com').length, 1);
   assert.equal(store.getConnectionProfile(profileA.accountId), null);
   store.close();
+});
+
+test('legacy account identity remains stable while an explicit XMPP domain is supplied for connection', async () => {
+  const calls = [];
+  const profile = {
+    accountId: 'juan',
+    domain: '',
+    mode: 'manual',
+    manualEndpoint: { host: 'srv.empresa.com', port: 5222, transport: 'starttls' },
+    updatedAt: '2026-10-29T12:00:00.000Z',
+  };
+  const persistence = {
+    getConnectionProfile: (accountId) => (accountId === 'juan' ? profile : null),
+    upsertAccount: (value) => calls.push(['account', value]),
+  };
+  const secrets = {
+    get: (reference) => {
+      calls.push(['secret', reference]);
+      return 'legacy-password';
+    },
+    clearSession: () => undefined,
+  };
+  const xmpp = {
+    connect: async (input) => {
+      calls.push(['connect', input]);
+      return {
+        accountId: input.accountId,
+        status: 'connected',
+        retryable: false,
+        since: new Date().toISOString(),
+      };
+    },
+  };
+  const handlers = new Map();
+  const historySecurity = {
+    beginConnection: () => 'token',
+    completeConnection: () => undefined,
+    finishConnection: () => undefined,
+  };
+  const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+  const options = {
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    assertSender: () => undefined,
+    getRuntime: () => ({ persistence, secrets, xmpp }),
+    historySecurity,
+    validateXmppTransport: (endpoint) => ({ ...endpoint, rejectUnauthorized: true }),
+    helpers: createIpcHelpers({
+      assertSender: () => undefined,
+      validateXmppTransport: (endpoint) => ({ ...endpoint, rejectUnauthorized: true }),
+      appIsPackaged: false,
+      getRuntime: () => ({ xmpp }),
+      fileTransfers: {},
+      outgoingFileTransfers: {},
+      historySecurity,
+    }),
+  };
+  registerAccountHandlers(options);
+  const result = await handlers.get('account.connect')(
+    { sender: { id: 1 } },
+    {
+      version: 1,
+      requestId: 'legacy-connect',
+      accountId: 'juan',
+      profileId: 'juan',
+      profileDomain: 'empresa.com',
+      credentialRef: 'account:juan',
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(calls.find((call) => call[0] === 'secret')[1], 'account:juan');
+  const connected = calls.find((call) => call[0] === 'connect')[1];
+  assert.equal(connected.accountId, 'juan');
+  assert.equal(connected.endpoint.domain, 'empresa.com');
+  const secretCallCount = calls.filter((call) => call[0] === 'secret').length;
+  const rejected = await handlers.get('account.connect')(
+    { sender: { id: 1 } },
+    {
+      version: 1,
+      requestId: 'cross-account',
+      accountId: 'maria',
+      credentialRef: 'account:juan',
+      endpoint: { host: 'srv.empresa.com', port: 5222, transport: 'starttls' },
+    },
+  );
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, 'INVALID_INPUT');
+  assert.equal(calls.filter((call) => call[0] === 'secret').length, secretCallCount);
+});
+
+test('maps typed DNS and transport failures to stable connection error codes', () => {
+  const helpers = createIpcHelpers({
+    assertSender: () => undefined,
+    validateXmppTransport: (endpoint) => endpoint,
+    appIsPackaged: false,
+    getRuntime: () => ({}),
+    fileTransfers: {},
+    outgoingFileTransfers: {},
+    historySecurity: {},
+  });
+  for (const code of [
+    'INVALID_DOMAIN',
+    'INVALID_DNS_RESPONSE',
+    'DNS_TIMEOUT',
+    'SERVICE_UNAVAILABLE',
+    'SERVER_UNREACHABLE',
+    'TLS_NEGOTIATION_FAILED',
+    'AUTH_FAILED',
+  ]) {
+    const result = helpers.connectionError({ code }, 'typed-error');
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, code);
+    assert.equal(result.error.requestId, 'typed-error');
+  }
 });
 
 test('temporary secrets never reach disk and remember false revokes a prior persistent secret', () => {

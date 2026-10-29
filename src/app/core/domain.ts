@@ -329,6 +329,7 @@ export interface ConnectInput {
     allowInsecureTls?: boolean;
   };
   profileId?: string;
+  profileDomain?: string;
   credentialRef?: string;
 }
 export interface PresenceInput {
