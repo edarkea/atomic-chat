@@ -117,7 +117,7 @@ class OutgoingFileTransferCoordinator {
     try {
       await this.withTimeout(() => record.transport.sendOffer(record), this.siTimeout, 'SI acceptance timed out');
       if (record.terminalRequested) return transferView(record);
-      record.state = 'awaiting_acceptance';
+      record.state = 'accepted';
       record.updatedAt = new Date().toISOString();
       this.emit(record);
       await this.withTimeout(() => record.transport.sendOpen(record, this.blockSize), this.iqTimeout, 'IBB open timed out');

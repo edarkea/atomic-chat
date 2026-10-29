@@ -333,7 +333,7 @@ class XmppAdapter {
   async sendOutgoingOffer(accountId, session, generation, record) {
     const si = xml('si', { xmlns: SI_NS, id: record.siSessionId, profile: SI_FILE_NS },
       xml('file', { xmlns: SI_FILE_NS, name: record.offer.name, size: record.offer.sizeBytes }),
-      xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'form' }, xml('field', { var: 'stream-method', type: 'list-single' }, xml('value', {}, IBB_NS)))));
+      xml('feature', { xmlns: FEATURE_NEG_NS }, xml('x', { xmlns: DATAFORM_NS, type: 'form' }, xml('field', { var: 'stream-method', type: 'list-single' }, xml('option', {}, xml('value', {}, IBB_NS))))));
     const response = await this.requestOutgoingIq(accountId, session, generation, record, si, 'si');
     const values = response.getChild('si', SI_NS)?.getChild('feature', FEATURE_NEG_NS)?.getChild('x', DATAFORM_NS)?.getChildren('field').flatMap((field) => field.getChildren('value').map((value) => value.getText())) || [];
     if (!values.includes(IBB_NS)) throw taggedError('UNSUPPORTED_METHOD', 'El receptor no seleccionó IBB.', 'file.si');

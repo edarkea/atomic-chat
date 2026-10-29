@@ -14,6 +14,7 @@ const FEATURE = 'http://jabber.org/protocol/feature-neg';
 const FORM = 'jabber:x:data';
 const IBB = 'http://jabber.org/protocol/ibb';
 const DISCO = 'http://jabber.org/protocol/disco#info';
+const STANZA = 'urn:ietf:params:xml:ns:xmpp-stanzas';
 const ACCOUNT = 'atomic@example.invalid';
 const RECIPIENT = 'spark@example.invalid/Spark';
 
@@ -131,8 +132,22 @@ test('C5-OUT-08 one shared limiter bounds account and global active transfers', 
   limiter.release('a1'); assert.deepEqual(limiter.counts(ACCOUNT), { account: 1, global: 3 });
 });
 
+function streamMethodsFromOffer(si) {
+  const field = si.getChild('feature', FEATURE)?.getChild('x', FORM)?.getChildren('field').find((candidate) => candidate.attrs.var === 'stream-method');
+  return field?.getChildren('option').flatMap((option) => option.getChildren('value').map((value) => value.getText())) || [];
+}
+
+function smackAcceptsOffer(si) {
+  const feature = si.getChild('feature', FEATURE);
+  const form = feature?.getChild('x', FORM);
+  const field = form?.getChildren('field').find((candidate) => candidate.attrs.var === 'stream-method');
+  const options = field?.getChildren('option') || [];
+  return form?.attrs.type === 'form' && field?.attrs.type === 'list-single' && options.length > 0 && options.every((option) => option.getChildren('value').length === 1) && streamMethodsFromOffer(si).includes(IBB);
+}
+
 function adapterFixture({ wrongDiscoFrom = false, unsupported = false } = {}) {
-  const adapter = new XmppAdapter(false, null, [], null, new OutgoingFileTransferCoordinator({ blockSize: 3 }));
+  const outgoing = new OutgoingFileTransferCoordinator({ blockSize: 3 });
+  const adapter = new XmppAdapter(false, null, [], null, outgoing);
   const sent = [];
   const session = { iqCaller: { request: async (request) => {
     sent.push(request);
@@ -141,28 +156,45 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false } = {}) {
       const features = unsupported ? [] : [xml('feature', { var: SI }), xml('feature', { var: FILE }), xml('feature', { var: IBB })];
       return xml('iq', { type: 'result', id: request.attrs.id, from: wrongDiscoFrom ? 'other@example.invalid/Spark' : RECIPIENT }, xml('query', { xmlns: DISCO }, ...features));
     }
-    if (child.name === 'si') return xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }, xml('si', { xmlns: SI, id: child.attrs.id }, xml('feature', { xmlns: FEATURE }, xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB))))));
+    if (child.name === 'si') {
+      if (!smackAcceptsOffer(child)) return xml('iq', { type: 'error', id: request.attrs.id, from: RECIPIENT }, xml('error', { type: 'cancel' }, xml('not-acceptable', { xmlns: STANZA })));
+      return xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }, xml('si', { xmlns: SI, id: child.attrs.id }, xml('feature', { xmlns: FEATURE }, xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB))))));
+    }
     return xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT });
   } }, send: async () => undefined };
   adapter.sessions.set(ACCOUNT, session); adapter.states.set(ACCOUNT, { status: 'connected' }); adapter.sessionGenerations.set(ACCOUNT, 1); adapter.sessionDomains.set(ACCOUNT, 'example.invalid');
   adapter.rosters.set(ACCOUNT, new Map([['spark@example.invalid', { jid: 'spark@example.invalid', subscription: 'to' }]])); adapter.remoteResources.set(ACCOUNT, new Map([[RECIPIENT, { presence: 'available' }]]));
-  return { adapter, sent };
+  return { adapter, outgoing, sent };
 }
 
-test('C5-OUT-09 Spark path performs discovery, SI, open, ordered data and close with independent IDs', async () => {
-  const { root, filePath } = await fixture(Buffer.from('hello')); const { adapter, sent } = adapterFixture();
+test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data and close', async () => {
+  const { root, filePath } = await fixture(Buffer.from('hello')); const { adapter, outgoing, sent } = adapterFixture(); const states = [];
+  outgoing.onEvent((event) => states.push(event.payload.state));
   try {
     const result = await adapter.sendFile(ACCOUNT, { filePath, fileName: 'fixture.bin', conversationId: 'spark@example.invalid', ownerSenderId: 42 });
     assert.equal(result.state, 'completed'); assert.equal(result.bytesTransferred, '5');
     assert.deepEqual(sent.map((iq) => iq.children[0].name), ['query', 'si', 'open', 'data', 'data', 'close']);
-    assert.notEqual(sent[1].children[0].attrs.id, result.offer.transferId);
-    assert.equal(sent[2].children[0].attrs.sid, sent[1].children[0].attrs.id);
+    const si = sent[1].children[0];
+    assert.equal(si.getChild('feature', FEATURE)?.getChild('x', FORM)?.attrs.type, 'form');
+    const field = si.getChild('feature', FEATURE)?.getChild('x', FORM)?.getChildren('field').find((candidate) => candidate.attrs.var === 'stream-method');
+    assert.equal(field?.attrs.type, 'list-single');
+    assert.equal(field?.getChildren('option').length, 1);
+    assert.deepEqual(streamMethodsFromOffer(si), [IBB]);
+    assert.equal(streamMethodsFromOffer(si).includes('http://jabber.org/protocol/bytestreams'), false);
+    assert.notEqual(si.attrs.id, result.offer.transferId);
+    assert.equal(sent[2].children[0].attrs.sid, si.attrs.id);
+    assert.deepEqual(states, ['offering', 'accepted', 'transferring', 'completed']);
     assert.deepEqual(sent.filter((iq) => iq.children[0].name === 'data').map((iq) => [iq.children[0].attrs.seq, Buffer.from(iq.children[0].getText(), 'base64').toString()]), [['0', 'hel'], ['1', 'lo']]);
     assert.equal(sent.every((iq) => iq.attrs.to === undefined || iq.attrs.to === RECIPIENT), true);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('C5-OUT-10 stale or incapable Spark resources are rejected before source transfer', async () => {
+test('C5-OUT-10 Smack-style inspection rejects a direct field value without an option', () => {
+  const malformed = xml('si', { xmlns: SI, id: 'si-malformed', profile: FILE }, xml('feature', { xmlns: FEATURE }, xml('x', { xmlns: FORM, type: 'form' }, xml('field', { var: 'stream-method', type: 'list-single' }, xml('value', {}, IBB)))));
+  assert.equal(smackAcceptsOffer(malformed), false);
+});
+
+test('C5-OUT-11 stale or incapable Spark resources are rejected before source transfer', async () => {
   const { root, filePath } = await fixture(Buffer.from('hello'));
   try {
     await assert.rejects(adapterFixture({ wrongDiscoFrom: true }).adapter.sendFile(ACCOUNT, { filePath, fileName: 'fixture.bin', conversationId: 'spark@example.invalid', ownerSenderId: 42 }), { code: 'RECIPIENT_UNAVAILABLE' });
