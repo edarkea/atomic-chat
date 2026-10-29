@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
   CertificateTrustDecisionInput,
-  DomainEvent,
   FileActiveInput,
   FileRequest,
   FileSendInput,
@@ -14,6 +13,7 @@ import {
   RoomRef,
   RoomState,
   RoomSendReceipt,
+  TypedDomainEvent,
   MucDiscoverInput,
   MucJoinInput,
   MucLeaveInput,
@@ -127,7 +127,7 @@ export class UnavailableFileTransferPort implements FileTransferPort {
   listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>> {
     return Promise.resolve({ ok: true, version: 1, requestId: input.requestId, value: [] });
   }
-  subscribe(_listener: (event: DomainEvent<unknown>) => void): () => void {
+  subscribe(_listener: (event: TypedDomainEvent) => void): () => void {
     return () => undefined;
   }
 }
@@ -146,7 +146,7 @@ export class UnavailableMucPort implements MucPort {
   sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>> {
     return Promise.resolve(unsupported(input.requestId));
   }
-  subscribe(_listener: (event: DomainEvent<unknown>) => void): () => void {
+  subscribe(_listener: (event: TypedDomainEvent) => void): () => void {
     return () => undefined;
   }
 }

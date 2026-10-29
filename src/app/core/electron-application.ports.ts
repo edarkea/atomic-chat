@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
   CertificateTrustDecisionInput,
-  DomainEvent,
   FileActiveInput,
   FileRequest,
   FileSendInput,
@@ -11,7 +10,9 @@ import {
   Message,
   Preferences,
   Result,
+  TypedDomainEvent,
 } from './domain';
+import { subscribeToDomainEvents } from './domain-event.validation';
 import { getAtomicChatApi } from './electron-api';
 import {
   AccountConfig,
@@ -133,7 +134,8 @@ export class ElectronFileTransferPort implements FileTransferPort {
     return api ? api.file.listActive(input) : Promise.resolve(unavailable(input.requestId));
   }
 
-  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void {
-    return getAtomicChatApi()?.subscribe(listener) ?? (() => undefined);
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void {
+    const subscribe = getAtomicChatApi()?.subscribe;
+    return subscribe ? subscribeToDomainEvents(subscribe, listener) : () => undefined;
   }
 }

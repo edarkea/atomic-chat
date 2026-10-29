@@ -1,7 +1,6 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
 import {
-  DomainEvent,
   MucJoinInput,
   MucNotice,
   MucSendInput,
@@ -9,6 +8,7 @@ import {
   RoomParticipant,
   RoomRef,
   RoomState,
+  TypedDomainEvent,
 } from './domain';
 import { ACCOUNT_PORT, MUC_PORT, AccountPort, MucPort } from './ports';
 
@@ -151,9 +151,9 @@ export class MucFacade {
     this.participantPage.update((page) => Math.max(0, page - 1));
   }
 
-  private onEvent(event: DomainEvent<unknown>): void {
+  private onEvent(event: TypedDomainEvent): void {
     if (event.type === 'connection.stateChanged') {
-      const state = event.payload as { accountId: string; status: string };
+      const state = event.payload;
       if (
         state.accountId === this.accountId() &&
         ['connected', 'idle', 'failed'].includes(state.status)
@@ -170,7 +170,7 @@ export class MucFacade {
       return;
     }
     if (event.type === 'muc.stateChanged') {
-      const state = event.payload as RoomState;
+      const state = event.payload;
       if (state.accountId !== this.accountId()) return;
       this.roomGenerations.set(state.room.jid, state.sessionGeneration);
       this.upsertState(state);
@@ -181,12 +181,7 @@ export class MucFacade {
       return;
     }
     if (event.type === 'muc.participantChanged') {
-      const payload = event.payload as {
-        accountId: string;
-        room: RoomRef;
-        participant: RoomParticipant;
-        sessionGeneration: number;
-      };
+      const payload = event.payload;
       if (
         payload.accountId !== this.accountId() ||
         this.roomGenerations.get(payload.room.jid) !== payload.sessionGeneration
@@ -211,7 +206,7 @@ export class MucFacade {
       return;
     }
     if (event.type === 'muc.messageReceived') {
-      const message = event.payload as RoomMessage;
+      const message = event.payload;
       if (
         message.accountId === this.accountId() &&
         message.source === 'live' &&
@@ -226,7 +221,7 @@ export class MucFacade {
       }
     }
     if (event.type === 'muc.notice') {
-      const notice = event.payload as MucNotice;
+      const notice = event.payload;
       if (
         notice.accountId === this.accountId() &&
         this.roomGenerations.get(notice.roomJid) === notice.sessionGeneration

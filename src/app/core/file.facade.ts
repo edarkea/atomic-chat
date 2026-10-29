@@ -1,6 +1,6 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
-import { DomainEvent, FileOffer, FileTransfer } from './domain';
+import { FileTransfer, TypedDomainEvent } from './domain';
 import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
 
 @Injectable({ providedIn: 'root' })
@@ -117,9 +117,9 @@ export class FileFacade {
     else this.error.set(result.error.message);
   }
 
-  private onEvent(event: DomainEvent<unknown>): void {
+  private onEvent(event: TypedDomainEvent): void {
     if (event.type === 'file.offerReceived') {
-      const offer = event.payload as FileOffer;
+      const offer = event.payload;
       if (offer.accountId === this.account)
         this.upsert({
           offer,
@@ -130,7 +130,7 @@ export class FileFacade {
         });
     }
     if (event.type === 'file.stateChanged') {
-      const transfer = event.payload as FileTransfer;
+      const transfer = event.payload;
       if (transfer.offer.accountId === this.account) this.upsert(transfer);
     }
   }

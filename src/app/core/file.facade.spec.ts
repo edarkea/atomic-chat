@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DomainEvent, FileTransfer } from './domain';
+import { FileTransfer, TypedDomainEvent } from './domain';
 import { FileFacade } from './file.facade';
 import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
 
@@ -24,7 +24,7 @@ const transfer = (accountId: string, transferId: string): FileTransfer => ({
 
 describe('FileFacade injected transfer port', () => {
   let port: FileTransferPort;
-  let emit: (event: DomainEvent<unknown>) => void;
+  let emit: (event: TypedDomainEvent) => void;
   let unsubscribeCalled: boolean;
 
   beforeEach(() => {
@@ -37,7 +37,7 @@ describe('FileFacade injected transfer port', () => {
       listActive: vi.fn(async () =>
         ok<ReadonlyArray<FileTransfer>>([transfer('a@example.invalid', 'incoming')]),
       ),
-      subscribe: vi.fn((listener: (event: DomainEvent<unknown>) => void) => {
+      subscribe: vi.fn((listener: (event: TypedDomainEvent) => void) => {
         emit = listener;
         return () => {
           unsubscribeCalled = true;
@@ -91,6 +91,25 @@ describe('FileFacade injected transfer port', () => {
     release(ok([transfer('a@example.invalid', 'late')]));
     await first;
     expect(facade.transfers()).toEqual([]);
+  });
+
+  it('ignores transfer events belonging to another account', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    emit({
+      version: 1,
+      eventId: 'foreign-transfer',
+      type: 'file.stateChanged',
+      payload: transfer('b@example.invalid', 'foreign'),
+    });
+    expect(facade.transfers().map((item) => item.offer.transferId)).toEqual(['incoming']);
+    emit({
+      version: 1,
+      eventId: 'owned-transfer',
+      type: 'file.stateChanged',
+      payload: transfer('a@example.invalid', 'owned'),
+    });
+    expect(facade.transfers().map((item) => item.offer.transferId)).toEqual(['incoming', 'owned']);
   });
 
   it('unsubscribes from transfer events when destroyed', () => {

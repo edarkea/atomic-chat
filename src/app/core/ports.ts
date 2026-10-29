@@ -4,7 +4,6 @@ import {
   ConnectInput,
   ConnectionState,
   Contact,
-  DomainEvent,
   FileActiveInput,
   FileRequest,
   FileSendInput,
@@ -24,6 +23,7 @@ import {
   RoomRef,
   RoomSendReceipt,
   RoomState,
+  TypedDomainEvent,
 } from './domain';
 
 export interface XmppPort {
@@ -33,7 +33,7 @@ export interface XmppPort {
   setPresence(input: PresenceInput): Promise<Result<Presence>>;
   listRoster(accountId: string): Promise<Result<Contact[]>>;
   sendMessage(input: MessageSendInput): Promise<Result<Message>>;
-  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 
 export interface MucPort {
@@ -41,7 +41,7 @@ export interface MucPort {
   join(input: MucJoinInput): Promise<Result<RoomState>>;
   leave(input: MucLeaveInput): Promise<Result<RoomState>>;
   sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>>;
-  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 
 export interface AccountConfig {
@@ -93,7 +93,7 @@ export interface FileTransferPort {
   reject(input: FileRequest): Promise<Result<FileTransfer>>;
   cancel(input: FileRequest): Promise<Result<FileTransfer>>;
   listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>>;
-  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void;
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 
 export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');

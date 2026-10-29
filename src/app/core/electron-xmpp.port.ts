@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
-import { ConnectInput, ConnectionState, Contact, DomainEvent, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Result, RoomRef, RoomSendReceipt, RoomState } from './domain';
-import { MucPort, XmppPort } from './ports';
+import { ConnectInput, ConnectionState, Contact, Message, MessageSendInput, MucDiscoverInput, MucJoinInput, MucLeaveInput, MucSendInput, Presence, PresenceInput, Result, RoomRef, RoomSendReceipt, RoomState, TypedDomainEvent } from './domain';
+import { subscribeToDomainEvents } from './domain-event.validation';
 import { getAtomicChatApi } from './electron-api';
+import { MucPort, XmppPort } from './ports';
 
 @Injectable({ providedIn: 'root' })
 export class ElectronXmppPort implements XmppPort, MucPort {
@@ -15,6 +16,6 @@ export class ElectronXmppPort implements XmppPort, MucPort {
   async join(input: MucJoinInput): Promise<Result<RoomState>> { return this.api().muc.join(input); }
   async leave(input: MucLeaveInput): Promise<Result<RoomState>> { return this.api().muc.leave(input); }
   async sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>> { return this.api().muc.sendMessage(input); }
-  subscribe(listener: (event: DomainEvent<unknown>) => void): () => void { return this.api().subscribe(listener); }
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void { return subscribeToDomainEvents((handler) => this.api().subscribe(handler), listener); }
   private api() { const api = getAtomicChatApi(); if (!api) throw new Error('electron_api_unavailable'); return api; }
 }

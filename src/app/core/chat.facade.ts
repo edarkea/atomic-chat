@@ -77,15 +77,15 @@ export class ChatFacade {
   constructor() {
     const unsubscribe = this.xmpp.subscribe((event) => {
       if (event.type === 'certificate.trustRequired') {
-        const request = event.payload as CertificateTrustRequest;
+        const request = event.payload;
         if (request.accountId === this.accountId()) this.certificateRequest.set(request);
       }
       if (event.type === 'connection.stateChanged') {
-        const state = event.payload as ConnectionState;
+        const state = event.payload;
         if (state.accountId === this.accountId()) this.connection.set(state);
       }
       if (event.type === 'presence.changed') {
-        const presence = event.payload as Presence & { accountId?: string };
+        const presence = event.payload;
         if (presence.accountId && presence.accountId !== this.accountId()) return;
         if (presence.jid === this.accountId()) this.presence.set(presence);
         else if (presence.accountId === this.accountId()) {
@@ -101,7 +101,7 @@ export class ChatFacade {
         }
       }
       if (event.type === 'message.stateChanged' || event.type === 'message.received') {
-        const message = event.payload as Message;
+        const message = event.payload;
         if (message.accountId === this.accountId()) {
           this.upsertMessage(message, message.conversationId || message.senderJid);
         }
