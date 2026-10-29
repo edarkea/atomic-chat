@@ -380,6 +380,17 @@ export interface AttentionState {
   unreadTotal: number;
   attentionRequested: boolean;
 }
+export interface AttentionRequest {
+  version: ContractVersion;
+  requestId: RequestId;
+  accountId: string;
+  conversationId: string;
+}
+export interface AttentionClearRequest {
+  version: ContractVersion;
+  requestId: RequestId;
+  accountId: string;
+}
 export interface MessageSendInput {
   version: ContractVersion;
   requestId: RequestId;

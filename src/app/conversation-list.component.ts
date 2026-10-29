@@ -1,6 +1,11 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Contact, RoomState } from './core/domain';
+import { MucNavigationComponent, MucNavigationModel } from './muc-navigation.component';
+
+export type WorkspaceConversationItem =
+  | { readonly kind: 'direct'; readonly contact: Contact; readonly lastActivity: number }
+  | { readonly kind: 'muc'; readonly roomState: RoomState; readonly lastActivity: number };
 
 export interface ConversationListModel {
   readonly accountId?: string;
@@ -10,13 +15,15 @@ export interface ConversationListModel {
   readonly workspaceContacts?: ReadonlyArray<Contact>;
   readonly directoryOpen?: boolean;
   readonly unreadCounts?: ReadonlyMap<string, number>;
+  readonly workspaceItems?: ReadonlyArray<WorkspaceConversationItem>;
+  readonly muc?: MucNavigationModel;
   readonly selectedJid: string;
   readonly selectedRoomJid: string;
 }
 
 @Component({
   selector: 'app-conversation-list',
-  imports: [FormsModule],
+  imports: [FormsModule, MucNavigationComponent],
   templateUrl: './conversation-list.component.html',
   styleUrls: ['./conversation-list.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -28,6 +35,10 @@ export class ConversationListComponent {
   readonly selectRoom = output<string>();
   readonly selectContact = output<Contact>();
   readonly directoryToggle = output<void>();
+  readonly nicknameChange = output<string>();
+  readonly discoverRooms = output<void>();
+  readonly joinRoom = output<string>();
+  readonly leaveRoom = output<void>();
   readonly refreshRoster = output<void>();
   readonly disconnect = output<void>();
 

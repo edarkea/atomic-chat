@@ -214,8 +214,18 @@ describe('extracted Angular presentation components', () => {
       },
       conversations: {
         search: '',
+        directoryOpen: true,
         joinedRooms: [],
         filteredContacts: contacts,
+        muc: {
+          nickname: '',
+          discovering: false,
+          error: null,
+          services: [room],
+          states: [],
+          selectedRoomJid: '',
+          activeRoomState: undefined,
+        },
         selectedJid: '',
         selectedRoomJid: '',
       },

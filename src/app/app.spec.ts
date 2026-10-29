@@ -151,6 +151,8 @@ describe('App composer integration', () => {
   });
 
   it('renders one accessible discovery action and a readable nickname control', () => {
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
     const panel = fixture.nativeElement.querySelector('.muc-panel') as HTMLElement;
     expect(panel.querySelectorAll('button').length).toBe(1);
     expect(panel.querySelector('label[for="muc-nickname"]')?.textContent).toContain(
@@ -167,6 +169,8 @@ describe('App composer integration', () => {
         jid: 'lobby@conference.example.invalid',
       },
     ]);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
     const panel = fixture.nativeElement.querySelector('.muc-panel') as HTMLElement;
     const select = panel.querySelector('.room-select') as HTMLButtonElement;
@@ -194,6 +198,8 @@ describe('App composer integration', () => {
           release = resolve;
         }),
     );
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
     const discoverButton = fixture.nativeElement.querySelector(
       '.muc-discover',
     ) as HTMLButtonElement;

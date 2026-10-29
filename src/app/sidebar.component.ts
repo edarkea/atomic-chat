@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { Contact, Preferences } from './core/domain';
 import { ConversationListComponent, ConversationListModel } from './conversation-list.component';
-import { MucNavigationComponent, MucNavigationModel } from './muc-navigation.component';
+import { MucNavigationModel } from './muc-navigation.component';
 import { OperatorPresenceComponent, OperatorPresenceModel } from './operator-presence.component';
 
 export interface SidebarModel {
@@ -12,7 +12,7 @@ export interface SidebarModel {
 
 @Component({
   selector: 'app-sidebar',
-  imports: [ConversationListComponent, MucNavigationComponent, OperatorPresenceComponent],
+  imports: [ConversationListComponent, OperatorPresenceComponent],
   templateUrl: './sidebar.component.html',
   styleUrls: ['./sidebar.component.scss'],
   styles: [':host { display: contents; }'],

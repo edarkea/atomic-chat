@@ -3,6 +3,8 @@ import { createOpaqueId } from './ids';
 import {
   CertificateTrustDecision,
   CertificateTrustRequest,
+  AttentionClearRequest,
+  AttentionRequest,
   ChatState,
   ChatStateInput,
   ConnectionState,
@@ -22,7 +24,9 @@ import {
   HISTORY_PORT,
   PREFERENCES_PORT,
   XMPP_PORT,
+  ATTENTION_PORT,
   AccountPort,
+  AttentionPort,
   CertificatePort,
   HistoryPort,
   PreferencesPort,
@@ -45,6 +49,7 @@ export class ChatFacade {
   private readonly preferencesPort = inject<PreferencesPort>(PREFERENCES_PORT);
   private readonly xmpp = inject<XmppPort>(XMPP_PORT);
   private readonly unread = inject(UnreadStore);
+  private readonly attention = inject<AttentionPort | null>(ATTENTION_PORT, { optional: true });
   readonly accountId = signal(this.account.getConfig()?.accountId || '');
   readonly connection = signal<ConnectionState>({
     accountId: this.accountId(),
@@ -101,7 +106,6 @@ export class ChatFacade {
         if (state.accountId === this.accountId()) this.connection.set(state);
         if (state.accountId === this.accountId() && ['idle', 'failed'].includes(state.status)) {
           this.clearChatStates();
-          this.unread.resetAccount(state.accountId);
         }
       }
       if (event.type === 'presence.changed') {
@@ -124,14 +128,16 @@ export class ChatFacade {
         const message = event.payload;
         if (message.accountId === this.accountId()) {
           this.upsertMessage(message, message.conversationId || message.senderJid);
-          if (event.type === 'message.received' && !this.isOwnMessage(message))
-            this.unread.recordIncoming(
+          if (event.type === 'message.received' && !this.isOwnMessage(message)) {
+            const incoming = this.unread.recordIncoming(
               message.accountId,
               'direct',
               message.conversationId || message.senderJid,
               message.clientMessageId || message.id,
               this.historyContext?.conversationId === this.bareConversation(message.conversationId),
             );
+            if (incoming.isNew) void this.requestAttention(message.accountId, message.conversationId);
+          }
         }
       }
       if (event.type === 'chatState.changed') this.receiveChatState(event.payload);
@@ -271,7 +277,10 @@ export class ChatFacade {
     const generation = ++this.identityGeneration;
     const requestedAccount = accountId.trim();
     const previousAccount = this.accountId();
-    if (previousAccount && previousAccount !== requestedAccount) this.unread.resetAccount(previousAccount);
+    if (previousAccount && previousAccount !== requestedAccount) {
+      this.unread.resetAccount(previousAccount);
+      this.clearAttentionIfRead(previousAccount);
+    }
     this.error.set(null);
     this.certificateRequest.set(null);
     this.accountId.set(requestedAccount);
@@ -402,7 +411,6 @@ export class ChatFacade {
         since: new Date().toISOString(),
       });
       this.clearChatStates();
-      this.unread.resetAccount(this.accountId());
     }
   }
 
@@ -570,6 +578,7 @@ export class ChatFacade {
 
   markConversationRead(conversationId: string): void {
     this.unread.markRead(this.accountId(), 'direct', conversationId);
+    this.clearAttentionIfRead(this.accountId());
   }
 
   private async loadStoredConversations(accountId: string, generation: number): Promise<void> {
@@ -848,5 +857,30 @@ export class ChatFacade {
     this.outgoingChatStates.clear();
     this.typingStates.clear();
     this.publishChatStates();
+  }
+
+  private async requestAttention(accountId: string, conversationId: string): Promise<void> {
+    if (!this.attention) return;
+    const input: AttentionRequest = {
+      version: 1,
+      requestId: createOpaqueId('attention'),
+      accountId,
+      conversationId: this.bareConversation(conversationId),
+    };
+    try {
+      await this.attention.request(input);
+    } catch {
+      // Native attention is best effort and never blocks message handling.
+    }
+  }
+
+  private clearAttentionIfRead(accountId: string): void {
+    if (!this.attention || this.unread.totalForAccount(accountId) !== 0) return;
+    const input: AttentionClearRequest = {
+      version: 1,
+      requestId: createOpaqueId('attention-clear'),
+      accountId,
+    };
+    void this.attention.clear(input).catch(() => undefined);
   }
 }

@@ -1,6 +1,8 @@
 import { InjectionToken } from '@angular/core';
 import {
   CertificateTrustDecisionInput,
+  AttentionClearRequest,
+  AttentionRequest,
   ChatStateInput,
   ConnectInput,
   ConnectionState,
@@ -100,6 +102,11 @@ export interface CertificatePort {
   decide(input: CertificateTrustDecisionInput): Promise<Result<void>>;
 }
 
+export interface AttentionPort {
+  request(input: AttentionRequest): Promise<Result<void>>;
+  clear(input: AttentionClearRequest): Promise<Result<void>>;
+}
+
 export interface FileTransferPort {
   send(input: FileSendInput): Promise<Result<FileTransfer | null>>;
   accept(input: FileRequest): Promise<Result<FileTransfer>>;
@@ -115,6 +122,7 @@ export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountP
 export const HISTORY_PORT = new InjectionToken<HistoryPort>('AtomicChat HistoryPort');
 export const PREFERENCES_PORT = new InjectionToken<PreferencesPort>('AtomicChat PreferencesPort');
 export const CERTIFICATE_PORT = new InjectionToken<CertificatePort>('AtomicChat CertificatePort');
+export const ATTENTION_PORT = new InjectionToken<AttentionPort>('AtomicChat AttentionPort');
 export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
   'AtomicChat FileTransferPort',
 );

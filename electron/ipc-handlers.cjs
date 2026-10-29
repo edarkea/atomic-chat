@@ -5,6 +5,7 @@ const { registerHistoryHandlers } = require('./ipc-history-handlers.cjs');
 const { registerMucHandlers } = require('./ipc-muc-handlers.cjs');
 const { registerPreferenceHandlers } = require('./ipc-preference-handlers.cjs');
 const { registerConnectionProfileHandlers } = require('./ipc-connection-profile-handlers.cjs');
+const { registerAttentionHandlers } = require('./ipc-attention-handlers.cjs');
 
 function registerIpcHandlers(options) {
   const helpers = createIpcHelpers(options);
@@ -15,6 +16,7 @@ function registerIpcHandlers(options) {
   registerHistoryHandlers(dependencies);
   registerPreferenceHandlers(dependencies);
   registerConnectionProfileHandlers(dependencies);
+  registerAttentionHandlers(dependencies);
 }
 
 module.exports = { registerIpcHandlers };

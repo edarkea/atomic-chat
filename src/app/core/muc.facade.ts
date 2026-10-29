@@ -10,7 +10,7 @@ import {
   RoomState,
   TypedDomainEvent,
 } from './domain';
-import { ACCOUNT_PORT, MUC_PORT, AccountPort, MucPort } from './ports';
+import { ACCOUNT_PORT, ATTENTION_PORT, MUC_PORT, AccountPort, AttentionPort, MucPort } from './ports';
 import { UnreadStore } from './unread.store';
 
 @Injectable({ providedIn: 'root' })
@@ -18,6 +18,7 @@ export class MucFacade {
   private readonly account = inject<AccountPort>(ACCOUNT_PORT);
   private readonly port = inject<MucPort>(MUC_PORT);
   private readonly unread = inject(UnreadStore);
+  private readonly attention = inject<AttentionPort | null>(ATTENTION_PORT, { optional: true });
   readonly services = signal<ReadonlyArray<RoomRef>>([]);
   readonly states = signal<ReadonlyArray<RoomState>>([]);
   readonly selectedRoomJid = signal('');
@@ -76,6 +77,11 @@ export class MucFacade {
 
   setAccount(accountId: string): void {
     if (this.activeAccountId() === accountId) return;
+    const previousAccount = this.activeAccountId();
+    if (previousAccount) {
+      this.unread.resetAccount(previousAccount);
+      this.clearAttentionIfRead(previousAccount);
+    }
     this.activateAccount(accountId);
     this.services.set([]);
     this.states.set([]);
@@ -84,7 +90,6 @@ export class MucFacade {
     this.selectedRoomJid.set('');
     this.roomGenerations.clear();
     this.roomActivity.set(new Map());
-    this.unread.resetAccount(accountId);
     this.error.set(null);
   }
 
@@ -149,6 +154,7 @@ export class MucFacade {
     this.selectedRoomJid.set(roomJid);
     this.participantPage.set(0);
     this.unread.markRead(this.accountId(), 'muc', roomJid);
+    this.clearAttentionIfRead(this.accountId());
   }
   nextParticipantPage(): void {
     if (this.hasMoreParticipants()) this.participantPage.update((page) => page + 1);
@@ -169,7 +175,6 @@ export class MucFacade {
         this.states.set([]);
         this.services.set([]);
         this.clearAccountMessages(state.accountId);
-        this.unread.resetAccount(state.accountId);
         this.notices.set([]);
         this.selectedRoomJid.set('');
         this.roomGenerations.clear();
@@ -227,14 +232,16 @@ export class MucFacade {
         this.messageVersion.update((version) => version + 1);
         const room = this.states().find((item) => item.room.jid === message.roomJid);
         const visible = this.selectedRoomJid().toLowerCase() === message.roomJid.toLowerCase();
-        if (room?.selfOccupantJid !== message.occupantJid)
-          this.unread.recordIncoming(
+        if (room?.selfOccupantJid !== message.occupantJid) {
+          const incoming = this.unread.recordIncoming(
             message.accountId,
             'muc',
             message.roomJid,
             message.clientMessageId || message.id,
             visible,
           );
+          if (incoming.isNew) void this.requestAttention(message.accountId, message.roomJid);
+        }
         this.roomActivity.update((current) => {
           const next = new Map(current);
           next.set(message.roomJid.toLowerCase(), Date.parse(message.receivedAt) || Date.now());
@@ -295,5 +302,26 @@ export class MucFacade {
     const total = this.participants().length;
     const lastPage = Math.max(0, Math.ceil(total / 100) - 1);
     if (this.participantPage() > lastPage) this.participantPage.set(lastPage);
+  }
+
+  private async requestAttention(accountId: string, conversationId: string): Promise<void> {
+    if (!this.attention) return;
+    try {
+      await this.attention.request({
+        version: 1,
+        requestId: createOpaqueId('attention'),
+        accountId,
+        conversationId,
+      });
+    } catch {
+      // Native attention is best effort and never blocks MUC message handling.
+    }
+  }
+
+  private clearAttentionIfRead(accountId: string): void {
+    if (!this.attention || this.unread.totalForAccount(accountId) !== 0) return;
+    void this.attention
+      .clear({ version: 1, requestId: createOpaqueId('attention-clear'), accountId })
+      .catch(() => undefined);
   }
 }

@@ -20,12 +20,12 @@ export class UnreadStore {
     jid: string,
     messageIdentity: string,
     visible: boolean,
-  ): void {
+  ): { readonly isNew: boolean; readonly unreadIncremented: boolean } {
     const identity = `${accountId.toLowerCase()}|${kind}|${messageIdentity}`;
-    if (this.seenIncoming.has(identity)) return;
+    if (this.seenIncoming.has(identity)) return { isNew: false, unreadIncremented: false };
     this.seenIncoming.add(identity);
     if (this.seenIncoming.size > 5000) this.seenIncoming.delete(this.seenIncoming.values().next().value || '');
-    if (visible) return;
+    if (visible) return { isNew: true, unreadIncremented: false };
     const key = unreadKey(accountId, kind, jid);
     this.counts.update((current) => {
       const next = new Map(current);
@@ -37,6 +37,7 @@ export class UnreadStore {
       next.set(accountId, { accountId, unreadTotal: this.accountTotal(accountId), attentionRequested: true });
       return next;
     });
+    return { isNew: true, unreadIncremented: true };
   }
 
   markRead(accountId: string, kind: UnreadConversationKind, jid: string): void {
@@ -47,6 +48,14 @@ export class UnreadStore {
       next.delete(key);
       return next;
     });
+    if (this.accountTotal(accountId) === 0)
+      this.attention.update((current) => {
+        const state = current.get(accountId);
+        if (!state || !state.attentionRequested) return current;
+        const next = new Map(current);
+        next.set(accountId, { ...state, unreadTotal: 0, attentionRequested: false });
+        return next;
+      });
   }
 
   acknowledgeAttention(accountId: string): void {
@@ -73,6 +82,10 @@ export class UnreadStore {
     });
     for (const identity of this.seenIncoming)
       if (identity.startsWith(prefix)) this.seenIncoming.delete(identity);
+  }
+
+  totalForAccount(accountId: string): number {
+    return this.accountTotal(accountId);
   }
 
   private accountTotal(accountId: string): number {

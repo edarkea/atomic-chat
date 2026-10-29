@@ -24,6 +24,7 @@ import {
   ConversationViewComponent,
   OlderMessagesRequest,
 } from './conversation-view.component';
+import { WorkspaceConversationItem } from './conversation-list.component';
 import { LoginPanelComponent } from './login-panel.component';
 import {
   ConnectionSettingsDialogComponent,
@@ -141,6 +142,41 @@ export class App {
         ({ jid: summary.jid, name: summary.title, groups: [], source: 'conversation' } satisfies Contact),
       );
   });
+  protected readonly workspaceItems = computed<ReadonlyArray<WorkspaceConversationItem> | undefined>(() => {
+    const summariesSignal = this.chat.conversationSummaries;
+    if (!summariesSignal) return undefined;
+    const term = this.search().trim().toLowerCase();
+    const activity = this.muc.roomActivity?.() ?? new Map<string, number>();
+    const directItems: WorkspaceConversationItem[] = summariesSignal()
+      .filter((summary) => !term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term))
+      .map((summary) => ({
+        kind: 'direct' as const,
+        contact:
+          this.chat.contacts().find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
+          ({ jid: summary.jid, name: summary.title, groups: [], source: 'conversation' } satisfies Contact),
+        lastActivity: summary.lastMessageAt || 0,
+      }));
+    const roomItems: WorkspaceConversationItem[] = this.joinedRooms()
+      .filter(
+        (state) =>
+          !term ||
+          state.room.jid.toLowerCase().includes(term) ||
+          state.room.room.toLowerCase().includes(term) ||
+          state.room.service.toLowerCase().includes(term),
+      )
+      .map((roomState) => ({
+        kind: 'muc' as const,
+        roomState,
+        lastActivity: activity.get(roomState.room.jid.toLowerCase()) || 0,
+      }));
+    return [...directItems, ...roomItems].sort(
+      (left, right) =>
+        right.lastActivity - left.lastActivity ||
+        `${left.kind}:${left.kind === 'muc' ? left.roomState.room.jid : left.contact.jid}`.localeCompare(
+          `${right.kind}:${right.kind === 'muc' ? right.roomState.room.jid : right.contact.jid}`,
+        ),
+    );
+  });
   protected readonly activeRoomState = computed(() => {
     const selection = this.activeSelection();
     return selection.kind === 'muc' ? this.joinedRoom(selection.roomJid) : undefined;
@@ -228,7 +264,15 @@ export class App {
       nickname: this.mucNickname(),
       discovering: this.mucDiscovering(),
       error: this.muc.error(),
-      services: this.muc.services(),
+      services: this.muc.services().filter((room) => {
+        const term = this.search().trim().toLowerCase();
+        return (
+          !term ||
+          room.jid.toLowerCase().includes(term) ||
+          room.room.toLowerCase().includes(term) ||
+          room.service.toLowerCase().includes(term)
+        );
+      }),
       states: this.muc.states(),
       selectedRoomJid: this.muc.selectedRoomJid(),
       activeRoomState: this.activeRoomState(),
@@ -239,6 +283,24 @@ export class App {
       joinedRooms: this.joinedRooms(),
       filteredContacts: this.filteredContacts(),
       workspaceContacts: this.workspaceContacts(),
+      workspaceItems: this.workspaceItems(),
+      muc: {
+        nickname: this.mucNickname(),
+        discovering: this.mucDiscovering(),
+        error: this.muc.error(),
+        services: this.muc.services().filter((room) => {
+          const term = this.search().trim().toLowerCase();
+          return (
+            !term ||
+            room.jid.toLowerCase().includes(term) ||
+            room.room.toLowerCase().includes(term) ||
+            room.service.toLowerCase().includes(term)
+          );
+        }),
+        states: this.muc.states(),
+        selectedRoomJid: this.muc.selectedRoomJid(),
+        activeRoomState: this.activeRoomState(),
+      },
       directoryOpen: this.directoryOpen(),
       unreadCounts: this.chat.unreadCounts?.() ?? new Map(),
       selectedJid: this.selectedJid(),
@@ -564,6 +626,7 @@ export class App {
   protected selectJoinedRoom(roomJid: string): void {
     if (!this.joinedRoom(roomJid)) return;
     this.muc.select(roomJid);
+    this.directoryOpen.set(false);
     this.selectedContact.set(undefined);
     this.conversationSelection.set({ kind: 'muc', accountId: this.chat.accountId(), roomJid });
     this.followLatest();
@@ -613,7 +676,10 @@ export class App {
     const accountId = this.chat.accountId();
     const nickname = this.mucNickname().trim() || accountId.split('@')[0] || 'operator';
     await this.muc.join(accountId, roomJid, nickname);
-    if (this.joinedRoom(roomJid)?.accountId === accountId) this.selectJoinedRoom(roomJid);
+    if (this.joinedRoom(roomJid)?.accountId === accountId) {
+      this.directoryOpen.set(false);
+      this.selectJoinedRoom(roomJid);
+    }
   }
   protected async leaveRoom(): Promise<void> {
     const selection = this.activeSelection();

@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
 import {
+  AttentionClearRequest,
+  AttentionRequest,
   CertificateTrustDecisionInput,
   FileActiveInput,
   FileRequest,
@@ -18,6 +20,7 @@ import { getAtomicChatApi } from './electron-api';
 import {
   AccountConfig,
   AccountPort,
+  AttentionPort,
   CertificatePort,
   FileTransferPort,
   HistoryPort,
@@ -139,6 +142,19 @@ export class ElectronCertificatePort implements CertificatePort {
   decide(input: CertificateTrustDecisionInput): Promise<Result<void>> {
     const api = getAtomicChatApi();
     return api ? api.certificate.decide(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronAttentionPort implements AttentionPort {
+  request(input: AttentionRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.attention.request(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  clear(input: AttentionClearRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.attention.clear(input) : Promise.resolve(unavailable(input.requestId));
   }
 }
 

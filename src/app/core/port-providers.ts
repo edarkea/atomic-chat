@@ -2,6 +2,7 @@ import { Provider } from '@angular/core';
 import { hasAtomicChatApi } from './electron-api';
 import {
   ElectronAccountPort,
+  ElectronAttentionPort,
   ElectronCertificatePort,
   ElectronFileTransferPort,
   ElectronHistoryPort,
@@ -11,6 +12,7 @@ import { ElectronXmppPort } from './electron-xmpp.port';
 import { InMemoryXmppPort } from './in-memory-xmpp.port';
 import {
   ACCOUNT_PORT,
+  ATTENTION_PORT,
   CERTIFICATE_PORT,
   FILE_TRANSFER_PORT,
   HISTORY_PORT,
@@ -31,6 +33,7 @@ export const corePortProviders: Provider[] = [
   ElectronXmppPort,
   InMemoryXmppPort,
   ElectronAccountPort,
+  ElectronAttentionPort,
   ElectronHistoryPort,
   ElectronPreferencesPort,
   ElectronCertificatePort,
@@ -83,4 +86,5 @@ export const corePortProviders: Provider[] = [
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronFileTransferPort, UnavailableFileTransferPort],
   },
+  { provide: ATTENTION_PORT, useExisting: ElectronAttentionPort },
 ];

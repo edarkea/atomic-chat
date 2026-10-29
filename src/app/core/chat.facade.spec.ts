@@ -337,6 +337,26 @@ describe('ChatFacade roster reconciliation', () => {
     expect(accountPort.setSecret).not.toHaveBeenCalled();
     expect(port.connect).toHaveBeenCalledOnce();
   });
+
+  it('preserves pending messages across a temporary connection loss', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    await facade.connect('a@example.invalid');
+    emitEvent({
+      type: 'message.received',
+      payload: historyMessage('a@example.invalid', 'new@example.invalid', 99),
+    });
+    expect(facade.unreadTotal()).toBe(1);
+    emitEvent({
+      type: 'connection.stateChanged',
+      payload: {
+        accountId: 'a@example.invalid',
+        status: 'failed',
+        retryable: true,
+        since: new Date().toISOString(),
+      },
+    });
+    expect(facade.unreadTotal()).toBe(1);
+  });
 });
 
 describe('ChatFacade login profile safety', () => {

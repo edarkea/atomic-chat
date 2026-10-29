@@ -1,5 +1,7 @@
 import {
   CertificateTrustDecisionInput,
+  AttentionClearRequest,
+  AttentionRequest,
   ChatStateInput,
   ConnectInput,
   ConnectionState,
@@ -69,6 +71,10 @@ export interface AtomicChatApi {
     delete(input: { version: 1; requestId: string; accountId: string }): Promise<Result<void>>;
   };
   certificate: { decide(input: CertificateTrustDecisionInput): Promise<Result<void>> };
+  attention: {
+    request(input: AttentionRequest): Promise<Result<void>>;
+    clear(input: AttentionClearRequest): Promise<Result<void>>;
+  };
   session: { getState(accountId: string): Promise<Result<ConnectionState>> };
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };

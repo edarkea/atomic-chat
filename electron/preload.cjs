@@ -43,6 +43,10 @@ contextBridge.exposeInMainWorld(
       delete: (input) => invoke('connectionProfiles.delete', input),
     }),
     certificate: Object.freeze({ decide: (input) => invoke('certificate.decide', input) }),
+    attention: Object.freeze({
+      request: (input) => invoke('attention.request', input),
+      clear: (input) => invoke('attention.clear', input),
+    }),
     session: Object.freeze({ getState: (accountId) => invoke('session.getState', accountId) }),
     presence: Object.freeze({ set: (input) => invoke('presence.set', input) }),
     roster: Object.freeze({ list: (accountId) => invoke('roster.list', accountId) }),

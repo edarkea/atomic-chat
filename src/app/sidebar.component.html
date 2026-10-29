@@ -9,14 +9,6 @@
     (preferencesChange)="preferencesChange.emit($event)"
     (resetPreferences)="resetPreferences.emit()"
   />
-  <app-muc-navigation
-    [model]="model().muc"
-    (nicknameChange)="nicknameChange.emit($event)"
-    (discover)="discoverRooms.emit()"
-    (selectRoom)="selectRoom.emit($event)"
-    (joinRoom)="joinRoom.emit($event)"
-    (leaveRoom)="leaveRoom.emit()"
-  />
   <app-conversation-list
     [model]="model().conversations"
     (searchChange)="searchChange.emit($event)"
@@ -24,6 +16,10 @@
     (selectRoom)="selectRoom.emit($event)"
     (selectContact)="selectContact.emit($event)"
     (directoryToggle)="directoryToggle.emit()"
+    (nicknameChange)="nicknameChange.emit($event)"
+    (discoverRooms)="discoverRooms.emit()"
+    (joinRoom)="joinRoom.emit($event)"
+    (leaveRoom)="leaveRoom.emit()"
     (refreshRoster)="refreshRoster.emit()"
     (disconnect)="disconnect.emit()"
   />
