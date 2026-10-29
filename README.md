@@ -51,8 +51,23 @@ ATOMIC_XMPP_USERNAME=your-user
 ATOMIC_XMPP_PASSWORD=your-password
 ATOMIC_XMPP_ALLOW_INSECURE_TLS=false
 # Optional operator-controlled JSON accreditation; do not provide this from the Renderer.
-# ATOMIC_XMPP_MUC_POLICY_JSON=[{"accountId":"user@your-xmpp-domain","service":"conference.your-xmpp-domain","canCreate":false,"source":"operator","evidence":"approved Openfire policy record"}]
+# The endpoint is mandatory and must match the active XMPP connection exactly.
+# ATOMIC_XMPP_MUC_POLICY_JSON=[{"accountId":"user@your-xmpp-domain","service":"conference.your-xmpp-domain","canCreate":false,"source":"operator","evidence":"approved Openfire policy record","endpoint":{"host":"your-openfire-host","port":5222,"transport":"starttls"}}]
 ```
+
+### MUC: política de entrada
+
+Atomic Chat solo intenta entrar a salas descubiertas en la sesión vigente. No crea salas ni cambia la política del servidor.
+
+Antes de configurar `ATOMIC_XMPP_MUC_POLICY_JSON`, un operador autorizado debe confirmar en Openfire que la cuenta indicada no puede crear salas. La declaración debe usar la cuenta, el servicio MUC, el host, el puerto y el transporte exactos de la conexión; `canCreate: false` no es una verificación automática ni debe usarse para falsear una prueba.
+
+Ejemplo de una declaración aprobada:
+
+```json
+[{"accountId":"user@your-xmpp-domain","service":"conference.your-xmpp-domain","canCreate":false,"source":"operator","evidence":"referencia-real-de-aprobacion","endpoint":{"host":"your-openfire-host","port":5222,"transport":"starttls"}}]
+```
+
+Después de cambiarla, reinicia la aplicación y vuelve a descubrir las salas. Una política ausente, no coincidente o un descubrimiento obsoleto bloquean la entrada localmente; un rechazo posterior se informa como rechazo del servidor. Ningún secreto, credencial ni evidencia inventada debe incluirse en el repositorio.
 
 Never commit `.env` or real credentials. Passwords are handled by Electron Main and `safeStorage`, not stored as regular SQLite fields.
 

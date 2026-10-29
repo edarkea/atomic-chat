@@ -207,6 +207,10 @@ function createIpcHelpers({
       'CONFLICT',
       'UNSUPPORTED',
       'INTERNAL',
+      'MUC_POLICY_MISSING',
+      'MUC_POLICY_MISMATCH',
+      'MUC_DISCOVERY_STALE',
+      'MUC_SERVER_REJECTED',
     ]);
     const code = known.has(raw)
       ? raw
@@ -216,7 +220,14 @@ function createIpcHelpers({
     const messages = {
       INVALID_INPUT: 'La solicitud MUC no es válida.',
       UNAUTHORIZED:
-        'La operación MUC no está autorizada o requiere configuración del administrador.',
+        'La ventana o la cuenta no están autorizadas para esta operación MUC.',
+      MUC_POLICY_MISSING:
+        'La entrada MUC está bloqueada: falta la acreditación administrativa requerida.',
+      MUC_POLICY_MISMATCH:
+        'La acreditación MUC no coincide con la cuenta, servicio o endpoint actual.',
+      MUC_DISCOVERY_STALE:
+        'El descubrimiento de la sala está obsoleto o la sala ya no está disponible. Vuelve a descubrirla.',
+      MUC_SERVER_REJECTED: 'El servidor XMPP rechazó la entrada a la sala.',
       NOT_CONNECTED: 'La cuenta no está conectada o la sala ya no está disponible.',
       TIMEOUT: 'La operación MUC excedió el tiempo límite.',
       CONFLICT: 'La operación MUC entra en conflicto con el estado actual de la sala.',

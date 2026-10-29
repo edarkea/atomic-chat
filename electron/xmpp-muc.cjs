@@ -139,8 +139,8 @@ function createMucService(adapter) {
       const discovered = adapter.mucDiscoveries.get(input.accountId)?.get(roomJid.toLowerCase());
       if (!discovered || discovered.service !== adapter.bareJid(roomJid).split('@')[1])
         throw taggedError(
-          'UNAUTHORIZED',
-          'La sala no fue descubierta en el servicio seleccionado.',
+          'MUC_DISCOVERY_STALE',
+          'La sala no fue descubierta en la sesión XMPP vigente.',
           'muc.join',
         );
       const generation = adapter.sessionGenerations.get(input.accountId) || 0;
@@ -151,8 +151,14 @@ function createMucService(adapter) {
       );
       if (!policy)
         throw taggedError(
-          'UNAUTHORIZED',
-          'La entrada requiere acreditación administrativa de que la cuenta no puede crear salas.',
+          [...adapter.mucPolicies.values()].some(
+            (candidate) =>
+              candidate.accountId.toLowerCase() === input.accountId.toLowerCase() &&
+              candidate.service.toLowerCase() === discovered.service.toLowerCase(),
+          )
+            ? 'MUC_POLICY_MISMATCH'
+            : 'MUC_POLICY_MISSING',
+          'La entrada MUC requiere acreditación administrativa para la cuenta, servicio y endpoint exactos.',
           'muc.policy',
         );
       if (
@@ -161,12 +167,20 @@ function createMucService(adapter) {
         JSON.stringify(discovered.discoveryEndpoint) !== JSON.stringify(endpoint) ||
         discovered.service !== adapter.bareJid(roomJid).split('@')[1]
       )
-        throw taggedError('UNAUTHORIZED', 'La evidencia de la sala está obsoleta.', 'muc.join');
+        throw taggedError(
+          'MUC_DISCOVERY_STALE',
+          'La evidencia de descubrimiento de la sala está obsoleta.',
+          'muc.join',
+        );
       const roomInfo = await adapter.discoInfo(session, roomJid);
       adapter.assertSessionCurrent(input.accountId, session, generation, currentDomain);
       const roomQuery = roomInfo.getChild('query', DISCO_INFO_NS);
       if (!roomQuery || !roomQuery.getChildren('identity').length)
-        throw taggedError('UNAUTHORIZED', 'La sala ya no está disponible.', 'muc.join');
+        throw taggedError(
+          'MUC_DISCOVERY_STALE',
+          'La sala ya no está disponible en el descubrimiento vigente.',
+          'muc.join',
+        );
       const rooms = adapter.mucRooms.get(input.accountId) || new Map();
       const active = [...rooms.values()].filter((room) =>
         ['joining', 'joined', 'leaving'].includes(room.state.status),
@@ -420,6 +434,10 @@ function createMucService(adapter) {
           'CONFLICT',
           'UNSUPPORTED',
           'INTERNAL',
+          'MUC_POLICY_MISSING',
+          'MUC_POLICY_MISMATCH',
+          'MUC_DISCOVERY_STALE',
+          'MUC_SERVER_REJECTED',
         ].includes(code)
           ? code
           : 'TRANSPORT_FAILED',
@@ -459,9 +477,9 @@ function createMucService(adapter) {
         ?.find((child) => child.name !== 'text')?.name;
       if (type === 'error' || errorCondition) {
         const error = taggedError(
-          adapter.mucConditionCode(errorCondition),
+          'MUC_SERVER_REJECTED',
           'El servidor rechazó la entrada a la sala.',
-          'muc.join',
+          'muc.join.server',
         );
         record.rejectJoin?.(error);
         adapter.failMucRoom(record, error);

@@ -359,6 +359,34 @@ describe('ChatFacade roster reconciliation', () => {
       },
     });
     expect(facade.unreadTotal()).toBe(1);
+    await facade.connect('a@example.invalid');
+    expect(facade.unreadTotal()).toBe(1);
+  });
+
+  it('resets remote presence on session failure before the next session publishes fresh evidence', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    await facade.connect('a@example.invalid');
+    emitEvent({
+      type: 'presence.changed',
+      payload: {
+        accountId: 'a@example.invalid',
+        jid: 'keep@example.invalid',
+        availability: 'available',
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    expect(facade.contacts().find((contact) => contact.jid === 'keep@example.invalid')?.presence?.availability).toBe('available');
+
+    emitEvent({
+      type: 'connection.stateChanged',
+      payload: {
+        accountId: 'a@example.invalid',
+        status: 'failed',
+        retryable: true,
+        since: new Date().toISOString(),
+      },
+    });
+    expect(facade.contacts().find((contact) => contact.jid === 'keep@example.invalid')?.presence?.availability).toBe('unknown');
   });
 
   it('counts a direct message for the selected conversation while the window is unfocused', async () => {

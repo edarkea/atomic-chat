@@ -20,7 +20,12 @@ test('MUC discovery queries disco items, validates conference/text + muc, and pr
 
 test('join remains blocked without operator evidence and does not send presence', async () => {
   let sent = 0; const session = { send: async () => { sent += 1; } }; const adapter = new XmppAdapter(); connected(adapter, session); discovery(adapter);
-  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-blocked', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'UNAUTHORIZED'); assert.equal(sent, 0);
+  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-blocked', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_POLICY_MISSING'); assert.equal(sent, 0);
+});
+
+test('stale discovery is rejected before any room presence is sent', async () => {
+  let sent = 0; const session = { send: async () => { sent += 1; } }; const adapter = new XmppAdapter(); connected(adapter, session);
+  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-stale-discovery', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_DISCOVERY_STALE'); assert.equal(sent, 0);
 });
 
 test('join registers listeners before presence, accepts own 110, and tracks occupants without real JIDs', async () => {
@@ -49,7 +54,17 @@ test('stale discovery and join responses cannot update a newer session', async (
 });
 
 test('endpoint-bound and malformed operator policy cannot authorize a join', async () => {
-  let sent = 0; const session = { send: async () => { sent += 1; }, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) } }; const adapter = new XmppAdapter(); connected(adapter, session); discovery(adapter); assert.equal(adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'wrong endpoint', endpoint: { host: 'other.invalid', port: 5222, transport: 'starttls' } }), true); assert.equal(adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'malformed' }), false); await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-policy', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'UNAUTHORIZED'); assert.equal(sent, 0);
+  let sent = 0; const session = { send: async () => { sent += 1; }, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) } }; const adapter = new XmppAdapter(); connected(adapter, session); discovery(adapter); assert.equal(adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'wrong endpoint', endpoint: { host: 'other.invalid', port: 5222, transport: 'starttls' } }), true); assert.equal(adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'malformed' }), false); await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-policy', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_POLICY_MISMATCH'); assert.equal(sent, 0);
+});
+
+test('server MUC rejection is distinguished from local policy rejection', async () => {
+  let adapter; const session = {
+    iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) },
+    send: async () => queueMicrotask(() => adapter.handleStanza(account, xml('presence', { from: `${room}/operator`, type: 'error' }, xml('error', {}, xml('forbidden', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))))
+  };
+  const policy = { accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin evidence', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } };
+  adapter = new XmppAdapter(false, null, [policy]); connected(adapter, session); discovery(adapter);
+  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-server-rejected', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_SERVER_REJECTED');
 });
 
 test('leave timeout remains honest and duplicate leave is rejected', async () => {

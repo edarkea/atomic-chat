@@ -110,6 +110,7 @@ export class ChatFacade {
         if (state.accountId === this.accountId()) this.connection.set(state);
         if (state.accountId === this.accountId() && ['idle', 'failed'].includes(state.status)) {
           this.clearChatStates();
+          this.resetRemotePresence(state.accountId);
         }
       }
       if (event.type === 'presence.changed') {
@@ -291,6 +292,7 @@ export class ChatFacade {
     this.error.set(null);
     this.certificateRequest.set(null);
     this.accountId.set(requestedAccount);
+    this.resetRemotePresence(requestedAccount);
     this.messages.set([]);
     this.olderCursor = null;
     this.newerCursor = null;
@@ -384,16 +386,6 @@ export class ChatFacade {
       }
       if (!this.isCurrent(generation, requestedAccount)) return false;
       this.connection.set(result.value);
-      this.contacts.update((items) =>
-        items.map((contact) => ({
-          ...contact,
-          presence: {
-            jid: contact.jid,
-            availability: 'unknown' as const,
-            updatedAt: new Date().toISOString(),
-          },
-        })),
-      );
       const roster = await this.xmpp.listRoster(requestedAccount);
       if (roster.ok && this.isCurrent(generation, requestedAccount)) this.mergeRoster(roster.value);
       if (this.isCurrent(generation, requestedAccount)) {
@@ -806,6 +798,21 @@ export class ChatFacade {
       );
       return [...normalized.values(), ...local];
     });
+  }
+
+  private resetRemotePresence(accountId: string): void {
+    const updatedAt = new Date().toISOString();
+    this.presence.set({ jid: accountId, availability: 'unknown', updatedAt });
+    this.contacts.update((items) =>
+      items.map((contact) =>
+        contact.source === 'roster'
+          ? {
+              ...contact,
+              presence: { jid: contact.jid, availability: 'unknown' as const, updatedAt },
+            }
+          : contact,
+      ),
+    );
   }
 
   private bareConversation(conversationId: string): string {

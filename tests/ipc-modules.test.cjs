@@ -278,6 +278,23 @@ test('file actions reject an unauthorized origin before account or owner checks'
   assert.deepEqual(harness.calls, []);
 });
 
+test('preserves safe MUC diagnostics at the IPC boundary', async () => {
+  const harness = createHarness();
+  harness.xmpp.joinMuc = async () => {
+    throw Object.assign(new Error('policy'), { code: 'MUC_POLICY_MISMATCH' });
+  };
+  const result = await harness.handlers.get('muc.join')(event(7), {
+    version: 1,
+    requestId: 'muc-diagnostic-1',
+    accountId: 'one@example.invalid',
+    roomJid: 'lobby@conference.example.invalid',
+    nickname: 'operator',
+  });
+  assert.equal(result.error.code, 'MUC_POLICY_MISMATCH');
+  assert.match(result.error.message, /endpoint/);
+  assert.equal(result.error.message.includes('password'), false);
+});
+
 test('file actions retain positive behavior and independent account and owner denials', async () => {
   const harness = createHarness();
   const input = {

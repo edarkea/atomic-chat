@@ -36,6 +36,48 @@ test('remote presence remains available while one of two resources disconnects',
   assert.equal(events.at(-1).availability, 'available'); adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/two', type: 'unavailable' })); assert.equal(events.at(-1).availability, 'unavailable');
 });
 
+test('presence received before roster publication is replayed only after authorization', async () => {
+  const adapter = new XmppAdapter(); const events = [];
+  const session = { send: async () => {}, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription: 'both' }))) } };
+  adapter.sessions.set('a@example.invalid', session);
+  adapter.onEvent((event) => { if (event.type === 'presence.changed') events.push(event.payload); });
+  adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/desktop' }, xml('show', {}, 'away')));
+  assert.equal(events.length, 0);
+  await adapter.listRoster('a@example.invalid');
+  assert.equal(events.at(-1).availability, 'away');
+  assert.equal(adapter.pendingPresences.get('a@example.invalid'), undefined);
+});
+
+test('buffered presence still enforces none and from subscriptions', async () => {
+  for (const subscription of ['none', 'from']) {
+    const adapter = new XmppAdapter(); const events = [];
+    const session = { send: async () => {}, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription }))) } };
+    adapter.sessions.set('a@example.invalid', session);
+    adapter.onEvent((event) => { if (event.type === 'presence.changed') events.push(event.payload); });
+    adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/desktop' }));
+    await adapter.listRoster('a@example.invalid');
+    assert.equal(events.length, 0);
+    assert.equal(adapter.remoteResources.get('a@example.invalid').size, 0);
+  }
+});
+
+test('a new session does not retain remote resources from the previous session', async () => {
+  const adapter = new XmppAdapter(); const events = [];
+  const first = { stop: async () => {}, send: async () => {}, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription: 'both' }))) } };
+  adapter.sessions.set('a@example.invalid', first);
+  adapter.onEvent((event) => { if (event.type === 'presence.changed') events.push(event.payload); });
+  adapter.rosters.set('a@example.invalid', new Map([['b@example.invalid', { jid: 'b@example.invalid', subscription: 'both' }]]));
+  adapter.remoteResources.set('a@example.invalid', new Map([['b@example.invalid/old', { mode: 'away', priority: 1 }]]));
+  assert.equal(adapter.handleSessionEvent('a@example.invalid', first, 'offline'), true);
+  assert.equal(adapter.remoteResources.has('a@example.invalid'), false);
+  const second = { send: async () => {}, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription: 'both' }))) } };
+  adapter.sessions.set('a@example.invalid', second);
+  adapter.handleStanza('a@example.invalid', xml('presence', { from: 'b@example.invalid/new' }));
+  await adapter.listRoster('a@example.invalid');
+  assert.equal(events.at(-1).availability, 'available');
+  assert.equal(adapter.remoteResources.get('a@example.invalid').size, 1);
+});
+
 test('roster refresh preserves authorized resources and publishes initial presence once', async () => {
   const adapter = new XmppAdapter(); const sent = []; const roster = () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'jabber:iq:roster' }, xml('item', { jid: 'b@example.invalid', subscription: 'both' })));
   adapter.sessions.set('a@example.invalid', { send: async (stanza) => sent.push(stanza), iqCaller: { request: async () => roster() } });

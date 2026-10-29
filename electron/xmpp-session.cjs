@@ -1,4 +1,4 @@
-const { client, xml } = require('@xmpp/client');
+const { client } = require('@xmpp/client');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 function taggedError(code, message, phase) {
@@ -80,6 +80,7 @@ function createXmppSession(adapter) {
         throw error;
       }
       adapter.remoteResources.set(input.accountId, new Map());
+      adapter.pendingPresences.set(input.accountId, new Map());
       adapter.initialPresencePublished.delete(input.accountId);
       adapter.sessions.set(input.accountId, session);
       adapter.sessionDomains.set(input.accountId, domain);
@@ -92,8 +93,6 @@ function createXmppSession(adapter) {
         input.accountId,
         (adapter.sessionGenerations.get(input.accountId) || 0) + 1,
       );
-      await session.send(xml('presence'));
-      adapter.initialPresencePublished.add(input.accountId);
       const state = {
         accountId: input.accountId,
         status: 'connected',
@@ -121,6 +120,7 @@ function createXmppSession(adapter) {
       adapter.sessions.delete(accountId);
       adapter.rosters.delete(accountId);
       adapter.remoteResources.delete(accountId);
+      adapter.pendingPresences.delete(accountId);
       adapter.initialPresencePublished.delete(accountId);
       adapter.sessionDomains.delete(accountId);
       adapter.sessionEndpoints.delete(accountId);
@@ -168,6 +168,12 @@ function createXmppSession(adapter) {
         for (const [key] of adapter.filePending)
           if (key.startsWith(`${accountId}|`)) adapter.filePending.delete(key);
         adapter.sessions.delete(accountId);
+        adapter.rosters.delete(accountId);
+        adapter.remoteResources.delete(accountId);
+        adapter.pendingPresences.delete(accountId);
+        adapter.initialPresencePublished.delete(accountId);
+        adapter.sessionDomains.delete(accountId);
+        adapter.sessionEndpoints.delete(accountId);
         adapter.sessionGenerations.set(
           accountId,
           (adapter.sessionGenerations.get(accountId) || 0) + 1,

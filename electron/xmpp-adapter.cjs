@@ -24,6 +24,7 @@ class XmppAdapter {
     this.activeDecisionBySender = new Map();
     this.rosters = new Map();
     this.remoteResources = new Map();
+    this.pendingPresences = new Map();
     this.initialPresencePublished = new Set();
     this.sessionGenerations = new Map();
     this.sessionDomains = new Map();

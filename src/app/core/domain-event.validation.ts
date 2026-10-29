@@ -149,6 +149,10 @@ const appErrorCodes: readonly AppErrorCode[] = [
   'CERTIFICATE_INVALID',
   'CERTIFICATE_CHANGED',
   'CERTIFICATE_DECISION_TIMEOUT',
+  'MUC_POLICY_MISSING',
+  'MUC_POLICY_MISMATCH',
+  'MUC_DISCOVERY_STALE',
+  'MUC_SERVER_REJECTED',
 ];
 const certificateVerificationErrorCodes: readonly CertificateVerificationErrorCode[] = [
   'CERTIFICATE_EXPIRED',

@@ -152,7 +152,11 @@ export type AppErrorCode =
   | 'INVALID_DOMAIN'
   | 'INVALID_DNS_RESPONSE'
   | 'SERVICE_UNAVAILABLE'
-  | 'DNS_TIMEOUT';
+  | 'DNS_TIMEOUT'
+  | 'MUC_POLICY_MISSING'
+  | 'MUC_POLICY_MISMATCH'
+  | 'MUC_DISCOVERY_STALE'
+  | 'MUC_SERVER_REJECTED';
 export interface AppError {
   code: AppErrorCode;
   retryable: boolean;
