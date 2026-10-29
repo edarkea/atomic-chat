@@ -1,7 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { registerAppLifecycle } = require('../electron/app-lifecycle.cjs');
+const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+const { registerFileHandlers } = require('../electron/ipc-file-handlers.cjs');
+const { registerHistoryHandlers } = require('../electron/ipc-history-handlers.cjs');
 const { registerIpcHandlers } = require('../electron/ipc-handlers.cjs');
+const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
+const { registerMucHandlers } = require('../electron/ipc-muc-handlers.cjs');
+const { registerPreferenceHandlers } = require('../electron/ipc-preference-handlers.cjs');
 const { createEventRouter } = require('../electron/event-router.cjs');
 
 const channels = [
@@ -93,7 +99,7 @@ function createHarness() {
     list: () => [],
   };
 
-  registerIpcHandlers({
+  const options = {
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     assertSender: () => {
       if (!authorized) throw new Error('UNAUTHORIZED');
@@ -105,9 +111,11 @@ function createHarness() {
     outgoingFileTransfers: outgoing,
     historySecurity,
     selectFileSource: async () => null,
-  });
+  };
+  registerIpcHandlers(options);
   return {
     handlers,
+    options,
     calls,
     xmpp,
     incoming,
@@ -123,6 +131,26 @@ test('registers every existing IPC channel exactly once', () => {
   const harness = createHarness();
   assert.deepEqual([...harness.handlers.keys()], channels);
   assert.equal(harness.handlers.size, channels.length);
+});
+
+test('each domain registrar owns only its assigned channels', () => {
+  const harness = createHarness();
+  const groups = [
+    [registerAccountHandlers, channels.slice(0, 9)],
+    [registerMucHandlers, channels.slice(9, 13)],
+    [registerFileHandlers, channels.slice(13, 18)],
+    [registerHistoryHandlers, channels.slice(18, 21)],
+    [registerPreferenceHandlers, channels.slice(21, 24)],
+  ];
+  for (const [registrar, expected] of groups) {
+    const registered = new Map();
+    registrar({
+      ...harness.options,
+      ipcMain: { handle: (channel, handler) => registered.set(channel, handler) },
+      helpers: createIpcHelpers(harness.options),
+    });
+    assert.deepEqual([...registered.keys()], expected);
+  }
 });
 
 test('rejects unauthorized senders before returning a successful response', () => {
