@@ -145,7 +145,7 @@ function smackAcceptsOffer(si) {
   return form?.attrs.type === 'form' && field?.attrs.type === 'list-single' && options.length > 0 && options.every((option) => option.getChildren('value').length === 1) && streamMethodsFromOffer(si).includes(IBB);
 }
 
-function adapterFixture({ wrongDiscoFrom = false, unsupported = false } = {}) {
+function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfterDisco = false } = {}) {
   const outgoing = new OutgoingFileTransferCoordinator({ blockSize: 3 });
   const adapter = new XmppAdapter(false, null, [], null, outgoing);
   const sent = [];
@@ -154,7 +154,9 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false } = {}) {
     const child = request.children[0];
     if (child.name === 'query' && child.attrs.xmlns === DISCO) {
       const features = unsupported ? [] : [xml('feature', { var: SI }), xml('feature', { var: FILE }), xml('feature', { var: IBB })];
-      return xml('iq', { type: 'result', id: request.attrs.id, from: wrongDiscoFrom ? 'other@example.invalid/Spark' : RECIPIENT }, xml('query', { xmlns: DISCO }, ...features));
+      const response = xml('iq', { type: 'result', id: request.attrs.id, from: wrongDiscoFrom ? 'other@example.invalid/Spark' : RECIPIENT }, xml('query', { xmlns: DISCO }, ...features));
+      if (staleAfterDisco) adapter.sessionGenerations.set(ACCOUNT, 2);
+      return response;
     }
     if (child.name === 'si') {
       if (!smackAcceptsOffer(child)) return xml('iq', { type: 'error', id: request.attrs.id, from: RECIPIENT }, xml('error', { type: 'cancel' }, xml('not-acceptable', { xmlns: STANZA })));
@@ -199,5 +201,13 @@ test('C5-OUT-11 stale or incapable Spark resources are rejected before source tr
   try {
     await assert.rejects(adapterFixture({ wrongDiscoFrom: true }).adapter.sendFile(ACCOUNT, { filePath, fileName: 'fixture.bin', conversationId: 'spark@example.invalid', ownerSenderId: 42 }), { code: 'RECIPIENT_UNAVAILABLE' });
     await assert.rejects(adapterFixture({ unsupported: true }).adapter.sendFile(ACCOUNT, { filePath, fileName: 'fixture.bin', conversationId: 'spark@example.invalid', ownerSenderId: 42 }), { code: 'UNSUPPORTED_METHOD' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('C5-OUT-12 a new connection generation aborts before SI and IBB IQs', async () => {
+  const { root, filePath } = await fixture(Buffer.from('hello')); const { adapter, sent } = adapterFixture({ staleAfterDisco: true });
+  try {
+    await assert.rejects(adapter.sendFile(ACCOUNT, { filePath, fileName: 'fixture.bin', conversationId: 'spark@example.invalid', ownerSenderId: 42 }), { code: 'NOT_CONNECTED' });
+    assert.deepEqual(sent.map((iq) => iq.children[0].name), ['query']);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
