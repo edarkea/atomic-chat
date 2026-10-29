@@ -102,9 +102,17 @@ test('C5-OUT-05 remote rejection and source mutation fail safely and release res
 test('C5-OUT-06 SI timeout is terminal and does not retain the source handle', async () => {
   const { root, filePath } = await fixture(Buffer.from('timeout'));
   try {
-    const coordinator = new OutgoingFileTransferCoordinator({ siTimeout: 5 });
+    const coordinator = new OutgoingFileTransferCoordinator({
+      siTimeout: 5,
+      scheduleTimeout: (callback, delay) => {
+        const timer = setTimeout(callback, delay);
+        return { timer, unref: () => undefined };
+      },
+      cancelTimeout: ({ timer }) => clearTimeout(timer),
+    });
     const result = await coordinator.start({ filePath, offer: offer('file-timeout'), ownerSenderId: 1, siSessionId: 'si-timeout', transport: { sendOffer: async () => new Promise(() => undefined) } });
     assert.equal(result.state, 'failed'); assert.equal(result.endReason, 'timed_out'); assert.equal(coordinator.records.size, 0);
+    await fs.rm(filePath);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
