@@ -49,8 +49,17 @@
     </div>
   }
 </div>
+<button
+  type="button"
+  class="preferences-trigger"
+  [attr.aria-expanded]="model().settingsOpen"
+  aria-controls="preferences-panel"
+  (click)="settingsToggle.emit()"
+>
+  Preferencias
+</button>
 @if (model().settingsOpen) {
-  <section class="preferences-panel" aria-label="Preferencias">
+  <section id="preferences-panel" class="preferences-panel" aria-label="Preferencias">
     <strong>Preferencias</strong
     ><label
       >Tema<select [ngModel]="theme.themeId()" disabled>

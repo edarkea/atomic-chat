@@ -98,6 +98,22 @@
   padding: 6px 8px;
   width: 100%;
 }
+.preferences-trigger {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  font: inherit;
+  margin-top: var(--atomic-space-2);
+  min-height: 34px;
+  padding: 5px;
+  width: 100%;
+}
+.preferences-trigger:hover,
+.preferences-trigger[aria-expanded='true'] {
+  background: var(--atomic-surface-active);
+}
 .preferences-panel {
   background: var(--atomic-surface-raised);
   border: 1px solid var(--atomic-border-soft);
