@@ -11,7 +11,9 @@ export function unreadKey(accountId: string, kind: UnreadConversationKind, jid: 
 export class UnreadStore {
   readonly counts = signal<ReadonlyMap<string, number>>(new Map());
   readonly attention = signal<ReadonlyMap<string, AttentionState>>(new Map());
-  readonly total = computed(() => [...this.counts().values()].reduce((total, value) => total + value, 0));
+  readonly total = computed(() =>
+    [...this.counts().values()].reduce((total, value) => total + value, 0),
+  );
   private readonly seenIncoming = new Set<string>();
 
   recordIncoming(
@@ -30,7 +32,8 @@ export class UnreadStore {
     if (this.seenIncoming.has(identity))
       return { isNew: false, unreadIncremented: false, attentionRequested: false };
     this.seenIncoming.add(identity);
-    if (this.seenIncoming.size > 5000) this.seenIncoming.delete(this.seenIncoming.values().next().value || '');
+    if (this.seenIncoming.size > 5000)
+      this.seenIncoming.delete(this.seenIncoming.values().next().value || '');
     const shouldIncrementUnread = !selected || !focused;
     const shouldRequestAttention = shouldIncrementUnread && !focused;
     if (!shouldIncrementUnread)
@@ -76,12 +79,28 @@ export class UnreadStore {
       });
   }
 
+  markReadIfEligible(
+    accountId: string,
+    kind: UnreadConversationKind,
+    jid: string,
+    selected: boolean,
+    focused: boolean,
+  ): boolean {
+    if (!selected || !focused) return false;
+    this.markRead(accountId, kind, jid);
+    return true;
+  }
+
   acknowledgeAttention(accountId: string): void {
     this.attention.update((current) => {
       const state = current.get(accountId);
       if (!state || !state.attentionRequested) return current;
       const next = new Map(current);
-      next.set(accountId, { ...state, attentionRequested: false, unreadTotal: this.accountTotal(accountId) });
+      next.set(accountId, {
+        ...state,
+        attentionRequested: false,
+        unreadTotal: this.accountTotal(accountId),
+      });
       return next;
     });
   }

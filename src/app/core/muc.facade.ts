@@ -10,7 +10,14 @@ import {
   RoomState,
   TypedDomainEvent,
 } from './domain';
-import { ACCOUNT_PORT, ATTENTION_PORT, MUC_PORT, AccountPort, AttentionPort, MucPort } from './ports';
+import {
+  ACCOUNT_PORT,
+  ATTENTION_PORT,
+  MUC_PORT,
+  AccountPort,
+  AttentionPort,
+  MucPort,
+} from './ports';
 import { UnreadStore } from './unread.store';
 import { ActiveConversationStore } from './active-conversation.store';
 import { WindowFocusStore } from './window-focus.store';
@@ -161,8 +168,15 @@ export class MucFacade {
   }
 
   markConversationRead(roomJid: string): void {
-    this.unread.markRead(this.accountId(), 'muc', roomJid);
-    this.clearAttentionIfRead(this.accountId());
+    const accountId = this.accountId();
+    const acknowledged = this.unread.markReadIfEligible(
+      accountId,
+      'muc',
+      roomJid,
+      this.activeConversation.isVisible(accountId, 'muc', roomJid),
+      this.windowFocus.isFocused(),
+    );
+    if (acknowledged) this.clearAttentionIfRead(accountId);
   }
   nextParticipantPage(): void {
     if (this.hasMoreParticipants()) this.participantPage.update((page) => page + 1);
@@ -248,7 +262,8 @@ export class MucFacade {
             this.activeConversation.isVisible(message.accountId, 'muc', message.roomJid),
             this.windowFocus.isFocused(),
           );
-          if (incoming.attentionRequested) void this.requestAttention(message.accountId, message.roomJid);
+          if (incoming.attentionRequested)
+            void this.requestAttention(message.accountId, message.roomJid);
         }
         this.roomActivity.update((current) => {
           const next = new Map(current);

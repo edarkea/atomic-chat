@@ -154,6 +154,22 @@ describe('MucFacade message isolation', () => {
     expect(unread.counts().get('a@example.invalid|muc|one@conference.example.invalid')).toBe(1);
   });
 
+  it('does not acknowledge a room that is not the effective active conversation', () => {
+    const facade = TestBed.inject(MucFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const unread = TestBed.inject(UnreadStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    const first = room('a@example.invalid', 'one');
+    facade.setAccount('a@example.invalid');
+    unread.recordIncoming('a@example.invalid', 'muc', first.jid, 'room-pending', false, true);
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'contact@example.invalid' });
+    focus.isFocused.set(true);
+
+    facade.select(first.jid);
+
+    expect(unread.counts().get('a@example.invalid|muc|one@conference.example.invalid')).toBe(1);
+  });
+
   it('bounds each room at 200 and clears only the abandoned room', () => {
     const facade = TestBed.inject(MucFacade);
     facade.setAccount('a@example.invalid');

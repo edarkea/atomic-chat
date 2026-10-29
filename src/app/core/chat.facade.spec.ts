@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ChatFacade } from './chat.facade';
 import { CertificateTrustRequest } from './domain';
 import { ActiveConversationStore } from './active-conversation.store';
+import { UnreadStore } from './unread.store';
 import { WindowFocusStore } from './window-focus.store';
 import { ACCOUNT_PORT, CERTIFICATE_PORT, HISTORY_PORT, PREFERENCES_PORT, XMPP_PORT } from './ports';
 
@@ -381,7 +382,11 @@ describe('ChatFacade roster reconciliation', () => {
     const active = TestBed.inject(ActiveConversationStore);
     const focus = TestBed.inject(WindowFocusStore);
     await facade.connect('a@example.invalid');
-    active.set({ accountId: 'a@example.invalid', kind: 'muc', jid: 'room@conference.example.invalid' });
+    active.set({
+      accountId: 'a@example.invalid',
+      kind: 'muc',
+      jid: 'room@conference.example.invalid',
+    });
     focus.isFocused.set(true);
 
     emitEvent({
@@ -390,6 +395,97 @@ describe('ChatFacade roster reconciliation', () => {
     });
 
     expect(facade.unreadCounts().get('a@example.invalid|direct|contact@example.invalid')).toBe(1);
+  });
+
+  it('does not acknowledge a pending direct message when history finishes unfocused', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    const unread = TestBed.inject(UnreadStore);
+    let release!: (value: ReturnType<typeof ok>) => void;
+    historyPort.listPage = () =>
+      new Promise((resolve) => {
+        release = resolve as (value: ReturnType<typeof ok>) => void;
+      });
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'pending@example.invalid' });
+    focus.isFocused.set(false);
+    unread.recordIncoming(
+      'a@example.invalid',
+      'direct',
+      'pending@example.invalid',
+      'pending-1',
+      true,
+      false,
+    );
+
+    const pending = facade.loadConversation('pending@example.invalid');
+    await Promise.resolve();
+    release(ok({ items: [], nextCursor: null, hasMore: false }));
+    await pending;
+
+    expect(unread.counts().get('a@example.invalid|direct|pending@example.invalid')).toBe(1);
+  });
+
+  it('does not acknowledge an old history request after the active conversation changes', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    const unread = TestBed.inject(UnreadStore);
+    let release!: (value: ReturnType<typeof ok>) => void;
+    historyPort.listPage = () =>
+      new Promise((resolve) => {
+        release = resolve as (value: ReturnType<typeof ok>) => void;
+      });
+    unread.recordIncoming(
+      'a@example.invalid',
+      'direct',
+      'old@example.invalid',
+      'old-1',
+      false,
+      true,
+    );
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'old@example.invalid' });
+    focus.isFocused.set(true);
+
+    const pending = facade.loadConversation('old@example.invalid');
+    await Promise.resolve();
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'new@example.invalid' });
+    release(ok({ items: [], nextCursor: null, hasMore: false }));
+    await pending;
+
+    expect(unread.counts().get('a@example.invalid|direct|old@example.invalid')).toBe(1);
+  });
+
+  it('acknowledges only the active direct conversation after focus recovery', () => {
+    const facade = TestBed.inject(ChatFacade);
+    const active = TestBed.inject(ActiveConversationStore);
+    const focus = TestBed.inject(WindowFocusStore);
+    const unread = TestBed.inject(UnreadStore);
+    unread.recordIncoming(
+      'a@example.invalid',
+      'direct',
+      'visible@example.invalid',
+      'visible-1',
+      true,
+      false,
+    );
+    unread.recordIncoming(
+      'a@example.invalid',
+      'direct',
+      'other@example.invalid',
+      'other-1',
+      false,
+      true,
+    );
+    active.set({ accountId: 'a@example.invalid', kind: 'direct', jid: 'visible@example.invalid' });
+    focus.isFocused.set(false);
+    facade.markConversationRead('visible@example.invalid');
+    expect(unread.counts().get('a@example.invalid|direct|visible@example.invalid')).toBe(1);
+
+    focus.isFocused.set(true);
+    facade.markConversationRead('visible@example.invalid');
+    expect(unread.counts().get('a@example.invalid|direct|visible@example.invalid')).toBeUndefined();
+    expect(unread.counts().get('a@example.invalid|direct|other@example.invalid')).toBe(1);
   });
 });
 

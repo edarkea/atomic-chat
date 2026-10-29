@@ -142,7 +142,8 @@ export class ChatFacade {
               this.activeConversation.isVisible(message.accountId, 'direct', conversationId),
               this.windowFocus.isFocused(),
             );
-            if (incoming.attentionRequested) void this.requestAttention(message.accountId, conversationId);
+            if (incoming.attentionRequested)
+              void this.requestAttention(message.accountId, conversationId);
           }
         }
       }
@@ -472,7 +473,13 @@ export class ChatFacade {
         this.hasOlderMessages.set(result.value.hasMore);
         this.hasNewerMessages.set(false);
         this.messages.set(result.value.items.slice(-200));
-        this.unread.markRead(accountId, 'direct', context.conversationId);
+        this.unread.markReadIfEligible(
+          accountId,
+          'direct',
+          context.conversationId,
+          this.activeConversation.isVisible(accountId, 'direct', context.conversationId),
+          this.windowFocus.isFocused(),
+        );
       } else this.error.set(result.error.message);
     } finally {
       if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false);
@@ -573,7 +580,10 @@ export class ChatFacade {
     }
   }
 
-  async setTypingActivity(conversationId: string, state: Extract<ChatState, 'active' | 'inactive'>): Promise<void> {
+  async setTypingActivity(
+    conversationId: string,
+    state: Extract<ChatState, 'active' | 'inactive'>,
+  ): Promise<void> {
     const timer = this.typingTimers.get(this.bareConversation(conversationId));
     if (timer) {
       clearTimeout(timer);
@@ -583,8 +593,15 @@ export class ChatFacade {
   }
 
   markConversationRead(conversationId: string): void {
-    this.unread.markRead(this.accountId(), 'direct', conversationId);
-    this.clearAttentionIfRead(this.accountId());
+    const accountId = this.accountId();
+    const acknowledged = this.unread.markReadIfEligible(
+      accountId,
+      'direct',
+      conversationId,
+      this.activeConversation.isVisible(accountId, 'direct', conversationId),
+      this.windowFocus.isFocused(),
+    );
+    if (acknowledged) this.clearAttentionIfRead(accountId);
   }
 
   private async loadStoredConversations(accountId: string, generation: number): Promise<void> {
@@ -722,7 +739,8 @@ export class ChatFacade {
       next.splice(low, 0, message);
       return next.length > 200 ? next.slice(next.length - 200) : next;
     });
-    if (conversationId) this.addConversation(message.accountId, conversationId, Date.parse(message.createdAt));
+    if (conversationId)
+      this.addConversation(message.accountId, conversationId, Date.parse(message.createdAt));
   }
 
   private addConversation(accountId: string, jid: string, activity = Date.now()): void {
@@ -796,11 +814,19 @@ export class ChatFacade {
 
   private contactTitle(jid: string): string {
     const bare = this.bareConversation(jid);
-    return this.contacts().find((contact) => this.bareConversation(contact.jid) === bare)?.name?.trim() || bare;
+    return (
+      this.contacts()
+        .find((contact) => this.bareConversation(contact.jid) === bare)
+        ?.name?.trim() || bare
+    );
   }
 
   private unreadCount(accountId: string, kind: 'direct' | 'muc', jid: string): number {
-    return this.unread.counts().get(`${accountId.toLowerCase()}|${kind}|${this.bareConversation(jid)}`) || 0;
+    return (
+      this.unread
+        .counts()
+        .get(`${accountId.toLowerCase()}|${kind}|${this.bareConversation(jid)}`) || 0
+    );
   }
 
   private isOwnMessage(message: Message): boolean {
@@ -828,7 +854,12 @@ export class ChatFacade {
     }
   }
 
-  private receiveChatState(event: { accountId: string; conversationId: string; senderJid: string; state: ChatState }): void {
+  private receiveChatState(event: {
+    accountId: string;
+    conversationId: string;
+    senderJid: string;
+    state: ChatState;
+  }): void {
     if (event.accountId !== this.accountId() || this.isOwnJid(event.senderJid)) return;
     const key = this.bareConversation(event.conversationId);
     const previous = this.typingTimers.get(`incoming:${key}`);
