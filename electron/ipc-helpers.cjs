@@ -1,6 +1,7 @@
 const preferenceDefaults = { theme: 'atomic', notifications: true, autoLogin: false };
 
 function createIpcHelpers({
+  assertSender,
   validateXmppTransport,
   appIsPackaged,
   getRuntime,
@@ -187,6 +188,7 @@ function createIpcHelpers({
   }
 
   function authorizeFileInput(event, input) {
+    assertSender(event);
     const { xmpp } = getRuntime();
     if (
       !validVersion(input) ||

@@ -40,10 +40,11 @@ const channels = [
 function createHarness() {
   const handlers = new Map();
   const calls = [];
-  let authorized = true;
+  let accountAuthorized = true;
+  let senderAuthorized = true;
   const ownership = new Map([[7, 'one@example.invalid']]);
   const historySecurity = {
-    authorize: (senderId, accountId) => authorized && ownership.get(senderId) === accountId,
+    authorize: (senderId, accountId) => accountAuthorized && ownership.get(senderId) === accountId,
     beginConnection: () => 'connection-token',
     completeConnection: (_senderId, _token, accountId) => ownership.set(7, accountId),
     finishConnection: () => undefined,
@@ -87,8 +88,14 @@ function createHarness() {
       calls.push(['accept']);
       return {};
     },
-    reject: async () => ({}),
-    cancel: async () => ({}),
+    reject: async () => {
+      calls.push(['reject']);
+      return {};
+    },
+    cancel: async () => {
+      calls.push(['cancel']);
+      return {};
+    },
     list: () => [],
   };
   const outgoing = {
@@ -100,9 +107,14 @@ function createHarness() {
   };
 
   const options = {
-    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    ipcMain: {
+      handle: (channel, handler) => {
+        if (handlers.has(channel)) throw new Error(`DUPLICATE_CHANNEL:${channel}`);
+        handlers.set(channel, handler);
+      },
+    },
     assertSender: () => {
-      if (!authorized) throw new Error('UNAUTHORIZED');
+      if (!senderAuthorized) throw new Error('UNAUTHORIZED');
     },
     validateXmppTransport: () => ({ transport: 'starttls' }),
     appIsPackaged: false,
@@ -120,7 +132,11 @@ function createHarness() {
     xmpp,
     incoming,
     setAuthorized(value) {
-      authorized = value;
+      accountAuthorized = value;
+      senderAuthorized = value;
+    },
+    setOriginAuthorized(value) {
+      senderAuthorized = value;
     },
   };
 }
@@ -228,6 +244,53 @@ test('keeps MUC, file ownership and history authorization checks', async () => {
   });
   assert.equal(historyResult.ok, false);
   assert.equal(historyResult.error.code, 'UNAUTHORIZED');
+});
+
+test('file actions reject an unauthorized origin before account or owner checks', async () => {
+  const harness = createHarness();
+  const input = {
+    version: 1,
+    requestId: 'file-origin-1',
+    accountId: 'one@example.invalid',
+    transferId: 'transfer-1',
+  };
+  harness.setAuthorized(true);
+  harness.setOriginAuthorized(false);
+  for (const channel of ['file.accept', 'file.reject', 'file.cancel']) {
+    const result = await harness.handlers.get(channel)(event(7), input);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'UNAUTHORIZED');
+    assert.equal(result.error.requestId, 'file-origin-1');
+  }
+  assert.deepEqual(harness.calls, []);
+});
+
+test('file actions retain positive behavior and independent account and owner denials', async () => {
+  const harness = createHarness();
+  const input = {
+    version: 1,
+    requestId: 'file-action-1',
+    accountId: 'one@example.invalid',
+    transferId: 'transfer-1',
+  };
+  const actions = ['file.accept', 'file.reject', 'file.cancel'];
+  for (const channel of actions) {
+    const result = await harness.handlers.get(channel)(event(7), input);
+    assert.equal(result.ok, true);
+    assert.equal(result.requestId, 'file-action-1');
+  }
+  assert.deepEqual(harness.calls, [['accept'], ['reject'], ['cancel']]);
+
+  harness.calls.length = 0;
+  const accountDenied = await harness.handlers.get('file.accept')(event(8), input);
+  assert.equal(accountDenied.error.code, 'UNAUTHORIZED');
+  harness.incoming.get = () => ({
+    offer: { accountId: 'one@example.invalid', transferId: 'transfer-1' },
+    ownerSenderId: 8,
+  });
+  const ownerDenied = await harness.handlers.get('file.accept')(event(7), input);
+  assert.equal(ownerDenied.error.code, 'UNAUTHORIZED');
+  assert.deepEqual(harness.calls, []);
 });
 
 test('preserves preference scopes and rejects invalid cursors', () => {
