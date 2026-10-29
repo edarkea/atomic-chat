@@ -14,7 +14,8 @@
     "test": "ng test",
     "test:angular": "ng test --no-watch --no-progress",
     "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\"",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && npm run typecheck:electron",
+    "typecheck:electron": "tsc -p tsconfig.electron-checkjs.json --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"src/**/*.html\"",
     "format:check": "prettier --check \"eslint.config.mjs\" \"vitest.config.ts\" \"package.json\" \"angular.json\"",
     "format:check:all": "prettier --check \"src/**/*.{ts,html,scss}\" \"electron/**/*.cjs\" \"tests/**/*.cjs\" \"*.{json,mjs,ts}\""

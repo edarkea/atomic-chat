@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "electron/file-transfer-utils.cjs",
+    "electron/file-transfer-resources.cjs",
+    "tests/fixtures/cal11-invalid-direction.cjs"
+  ]
+}
