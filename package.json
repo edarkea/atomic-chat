@@ -40,11 +40,27 @@
     "@angular/compiler-cli": "^21.2.0",
     "angular-eslint": "^21.4.0",
     "electron": "^39.0.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.39.5",
     "jsdom": "^27.0.1",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.72.1",
     "vitest": "^4.0.8"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.atomicchat.desktop",
+    "productName": "Atomic Chat",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/atomic-chat/browser/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ]
   }
 }

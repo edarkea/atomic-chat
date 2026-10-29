@@ -19,6 +19,17 @@ const { createRuntime } = require('./runtime.cjs');
 const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 
+const fs = require('node:fs');
+
+const atomicDataPath = app.isPackaged
+  ? path.join(
+      process.env.PORTABLE_EXECUTABLE_DIR || app.getPath('appData'),
+      'AtomicChat-Data'
+    )
+  : path.join(app.getPath('appData'), 'AtomicChat-Dev');
+
+fs.mkdirSync(atomicDataPath, { recursive: true });
+app.setPath('userData', atomicDataPath);
 const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
 const fileResourceLimiter = new TransferResourceLimiter();
 const { selectFileDestination, selectFileSource } = createFileDialogs({ dialog, fsp });
