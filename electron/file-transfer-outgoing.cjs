@@ -183,12 +183,9 @@ class OutgoingFileTransferCoordinator {
       if (record.terminalRequested) return transferView(record);
       record.state = 'completed';
       record.terminalRequested = true;
-      try {
-        if (await this.onCompleted?.(record, 'outgoing'))
-          record.localActions = { open: true, reveal: true };
-      } catch {
-        record.localActions = undefined;
-      }
+      // El remitente conserva el archivo original; las acciones locales solo
+      // se publican para archivos recibidos y guardados por Atomic Chat.
+      record.localActions = undefined;
       this.clearProgressTimer(record);
       record.updatedAt = new Date().toISOString();
       this.emit(record);

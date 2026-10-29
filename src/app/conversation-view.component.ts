@@ -117,8 +117,9 @@ export class ConversationViewComponent {
   }
 
   protected onDragOver(event: DragEvent): void {
-    event.preventDefault();
     const fileDrag = this.isFileDrag(event);
+    if (!fileDrag) return;
+    event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = fileDrag && this.isSelected() ? 'copy' : 'none';
   }
 
@@ -130,6 +131,7 @@ export class ConversationViewComponent {
   }
 
   protected onDrop(event: DragEvent): void {
+    if (!this.isFileDrag(event)) return;
     event.preventDefault();
     this.dragDepth = 0;
     this.dropActive.set(false);

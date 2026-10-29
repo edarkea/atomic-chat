@@ -1,5 +1,9 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+// This marker is internal to the trusted preload -> Main boundary. The path
+// is accepted only after webUtils derives it from the public File object.
+const DROPPED_FILE_SOURCE = 'preload-webutils-file-v1';
+
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 const service = process.env.ATOMIC_XMPP_SERVICE || '';
 const serviceUrl = service.includes('://') ? new URL(service) : null;
@@ -69,6 +73,7 @@ contextBridge.exposeInMainWorld(
           filePath = '';
         }
         return invoke('file.sendDropped', {
+          source: DROPPED_FILE_SOURCE,
           version: input?.version,
           requestId: input?.requestId,
           accountId: input?.accountId,

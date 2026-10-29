@@ -124,6 +124,22 @@ describe('FileFacade injected transfer port', () => {
     expect(facade.error()).toContain('hasta 8');
   });
 
+  it('rejects a second dropped batch while the first one is in flight', async () => {
+    let release!: (result: ReturnType<typeof ok<FileTransfer | null>>) => void;
+    (port.sendDropped as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve)),
+    );
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const first = facade.sendDropped('contact@example.invalid', [new File(['one'], 'one.txt')]);
+    await Promise.resolve();
+    await facade.sendDropped('contact@example.invalid', [new File(['two'], 'two.txt')]);
+    expect(facade.error()).toContain('Ya hay un lote');
+    release(ok<FileTransfer | null>(null));
+    await first;
+    expect(port.sendDropped).toHaveBeenCalledOnce();
+  });
+
   it('ignores transfer events belonging to another account', async () => {
     const facade = TestBed.inject(FileFacade);
     await facade.setAccount('a@example.invalid');

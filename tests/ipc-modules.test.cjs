@@ -280,6 +280,7 @@ test('routes dropped files through the authorized sender and existing XMPP trans
   };
   const result = await harness.handlers.get('file.sendDropped')(event(7), {
     version: 1,
+    source: 'preload-webutils-file-v1',
     requestId: 'file-drop-1',
     accountId: 'one@example.invalid',
     conversationId: 'contact@example.invalid',
@@ -298,6 +299,16 @@ test('routes dropped files through the authorized sender and existing XMPP trans
       },
     ],
   ]);
+  const invalidSource = await harness.handlers.get('file.sendDropped')(event(7), {
+    version: 1,
+    requestId: 'file-drop-invalid-source',
+    accountId: 'one@example.invalid',
+    conversationId: 'contact@example.invalid',
+    filePath: '/tmp/fixtures/other.html',
+  });
+  assert.equal(invalidSource.ok, false);
+  assert.equal(invalidSource.error.code, 'INVALID_INPUT');
+  assert.equal(calls.length, 1);
 });
 
 test('file actions reject an unauthorized origin before account or owner checks', async () => {

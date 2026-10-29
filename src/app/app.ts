@@ -708,6 +708,19 @@ export class App {
   protected dropRejected(message: string): void {
     this.files.error.set(message);
   }
+
+  @HostListener('document:dragover', ['$event'])
+  protected protectFileDrag(event: DragEvent): void {
+    if (!this.isFileDrag(event) || this.isConversationDropTarget(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+  }
+
+  @HostListener('document:drop', ['$event'])
+  protected protectFileDrop(event: DragEvent): void {
+    if (!this.isFileDrag(event) || this.isConversationDropTarget(event)) return;
+    event.preventDefault();
+  }
   protected async discoverRooms(): Promise<void> {
     this.mucDiscovering.set(true);
     try {
@@ -801,6 +814,13 @@ export class App {
   }
   private bareJid(jid: string): string {
     return jid.split('/')[0].toLowerCase();
+  }
+  private isFileDrag(event: DragEvent): boolean {
+    return event.dataTransfer?.types.includes('Files') ?? false;
+  }
+  private isConversationDropTarget(event: DragEvent): boolean {
+    const target = event.target;
+    return target instanceof Element && Boolean(target.closest('.conversation-surface'));
   }
   private joinedRoom(roomJid: string): RoomState | undefined {
     return this.muc

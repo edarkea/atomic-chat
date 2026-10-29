@@ -557,6 +557,21 @@ describe('App composer integration', () => {
     fixture.detectChanges();
     expect((fixture.componentInstance as any).selectedJid()).toBe('contact@example.invalid');
   });
+  it('prevents file navigation outside the conversation without intercepting text drops', () => {
+    const fileDrop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(fileDrop, 'dataTransfer', {
+      value: { types: ['Files'], items: [], files: [], dropEffect: 'none' },
+    });
+    document.body.dispatchEvent(fileDrop);
+    expect(fileDrop.defaultPrevented).toBe(true);
+
+    const textDrop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(textDrop, 'dataTransfer', {
+      value: { types: ['text/plain'], items: [], files: [], dropEffect: 'none' },
+    });
+    document.body.dispatchEvent(textDrop);
+    expect(textDrop.defaultPrevented).toBe(false);
+  });
   it('shows one certificate dialog with the selected transport and fingerprint', () => {
     facade.certificateRequest.set({
       requestId: 'cert-1',

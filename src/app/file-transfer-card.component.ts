@@ -28,14 +28,21 @@ export class FileTransferCardComponent {
 
   protected hasLocalActions(): boolean {
     const actions = this.transfer().localActions;
-    return this.transfer().state === 'completed' && Boolean(actions?.open || actions?.reveal);
+    return (
+      this.transfer().direction === 'incoming' &&
+      this.transfer().state === 'completed' &&
+      Boolean(actions?.open || actions?.reveal)
+    );
   }
 
   protected canOpenFile(): boolean {
-    return this.transfer().localActions?.open === true;
+    return this.transfer().direction === 'incoming' && this.transfer().localActions?.open === true;
   }
 
   protected canRevealFolder(): boolean {
-    return this.transfer().localActions?.reveal === true;
+    return (
+      this.transfer().direction === 'incoming' &&
+      this.transfer().localActions?.reveal === true
+    );
   }
 }

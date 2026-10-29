@@ -1,5 +1,7 @@
 const path = require('node:path');
 
+const DROPPED_FILE_SOURCE = 'preload-webutils-file-v1';
+
 function registerFileHandlers({
   ipcMain,
   assertSender,
@@ -77,6 +79,7 @@ function registerFileHandlers({
   });
   ipcMain.handle('file.sendDropped', async (event, input) => {
     try {
+      if (input?.source !== DROPPED_FILE_SOURCE) throw new Error('INVALID_INPUT');
       return await sendFileFromPath(event, input, input?.filePath);
     } catch (error) {
       return fileResultError(error, event, input);

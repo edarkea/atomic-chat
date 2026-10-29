@@ -307,6 +307,12 @@ describe('extracted Angular presentation components', () => {
     Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer });
     fixture.nativeElement.querySelector('.conversation-surface').dispatchEvent(drop);
     expect(dropped).toHaveBeenCalledWith(dataTransfer.files);
+    const textDrop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(textDrop, 'dataTransfer', {
+      value: { types: ['text/plain'], items: [], files: [], dropEffect: 'none' },
+    });
+    fixture.nativeElement.querySelector('.conversation-surface').dispatchEvent(textDrop);
+    expect(textDrop.defaultPrevented).toBe(false);
     const dragEnter = new Event('dragenter', { bubbles: true, cancelable: true });
     Object.defineProperty(dragEnter, 'dataTransfer', { value: dataTransfer });
     fixture.nativeElement.querySelector('.conversation-surface').dispatchEvent(dragEnter);
@@ -404,7 +410,7 @@ describe('extracted Angular presentation components', () => {
       imports: [FileTransferCardComponent],
     }).compileComponents();
     const fixture = TestBed.createComponent(FileTransferCardComponent);
-    fixture.componentRef.setInput('transfer', {
+    const completedTransfer = {
       offer: {
         transferId: 'file-completed',
         accountId: 'operator@example.invalid',
@@ -420,7 +426,8 @@ describe('extracted Angular presentation components', () => {
       bytesTransferred: '4',
       localActions: { open: true, reveal: true },
       updatedAt: new Date().toISOString(),
-    });
+    };
+    fixture.componentRef.setInput('transfer', completedTransfer);
     fixture.componentRef.setInput('label', 'Archivo recibido correctamente');
     const opened = vi.fn();
     const revealed = vi.fn();
@@ -433,6 +440,12 @@ describe('extracted Angular presentation components', () => {
     (buttons[1] as HTMLButtonElement).click();
     expect(opened).toHaveBeenCalledWith('file-completed');
     expect(revealed).toHaveBeenCalledWith('file-completed');
+    fixture.componentRef.setInput('transfer', {
+      ...completedTransfer,
+      direction: 'outgoing',
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.file-actions button')).toHaveLength(0);
   });
 
   it('reuses the composer for attachable direct chat and text-only MUC input', async () => {

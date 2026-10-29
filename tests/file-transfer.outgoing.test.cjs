@@ -183,6 +183,7 @@ test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data
   try {
     const result = await adapter.sendFile(ACCOUNT, { filePath, fileName: 'fixture.bin', conversationId: 'spark@example.invalid', ownerSenderId: 42 });
     assert.equal(result.state, 'completed'); assert.equal(result.bytesTransferred, '5');
+    assert.equal(result.localActions, undefined);
     assert.deepEqual(sent.map((iq) => iq.children[0].name), ['query', 'si', 'open', 'data', 'data', 'close']);
     const si = sent[1].children[0];
     assert.equal(si.getChild('feature', FEATURE)?.getChild('x', FORM)?.attrs.type, 'form');

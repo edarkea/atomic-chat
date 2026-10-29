@@ -12,6 +12,8 @@ export class FileFacade {
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
+  private droppedBatchInFlight = false;
+  private droppedBatchGeneration = 0;
   readonly transfers = computed(() => this.items());
   readonly error = signal<string | null>(null);
   readonly activeCount = computed(
@@ -26,6 +28,7 @@ export class FileFacade {
   }
 
   async setAccount(accountId: string): Promise<void> {
+    this.droppedBatchGeneration += 1;
     this.account = accountId;
     this.items.set([]);
     this.pendingLocalActions.set(new Set());
@@ -83,6 +86,11 @@ export class FileFacade {
 
   async sendDropped(conversationId: string, files: ReadonlyArray<File>): Promise<void> {
     if (!this.account || !conversationId) return;
+    const batchGeneration = ++this.droppedBatchGeneration;
+    if (this.droppedBatchInFlight) {
+      this.error.set('Ya hay un lote de archivos en envío. Espera a que termine.');
+      return;
+    }
     if (files.length > MAX_DROPPED_FILES) {
       this.error.set(`Puedes enviar hasta ${MAX_DROPPED_FILES} archivos por vez.`);
       return;
@@ -94,26 +102,37 @@ export class FileFacade {
 
     const accountId = this.account;
     let failed = 0;
-    for (const file of files) {
-      const result = await this.port.sendDropped({
-        version: 1,
-        requestId: createOpaqueId('file-drop'),
-        accountId,
-        conversationId,
-        file,
-      });
-      if (this.account !== accountId) return;
-      if (result.ok) {
-        if (result.value) this.upsert(result.value);
-      } else failed += 1;
+    this.droppedBatchInFlight = true;
+    try {
+      for (const file of files) {
+        try {
+          const result = await this.port.sendDropped({
+            version: 1,
+            requestId: createOpaqueId('file-drop'),
+            accountId,
+            conversationId,
+            file,
+          });
+          if (this.account !== accountId) return;
+          if (result.ok) {
+            if (result.value) this.upsert(result.value);
+          } else failed += 1;
+        } catch {
+          if (this.account !== accountId) return;
+          failed += 1;
+        }
+      }
+      if (this.droppedBatchGeneration !== batchGeneration) return;
+      if (failed) {
+        this.error.set(
+          failed === files.length
+            ? 'No se pudo iniciar el envío de los archivos.'
+            : `No se pudo iniciar el envío de ${failed} archivo${failed === 1 ? '' : 's'}.`,
+        );
+      } else this.error.set(null);
+    } finally {
+      this.droppedBatchInFlight = false;
     }
-    if (failed) {
-      this.error.set(
-        failed === files.length
-          ? 'No se pudo iniciar el envío de los archivos.'
-          : `No se pudo iniciar el envío de ${failed} archivo${failed === 1 ? '' : 's'}.`,
-      );
-    } else this.error.set(null);
   }
 
   forConversation(accountId: string, conversationId: string): ReadonlyArray<FileTransfer> {
