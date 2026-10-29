@@ -1,0 +1,28 @@
+services:
+  deb-builder:
+    image: electronuserland/builder:22
+    platform: linux/amd64
+    working_dir: /project
+
+    volumes:
+      - ./:/project
+      - atomic_linux_modules:/project/node_modules
+      - atomic_electron_cache:/root/.cache/electron
+      - atomic_builder_cache:/root/.cache/electron-builder
+
+    environment:
+      ELECTRON_CACHE: /root/.cache/electron
+      ELECTRON_BUILDER_CACHE: /root/.cache/electron-builder
+
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - >-
+        npm ci &&
+        npm run build &&
+        npx electron-builder --linux deb --x64 --publish never
+        -c.directories.output=release/linux
+
+volumes:
+  atomic_linux_modules:
+  atomic_electron_cache:
+  atomic_builder_cache:
