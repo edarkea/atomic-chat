@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, webContents, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, webContents, dialog, shell } = require('electron');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -10,6 +10,7 @@ const { isAuthorizedSender } = require('./ipc-security.cjs');
 const { createHistorySecurity } = require('./history-security.cjs');
 const { FileTransferCoordinator } = require('./file-transfer.cjs');
 const { OutgoingFileTransferCoordinator } = require('./file-transfer-outgoing.cjs');
+const { FileLocalActionRegistry } = require('./file-local-actions.cjs');
 const { TransferResourceLimiter } = require('./file-transfer-resources.cjs');
 const { registerAppLifecycle } = require('./app-lifecycle.cjs');
 const { createEventRouter } = require('./event-router.cjs');
@@ -33,12 +34,15 @@ app.setPath('userData', atomicDataPath);
 const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
 const fileResourceLimiter = new TransferResourceLimiter();
 const { selectFileDestination, selectFileSource } = createFileDialogs({ dialog, fsp });
+const localFileActions = new FileLocalActionRegistry({ shell });
 const fileTransfers = new FileTransferCoordinator({
   selectDestination: selectFileDestination,
   resourceLimiter: fileResourceLimiter,
+  onCompleted: (record, direction) => localFileActions.register(record, direction),
 });
 const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   resourceLimiter: fileResourceLimiter,
+  onCompleted: (record, direction) => localFileActions.register(record, direction),
 });
 
 let runtime;
@@ -61,7 +65,10 @@ function createWindow() {
     preloadPath: path.join(__dirname, 'preload.cjs'),
     productionHtmlPath: path.join(__dirname, '..', 'dist', 'atomic-chat', 'browser', 'index.html'),
     devServerUrl: process.env.ATOMIC_CHAT_DEV_SERVER,
-    onDestroyed: (senderId) => historySecurity.destroySender(senderId),
+    onDestroyed: (senderId) => {
+      historySecurity.destroySender(senderId);
+      localFileActions.clearSender(senderId);
+    },
   });
   mainWindow.on('focus', applicationAttention.acknowledge);
   return mainWindow;
@@ -129,6 +136,8 @@ registerIpcHandlers({
   getRuntime: () => runtime,
   fileTransfers,
   outgoingFileTransfers,
+  localFileActions,
+  shell,
   historySecurity,
   selectFileSource,
   applicationAttention,

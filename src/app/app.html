@@ -187,7 +187,7 @@
             [selectedJid]="selectedJid()"
             [accountId]="chat.accountId()"
             [timeline]="conversationTimeline()"
-            [error]="chat.error()"
+            [error]="conversationError()"
             [draft]="draft()"
             [historyLoading]="chat.historyLoading()"
             [hasOlderMessages]="chat.hasOlderMessages()"
@@ -201,6 +201,9 @@
             (accept)="files.accept($event)"
             (reject)="files.reject($event)"
             (fileCancel)="files.cancel($event)"
+            (fileOpen)="files.open($event)"
+            (fileReveal)="files.reveal($event)"
+            [fileActionPending]="fileActionPending"
             (loadOlder)="loadOlderMessages($event)"
             (loadNewer)="loadNewerMessages($event)"
           />

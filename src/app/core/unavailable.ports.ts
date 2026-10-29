@@ -145,6 +145,12 @@ export class UnavailableFileTransferPort implements FileTransferPort {
   cancel(input: FileRequest): Promise<Result<FileTransfer>> {
     return Promise.resolve(unsupported(input.requestId));
   }
+  open(input: FileRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  reveal(input: FileRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
   listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>> {
     return Promise.resolve({ ok: true, version: 1, requestId: input.requestId, value: [] });
   }

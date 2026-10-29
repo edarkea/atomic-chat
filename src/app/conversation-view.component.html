@@ -39,6 +39,9 @@
         (accepted)="accept.emit($event)"
         (rejected)="reject.emit($event)"
         (cancelled)="fileCancel.emit($event)"
+        (opened)="fileOpen.emit($event)"
+        (revealed)="fileReveal.emit($event)"
+        [actionBusy]="fileActionPending()(item.transfer.offer.transferId)"
       />
     }
   }

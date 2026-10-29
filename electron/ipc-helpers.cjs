@@ -333,9 +333,11 @@ function createIpcHelpers({
         message:
           code === 'STORAGE_FAILED'
             ? 'No fue posible acceder al archivo.'
-            : code === 'NOT_CONNECTED'
-              ? 'El destinatario ya no está disponible.'
-              : 'No fue posible completar la transferencia.',
+            : code === 'UNSUPPORTED'
+              ? 'Esta acción no está disponible para este archivo.'
+              : code === 'NOT_CONNECTED'
+                ? 'El destinatario ya no está disponible.'
+                : 'No fue posible completar la transferencia.',
       },
     };
   }

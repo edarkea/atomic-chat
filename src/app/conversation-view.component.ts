@@ -68,6 +68,9 @@ export class ConversationViewComponent {
   readonly accept = output<string>();
   readonly reject = output<string>();
   readonly fileCancel = output<string>();
+  readonly fileOpen = output<string>();
+  readonly fileReveal = output<string>();
+  readonly fileActionPending = input<(transferId: string) => boolean>(() => false);
   readonly loadOlder = output<OlderMessagesRequest>();
   readonly loadNewer = output<string>();
 

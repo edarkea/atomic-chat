@@ -8,6 +8,7 @@ export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
+  private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
   readonly transfers = computed(() => this.items());
   readonly error = signal<string | null>(null);
@@ -25,6 +26,8 @@ export class FileFacade {
   async setAccount(accountId: string): Promise<void> {
     this.account = accountId;
     this.items.set([]);
+    this.pendingLocalActions.set(new Set());
+    this.error.set(null);
     if (!accountId) return;
     const result = await this.port.listActive({
       version: 1,
@@ -48,6 +51,18 @@ export class FileFacade {
   }
   async cancel(transferId: string): Promise<void> {
     await this.mutate('cancel', transferId);
+  }
+
+  async open(transferId: string): Promise<void> {
+    await this.localAction('open', transferId);
+  }
+
+  async reveal(transferId: string): Promise<void> {
+    await this.localAction('reveal', transferId);
+  }
+
+  isLocalActionPending(transferId: string): boolean {
+    return this.pendingLocalActions().has(transferId);
   }
 
   async send(conversationId: string): Promise<void> {
@@ -115,6 +130,39 @@ export class FileFacade {
     if (this.account !== accountId) return;
     if (result.ok) this.upsert(result.value);
     else this.error.set(result.error.message);
+  }
+
+  private async localAction(action: 'open' | 'reveal', transferId: string): Promise<void> {
+    const item = this.items().find(
+      (candidate) =>
+        candidate.offer.transferId === transferId && candidate.offer.accountId === this.account,
+    );
+    if (
+      !item ||
+      item.state !== 'completed' ||
+      !item.localActions?.[action] ||
+      this.pendingLocalActions().has(transferId)
+    )
+      return;
+    const accountId = this.account;
+    this.pendingLocalActions.update((pending) => new Set(pending).add(transferId));
+    try {
+      const result = await this.port[action]({
+        version: 1,
+        requestId: createOpaqueId(`file-${action}`),
+        accountId,
+        transferId,
+      });
+      if (this.account !== accountId) return;
+      if (result.ok) this.error.set(null);
+      else this.error.set(result.error.message);
+    } finally {
+      this.pendingLocalActions.update((pending) => {
+        const next = new Set(pending);
+        next.delete(transferId);
+        return next;
+      });
+    }
   }
 
   private onEvent(event: TypedDomainEvent): void {

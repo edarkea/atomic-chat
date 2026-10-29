@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld(
       accept: (input) => invoke('file.accept', input),
       reject: (input) => invoke('file.reject', input),
       cancel: (input) => invoke('file.cancel', input),
+      open: (input) => invoke('file.open', input),
+      reveal: (input) => invoke('file.reveal', input),
       listActive: (input) => invoke('file.listActive', input),
     }),
     history: Object.freeze({

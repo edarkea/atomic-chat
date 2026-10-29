@@ -180,6 +180,16 @@ export class ElectronFileTransferPort implements FileTransferPort {
     return api ? api.file.cancel(input) : Promise.resolve(unavailable(input.requestId));
   }
 
+  open(input: FileRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.open(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  reveal(input: FileRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.reveal(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
   listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>> {
     const api = getAtomicChatApi();
     return api ? api.file.listActive(input) : Promise.resolve(unavailable(input.requestId));

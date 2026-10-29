@@ -33,6 +33,8 @@ const channels = [
   'file.accept',
   'file.reject',
   'file.cancel',
+  'file.open',
+  'file.reveal',
   'file.listActive',
   'messages.list',
   'messages.page',
@@ -116,6 +118,14 @@ function createHarness() {
     cancel: async () => ({}),
     list: () => [],
   };
+  const localFileActions = {
+    open: async (senderId, input) => {
+      calls.push(['open', senderId, input.transferId]);
+    },
+    reveal: async (senderId, input) => {
+      calls.push(['reveal', senderId, input.transferId]);
+    },
+  };
 
   const options = {
     ipcMain: {
@@ -132,6 +142,7 @@ function createHarness() {
     getRuntime: () => ({ persistence, secrets, xmpp }),
     fileTransfers: incoming,
     outgoingFileTransfers: outgoing,
+    localFileActions,
     historySecurity,
     selectFileSource: async () => null,
   };
@@ -165,11 +176,11 @@ test('each domain registrar owns only its assigned channels', () => {
   const groups = [
     [registerAccountHandlers, channels.slice(0, 10)],
     [registerMucHandlers, channels.slice(10, 14)],
-    [registerFileHandlers, channels.slice(14, 19)],
-    [registerHistoryHandlers, channels.slice(19, 22)],
-    [registerPreferenceHandlers, channels.slice(22, 25)],
-    [registerConnectionProfileHandlers, channels.slice(25, 29)],
-    [registerAttentionHandlers, channels.slice(29, 31)],
+    [registerFileHandlers, channels.slice(14, 21)],
+    [registerHistoryHandlers, channels.slice(21, 24)],
+    [registerPreferenceHandlers, channels.slice(24, 27)],
+    [registerConnectionProfileHandlers, channels.slice(27, 31)],
+    [registerAttentionHandlers, channels.slice(31, 33)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();
@@ -269,13 +280,33 @@ test('file actions reject an unauthorized origin before account or owner checks'
   };
   harness.setAuthorized(true);
   harness.setOriginAuthorized(false);
-  for (const channel of ['file.accept', 'file.reject', 'file.cancel']) {
+  for (const channel of ['file.accept', 'file.reject', 'file.cancel', 'file.open', 'file.reveal']) {
     const result = await harness.handlers.get(channel)(event(7), input);
     assert.equal(result.ok, false);
     assert.equal(result.error.code, 'UNAUTHORIZED');
     assert.equal(result.error.requestId, 'file-origin-1');
   }
   assert.deepEqual(harness.calls, []);
+});
+
+test('local file actions keep account and renderer authorization without XMPP connectivity', async () => {
+  const harness = createHarness();
+  harness.xmpp.sessions.clear();
+  harness.xmpp.states.clear();
+  const input = {
+    version: 1,
+    requestId: 'file-local-1',
+    accountId: 'one@example.invalid',
+    transferId: 'transfer-1',
+  };
+  const opened = await harness.handlers.get('file.open')(event(7), input);
+  const revealed = await harness.handlers.get('file.reveal')(event(7), input);
+  assert.equal(opened.ok, true);
+  assert.equal(revealed.ok, true);
+  assert.deepEqual(harness.calls, [
+    ['open', 7, 'transfer-1'],
+    ['reveal', 7, 'transfer-1'],
+  ]);
 });
 
 test('preserves safe MUC diagnostics at the IPC boundary', async () => {

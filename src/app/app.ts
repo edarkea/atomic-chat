@@ -61,6 +61,8 @@ export class App {
   private readonly activeConversation = inject(ActiveConversationStore);
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
+  protected readonly fileActionPending = (transferId: string): boolean =>
+    this.files.isLocalActionPending(transferId);
   protected readonly draft = signal('');
   protected readonly login = signal({
     accountId: '',
@@ -81,6 +83,7 @@ export class App {
   protected readonly search = signal('');
   protected readonly directoryOpen = signal(false);
   protected readonly totalUnread = computed(() => this.chat.unreadTotal?.() ?? 0);
+  protected readonly conversationError = computed(() => this.files.error() || this.chat.error());
   protected readonly conversationSelection = signal<ConversationSelection>({
     kind: 'none',
     accountId: '',

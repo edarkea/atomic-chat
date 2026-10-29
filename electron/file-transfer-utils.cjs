@@ -35,6 +35,7 @@
  * @property {TransferEndReason} [endReason]
  * @property {string} [errorCode]
  * @property {string} updatedAt
+ * @property {{open: boolean, reveal: boolean}} [localActions]
  */
 
 /**
@@ -45,6 +46,7 @@
  * @property {string} bytesTransferred Decimal byte count serialized from bigint.
  * @property {TransferEndReason} [endReason]
  * @property {string} [errorCode]
+ * @property {{open: boolean, reveal: boolean}} [localActions]
  * @property {string} updatedAt
  */
 
@@ -85,6 +87,7 @@ function transferView(record, direction) {
     bytesTransferred: record.bytes.toString(),
     ...(record.endReason ? { endReason: record.endReason } : {}),
     ...(record.errorCode ? { errorCode: record.errorCode } : {}),
+    ...(record.localActions ? { localActions: record.localActions } : {}),
     updatedAt: record.updatedAt,
   };
 }

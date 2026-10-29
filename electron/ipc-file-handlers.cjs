@@ -6,11 +6,30 @@ function registerFileHandlers({
   getRuntime,
   fileTransfers,
   outgoingFileTransfers,
+  localFileActions,
   historySecurity,
   selectFileSource,
   helpers,
 }) {
   const { requestId, validVersion, authorizeFileInput, fileResultError } = helpers;
+
+  const authorizeLocalAction = (event, input) => {
+    assertSender(event);
+    if (
+      !validVersion(input) ||
+      typeof input.requestId !== 'string' ||
+      !input.requestId.trim() ||
+      typeof input.accountId !== 'string' ||
+      !input.accountId.trim() ||
+      typeof input.transferId !== 'string' ||
+      !input.transferId.trim()
+    )
+      throw new Error('INVALID_INPUT');
+    if (!historySecurity.authorize(event.sender.id, input.accountId))
+      throw new Error('UNAUTHORIZED');
+    if (!localFileActions) throw new Error('UNSUPPORTED');
+    return input;
+  };
 
   ipcMain.handle('file.send', async (event, input) => {
     try {
@@ -80,6 +99,24 @@ function registerFileHandlers({
           ? await outgoingFileTransfers.cancel(record.offer.transferId)
           : await fileTransfers.cancel(record.offer.transferId);
       return { ok: true, value, version: 1, requestId: input.requestId };
+    } catch (error) {
+      return fileResultError(error, event, input);
+    }
+  });
+  ipcMain.handle('file.open', async (event, input) => {
+    try {
+      const request = authorizeLocalAction(event, input);
+      await localFileActions.open(event.sender.id, request);
+      return { ok: true, value: undefined, version: 1, requestId: request.requestId };
+    } catch (error) {
+      return fileResultError(error, event, input);
+    }
+  });
+  ipcMain.handle('file.reveal', async (event, input) => {
+    try {
+      const request = authorizeLocalAction(event, input);
+      await localFileActions.reveal(event.sender.id, request);
+      return { ok: true, value: undefined, version: 1, requestId: request.requestId };
     } catch (error) {
       return fileResultError(error, event, input);
     }

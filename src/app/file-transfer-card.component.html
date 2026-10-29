@@ -32,4 +32,26 @@
   @if (isTerminal()) {
     <p aria-live="polite">{{ label() }}</p>
   }
+  @if (hasLocalActions()) {
+    <div class="file-actions" aria-label="Acciones del archivo">
+      @if (canOpenFile()) {
+        <button
+          type="button"
+          [disabled]="actionBusy()"
+          (click)="opened.emit(transfer().offer.transferId)"
+        >
+          Abrir archivo
+        </button>
+      }
+      @if (canRevealFolder()) {
+        <button
+          type="button"
+          [disabled]="actionBusy()"
+          (click)="revealed.emit(transfer().offer.transferId)"
+        >
+          Abrir carpeta
+        </button>
+      }
+    </div>
+  }
 </article>

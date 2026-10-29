@@ -361,6 +361,42 @@ describe('extracted Angular presentation components', () => {
     expect(cancelled).not.toHaveBeenCalled();
   });
 
+  it('shows local open actions only for completed transfers with a safe reference', async () => {
+    await TestBed.configureTestingModule({
+      imports: [FileTransferCardComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FileTransferCardComponent);
+    fixture.componentRef.setInput('transfer', {
+      offer: {
+        transferId: 'file-completed',
+        accountId: 'operator@example.invalid',
+        conversationId: 'contact@example.invalid',
+        senderJid: 'contact@example.invalid',
+        name: 'report.pdf',
+        sizeBytes: '4',
+        transport: 'ibb' as const,
+        offeredAt: new Date().toISOString(),
+      },
+      direction: 'incoming' as const,
+      state: 'completed' as const,
+      bytesTransferred: '4',
+      localActions: { open: true, reveal: true },
+      updatedAt: new Date().toISOString(),
+    });
+    fixture.componentRef.setInput('label', 'Archivo recibido correctamente');
+    const opened = vi.fn();
+    const revealed = vi.fn();
+    fixture.componentInstance.opened.subscribe(opened);
+    fixture.componentInstance.revealed.subscribe(revealed);
+    fixture.detectChanges();
+    const buttons = fixture.nativeElement.querySelectorAll('.file-actions button');
+    expect(buttons).toHaveLength(2);
+    (buttons[0] as HTMLButtonElement).click();
+    (buttons[1] as HTMLButtonElement).click();
+    expect(opened).toHaveBeenCalledWith('file-completed');
+    expect(revealed).toHaveBeenCalledWith('file-completed');
+  });
+
   it('reuses the composer for attachable direct chat and text-only MUC input', async () => {
     await TestBed.configureTestingModule({
       imports: [MessageComposerComponent],

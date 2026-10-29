@@ -39,6 +39,7 @@ class FileTransferCoordinator {
     this.unrefCleanupTimers = options.unrefCleanupTimers ?? true;
     this.cleanupJobs = new Map();
     this.resourceLimiter = options.resourceLimiter;
+    this.onCompleted = options.onCompleted;
   }
 
   onEvent(listener) {
@@ -540,6 +541,12 @@ class FileTransferCoordinator {
         record.publicationState = 'published';
         record.state = 'completed';
         record.terminalRequested = true;
+        try {
+          if (await this.onCompleted?.(record, 'incoming'))
+            record.localActions = { open: true, reveal: true };
+        } catch {
+          record.localActions = undefined;
+        }
         this.clearProgressTimer(record);
         record.updatedAt = new Date().toISOString();
         this.emit(record);

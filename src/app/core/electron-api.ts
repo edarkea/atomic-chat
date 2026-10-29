@@ -91,6 +91,8 @@ export interface AtomicChatApi {
     accept(input: FileRequest): Promise<Result<FileTransfer>>;
     reject(input: FileRequest): Promise<Result<FileTransfer>>;
     cancel(input: FileRequest): Promise<Result<FileTransfer>>;
+    open(input: FileRequest): Promise<Result<void>>;
+    reveal(input: FileRequest): Promise<Result<void>>;
     listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>>;
   };
   history: {

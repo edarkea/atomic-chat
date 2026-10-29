@@ -206,6 +206,10 @@ export interface FileTransfer {
   readonly bytesTransferred: DecimalByteCount;
   readonly endReason?: FileEndReason;
   readonly errorCode?: AppErrorCode;
+  readonly localActions?: {
+    readonly open: boolean;
+    readonly reveal: boolean;
+  };
   readonly updatedAt: string;
 }
 export interface FileRequest {

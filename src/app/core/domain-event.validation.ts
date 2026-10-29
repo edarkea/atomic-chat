@@ -46,6 +46,9 @@ interface EventRecord {
   issuer?: unknown;
   jid?: unknown;
   kind?: unknown;
+  localActions?: unknown;
+  open?: unknown;
+  reveal?: unknown;
   message?: unknown;
   mimeType?: unknown;
   mode?: unknown;
@@ -367,6 +370,7 @@ function isFileOffer(value: unknown): value is FileOffer {
 
 function isFileTransfer(value: unknown): value is FileTransfer {
   if (!isRecord(value) || !isFileOffer(value.offer)) return false;
+  const localActions = value.localActions;
   return (
     isOneOf(value.direction, ['incoming', 'outgoing']) &&
     isOneOf(value.state, [
@@ -381,6 +385,10 @@ function isFileTransfer(value: unknown): value is FileTransfer {
       'cancelled',
     ]) &&
     isString(value.bytesTransferred) &&
+    (localActions === undefined ||
+      (isRecord(localActions) &&
+        isBoolean(localActions.open) &&
+        isBoolean(localActions.reveal))) &&
     isOptionalOneOf(value.endReason, [
       'user_rejected',
       'cancelled_by_receiver',

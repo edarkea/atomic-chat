@@ -34,6 +34,8 @@ describe('FileFacade injected transfer port', () => {
       accept: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
       reject: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
       cancel: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
+      open: vi.fn(async () => ok<void>(undefined)),
+      reveal: vi.fn(async () => ok<void>(undefined)),
       listActive: vi.fn(async () =>
         ok<ReadonlyArray<FileTransfer>>([transfer('a@example.invalid', 'incoming')]),
       ),
@@ -110,6 +112,36 @@ describe('FileFacade injected transfer port', () => {
       payload: transfer('a@example.invalid', 'owned'),
     });
     expect(facade.transfers().map((item) => item.offer.transferId)).toEqual(['incoming', 'owned']);
+  });
+
+  it('routes completed local actions and prevents duplicate pending calls', async () => {
+    let resolveOpen!: (result: ReturnType<typeof ok<void>>) => void;
+    const deferred = new Promise<ReturnType<typeof ok<void>>>((resolve) => {
+      resolveOpen = resolve;
+    });
+    (port.open as ReturnType<typeof vi.fn>).mockReturnValueOnce(deferred);
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    emit({
+      version: 1,
+      eventId: 'completed-file',
+      type: 'file.stateChanged',
+      payload: {
+        ...transfer('a@example.invalid', 'completed'),
+        state: 'completed',
+        localActions: { open: true, reveal: true },
+      },
+    });
+    const first = facade.open('completed');
+    await Promise.resolve();
+    await facade.open('completed');
+    expect(port.open).toHaveBeenCalledOnce();
+    expect(facade.isLocalActionPending('completed')).toBe(true);
+    resolveOpen(ok<void>(undefined));
+    await first;
+    expect(facade.isLocalActionPending('completed')).toBe(false);
+    await facade.reveal('completed');
+    expect(port.reveal).toHaveBeenCalledOnce();
   });
 
   it('unsubscribes from transfer events when destroyed', () => {
