@@ -23,30 +23,17 @@ export const ATOMIC_THEME_PALETTE: ThemePalette = Object.freeze({
   focus: '#8dffa0',
 });
 
-export const DARK_THEME_PALETTE: ThemePalette = Object.freeze({
-  background: '#0B1220',
-  surface: '#121E2F',
-  surfaceRaised: '#1C2C40',
-  accent: '#63C6D1',
-  text: '#F2F6FB',
-  textSecondary: '#BFCCDA',
-  border: '#607992',
-  incomingBubble: '#24364C',
-  outgoingBubble: '#294F65',
-  focus: '#88D8E0',
-});
-
-export const LIGHT_THEME_PALETTE: ThemePalette = Object.freeze({
-  background: '#F5F7FA',
-  surface: '#FFFFFF',
-  surfaceRaised: '#E8EFF6',
-  accent: '#0F596F',
-  text: '#182536',
-  textSecondary: '#425466',
-  border: '#6B788B',
-  incomingBubble: '#E9F1F6',
-  outgoingBubble: '#D7E9EE',
-  focus: '#0F7088',
+export const ATOMIC_LIGHT_THEME_PALETTE: ThemePalette = Object.freeze({
+  background: '#F2F8F1',
+  surface: '#E8F2E8',
+  surfaceRaised: '#DCECDD',
+  accent: '#186A38',
+  text: '#14301D',
+  textSecondary: '#365D42',
+  border: '#6C9273',
+  incomingBubble: '#D7E8DB',
+  outgoingBubble: '#BFE1C6',
+  focus: '#155E31',
 });
 
 export interface ThemeOption {
@@ -56,8 +43,7 @@ export interface ThemeOption {
 
 export const THEME_OPTIONS: ReadonlyArray<ThemeOption> = Object.freeze([
   { id: 'atomic', label: 'Wasteland Terminal' },
-  { id: 'dark', label: 'Oscuro corporativo' },
-  { id: 'light', label: 'Claro corporativo' },
+  { id: 'atomic-light', label: 'Wasteland Terminal Claro' },
   { id: 'custom', label: 'Personalizado' },
 ]);
 
@@ -124,10 +110,9 @@ const LIGHT_SEMANTIC_VARIABLES: Readonly<Record<string, string>> = {
   '--atomic-danger-surface': '#fce8e6',
 };
 
-const PRESET_PALETTES: Readonly<Record<'atomic' | 'dark' | 'light', ThemePalette>> = Object.freeze({
+const PRESET_PALETTES: Readonly<Record<'atomic' | 'atomic-light', ThemePalette>> = Object.freeze({
   atomic: ATOMIC_THEME_PALETTE,
-  dark: DARK_THEME_PALETTE,
-  light: LIGHT_THEME_PALETTE,
+  'atomic-light': ATOMIC_LIGHT_THEME_PALETTE,
 });
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
@@ -141,7 +126,13 @@ function isHexColor(value: string): value is HexColor {
 }
 
 export function isThemeId(value: string): value is ThemeId {
-  return value === 'atomic' || value === 'dark' || value === 'light' || value === 'custom';
+  return value === 'atomic' || value === 'atomic-light' || value === 'custom';
+}
+
+export function normalizeThemeId(value: unknown): ThemeId {
+  if (value === 'dark') return 'atomic';
+  if (value === 'light') return 'atomic-light';
+  return typeof value === 'string' && isThemeId(value) ? value : 'atomic';
 }
 
 function luminance(value: HexColor): number {
@@ -216,11 +207,9 @@ function paletteFor(theme: ThemeId, customPalette: ThemePalette | null): ThemePa
   return theme === 'custom' ? (customPalette ?? ATOMIC_THEME_PALETTE) : PRESET_PALETTES[theme];
 }
 
-interface ThemeSnapshot {
+interface CommittedTheme {
   readonly themeId: ThemeId;
   readonly customPalette: ThemePalette | null;
-  readonly draftPalette: ThemeDraft;
-  readonly editorOpen: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -231,6 +220,10 @@ export class ThemeService {
   });
   private initialization?: Promise<void>;
   private readonly customPalette = signal<ThemePalette | null>(null);
+  private committedTheme: CommittedTheme = { themeId: 'atomic', customPalette: null };
+  private persistenceQueue: Promise<void> = Promise.resolve();
+  private persistenceSequence = 0;
+  private pendingSaves = 0;
 
   readonly themeId = signal<ThemeId>('atomic');
   readonly activePalette = computed<ThemePalette>(() =>
@@ -295,6 +288,8 @@ export class ThemeService {
   }
 
   resetPreferences(): void {
+    this.persistenceSequence += 1;
+    this.committedTheme = { themeId: 'atomic', customPalette: null };
     this.customPalette.set(null);
     this.themeId.set('atomic');
     this.draftPalette.set(copyPalette(ATOMIC_THEME_PALETTE));
@@ -314,38 +309,62 @@ export class ThemeService {
       this.persistenceError.set('No existe una paleta personalizada guardada.');
       return false;
     }
-    const previous = this.snapshot();
+    const sequence = ++this.persistenceSequence;
+    const target: CommittedTheme = {
+      themeId: theme,
+      customPalette: theme === 'custom' ? palette : this.customPalette(),
+    };
+    this.pendingSaves += 1;
     this.saving.set(true);
     this.validationError.set(null);
     this.persistenceError.set(null);
-    this.customPalette.set(theme === 'custom' ? palette : previous.customPalette);
+    this.customPalette.set(target.customPalette);
     this.themeId.set(theme);
     this.draftPalette.set(copyPalette(palette));
     this.applyCss(theme, palette);
     if (!this.preferencesPort) {
-      this.restoreSnapshot(previous);
+      this.restoreCommittedTheme();
       this.persistenceError.set('El almacenamiento de preferencias no está disponible.');
-      this.saving.set(false);
+      this.pendingSaves -= 1;
+      this.saving.set(this.pendingSaves > 0);
       return false;
     }
-    try {
-      const changes: Partial<Preferences> =
-        theme === 'custom' && persistCustomPalette ? { theme, customTheme: palette } : { theme };
-      const result = await this.preferencesPort.update({ accountId: '', changes });
-      if (!result.ok) {
-        this.restoreSnapshot(previous);
-        this.persistenceError.set(result.error.message);
+    const preferencesPort = this.preferencesPort;
+    const save = async (): Promise<boolean> => {
+      try {
+        if (sequence !== this.persistenceSequence) return false;
+        const changes: Partial<Preferences> =
+          theme === 'custom' && persistCustomPalette ? { theme, customTheme: palette } : { theme };
+        const result = await preferencesPort.update({ accountId: '', changes });
+        if (!result.ok) {
+          if (sequence === this.persistenceSequence) {
+            this.restoreCommittedTheme();
+            this.persistenceError.set(result.error.message);
+          }
+          return false;
+        }
+        this.committedTheme = target;
+        if (sequence === this.persistenceSequence) this.editorOpen.set(false);
+        return true;
+      } catch {
+        if (sequence === this.persistenceSequence) {
+          this.restoreCommittedTheme();
+          this.persistenceError.set(
+            'No fue posible guardar el tema. Conservé el último tema válido.',
+          );
+        }
         return false;
+      } finally {
+        this.pendingSaves -= 1;
+        this.saving.set(this.pendingSaves > 0);
       }
-      this.editorOpen.set(false);
-      return true;
-    } catch {
-      this.restoreSnapshot(previous);
-      this.persistenceError.set('No fue posible guardar el tema. Conservé el último tema válido.');
-      return false;
-    } finally {
-      this.saving.set(false);
-    }
+    };
+    const operation = this.persistenceQueue.then(save, save);
+    this.persistenceQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 
   private async loadStoredTheme(): Promise<void> {
@@ -360,7 +379,7 @@ export class ThemeService {
       const palette = isThemePalette(result.value.customTheme) ? result.value.customTheme : null;
       if (result.value.customTheme !== undefined && !palette)
         this.persistenceError.set('La paleta personalizada guardada no es válida.');
-      const theme = isThemeId(result.value.theme) ? result.value.theme : 'atomic';
+      const theme = normalizeThemeId(result.value.theme);
       if (theme === 'custom' && !palette) {
         this.themeId.set('atomic');
         this.draftPalette.set(copyPalette(ATOMIC_THEME_PALETTE));
@@ -372,32 +391,25 @@ export class ThemeService {
       this.themeId.set(theme);
       this.draftPalette.set(copyPalette(paletteFor(theme, palette)));
       this.applyCss(theme, paletteFor(theme, palette));
+      this.committedTheme = { themeId: theme, customPalette: palette };
     } catch {
       this.persistenceError.set('No fue posible cargar el tema; se aplicó Wasteland Terminal.');
     }
   }
 
-  private snapshot(): ThemeSnapshot {
-    return {
-      themeId: this.themeId(),
-      customPalette: this.customPalette(),
-      draftPalette: this.draftPalette(),
-      editorOpen: this.editorOpen(),
-    };
-  }
-
-  private restoreSnapshot(snapshot: ThemeSnapshot): void {
-    this.customPalette.set(snapshot.customPalette);
-    this.themeId.set(snapshot.themeId);
-    this.draftPalette.set(snapshot.draftPalette);
-    this.editorOpen.set(snapshot.editorOpen);
-    this.applyCss(snapshot.themeId, paletteFor(snapshot.themeId, snapshot.customPalette));
+  private restoreCommittedTheme(): void {
+    const { themeId, customPalette } = this.committedTheme;
+    const palette = paletteFor(themeId, customPalette);
+    this.customPalette.set(customPalette);
+    this.themeId.set(themeId);
+    this.draftPalette.set(copyPalette(palette));
+    this.applyCss(themeId, palette);
   }
 
   private applyCss(theme: ThemeId, palette: ThemePalette): void {
     const root = this.document.documentElement;
     const scheme =
-      theme === 'light' || (theme === 'custom' && luminance(palette.background) > 0.5)
+      theme === 'atomic-light' || (theme === 'custom' && luminance(palette.background) > 0.5)
         ? 'light'
         : 'dark';
     root.style.setProperty('color-scheme', scheme);

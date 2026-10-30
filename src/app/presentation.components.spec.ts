@@ -594,7 +594,7 @@ describe('extracted Angular presentation components', () => {
     previousFocus.remove();
   });
 
-  it('renders the four theme choices in preferences', async () => {
+  it('renders the three Wasteland theme choices in preferences', async () => {
     await TestBed.configureTestingModule({
       imports: [OperatorPresenceComponent],
     }).compileComponents();
@@ -619,8 +619,7 @@ describe('extracted Angular presentation components', () => {
     expect(select.disabled).toBe(false);
     expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
       'Wasteland Terminal',
-      'Oscuro corporativo',
-      'Claro corporativo',
+      'Wasteland Terminal Claro',
       'Personalizado',
     ]);
   });

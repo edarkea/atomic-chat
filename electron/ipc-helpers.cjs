@@ -13,6 +13,10 @@ const themeColorKeys = [
   'focus',
 ];
 
+function normalizeThemeId(value) {
+  return value === 'dark' ? 'atomic' : value === 'light' ? 'atomic-light' : value;
+}
+
 function isHexColor(value) {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 }
@@ -411,10 +415,13 @@ function createIpcHelpers({
       : { scope: 'global', scopeId: 'app' };
   }
 
-  function validatePreferences(changes) {
+  function validatePreferences(changes, allowLegacyTheme = false) {
     const allowed = {
       theme: (value) =>
-        value === 'atomic' || value === 'dark' || value === 'light' || value === 'custom',
+        value === 'atomic' ||
+        value === 'atomic-light' ||
+        value === 'custom' ||
+        (allowLegacyTheme && (value === 'dark' || value === 'light')),
       customTheme: validateThemePalette,
       notifications: (value) => typeof value === 'boolean',
       autoLogin: (value) => typeof value === 'boolean',
@@ -447,6 +454,7 @@ function createIpcHelpers({
     preferenceScope,
     validatePreferences,
     preferenceKeys,
+    normalizeThemeId,
     validateThemePalette,
   };
 }

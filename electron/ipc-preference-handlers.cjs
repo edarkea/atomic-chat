@@ -1,7 +1,8 @@
 const { preferenceDefaults } = require('./ipc-helpers.cjs');
 
 function registerPreferenceHandlers({ ipcMain, assertSender, getRuntime, helpers }) {
-  const { requestId, preferenceKeys, preferenceScope, validatePreferences } = helpers;
+  const { requestId, preferenceKeys, preferenceScope, validatePreferences, normalizeThemeId } =
+    helpers;
 
   ipcMain.handle('preferences.get', (event, input) => {
     assertSender(event);
@@ -12,6 +13,7 @@ function registerPreferenceHandlers({ ipcMain, assertSender, getRuntime, helpers
       const target = preferenceScope(key, accountId);
       Object.assign(values, persistence.getPreferences(target.scope, target.scopeId));
     }
+    values.theme = normalizeThemeId(values.theme);
     return { ok: true, value: values, version: 1, requestId: requestId(event) };
   });
   ipcMain.handle('preferences.update', (event, input) => {
@@ -26,7 +28,7 @@ function registerPreferenceHandlers({ ipcMain, assertSender, getRuntime, helpers
       Object.assign(current, persistence.getPreferences(target.scope, target.scopeId));
     }
     const merged = { ...current, ...changes };
-    validatePreferences(merged);
+    validatePreferences(merged, true);
     if (merged.theme === 'custom' && !merged.customTheme) throw new Error('INVALID_INPUT');
     const grouped = new Map();
     for (const [key, value] of Object.entries(changes)) {

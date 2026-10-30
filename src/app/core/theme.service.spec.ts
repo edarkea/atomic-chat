@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Preferences, Result, ThemePalette } from './domain';
 import { PREFERENCES_PORT, PreferencesPort } from './ports';
 import {
+  ATOMIC_LIGHT_THEME_PALETTE,
   ATOMIC_THEME_PALETTE,
-  DARK_THEME_PALETTE,
-  LIGHT_THEME_PALETTE,
   ThemeService,
+  normalizeThemeId,
   validateThemePalette,
 } from './theme.service';
 
@@ -135,9 +135,9 @@ describe('ThemeService', () => {
     expect(stored.autoLogin).toBe(true);
   });
 
-  it('switches presets immediately without overwriting the saved custom palette', async () => {
+  it('switches the Wasteland presets without overwriting the saved custom palette', async () => {
     stored = {
-      theme: 'dark',
+      theme: 'atomic-light',
       customTheme: validCustomPalette,
       notifications: true,
       autoLogin: false,
@@ -145,16 +145,25 @@ describe('ThemeService', () => {
     const service = TestBed.inject(ThemeService);
     await service.initialize();
 
-    expect(service.themeId()).toBe('dark');
-    expect(service.activePalette()).toEqual(DARK_THEME_PALETTE);
-    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
+    expect(service.themeId()).toBe('atomic-light');
+    expect(service.activePalette()).toEqual(ATOMIC_LIGHT_THEME_PALETTE);
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('light');
 
-    expect(await service.selectTheme('light')).toBe(true);
-    expect(service.activePalette()).toEqual(LIGHT_THEME_PALETTE);
+    expect(await service.selectTheme('atomic')).toBe(true);
+    expect(service.activePalette()).toEqual(ATOMIC_THEME_PALETTE);
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
+    expect(preferences.update).toHaveBeenLastCalledWith({
+      accountId: '',
+      changes: { theme: 'atomic' },
+    });
+    expect(stored.customTheme).toEqual(validCustomPalette);
+
+    expect(await service.selectTheme('atomic-light')).toBe(true);
+    expect(service.activePalette()).toEqual(ATOMIC_LIGHT_THEME_PALETTE);
     expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('light');
     expect(preferences.update).toHaveBeenLastCalledWith({
       accountId: '',
-      changes: { theme: 'light' },
+      changes: { theme: 'atomic-light' },
     });
     expect(stored.customTheme).toEqual(validCustomPalette);
 
@@ -171,18 +180,18 @@ describe('ThemeService', () => {
   it('uses the active preset as the studio draft and keeps it on cancel', async () => {
     const service = TestBed.inject(ThemeService);
     await service.initialize();
-    await service.selectTheme('dark');
+    await service.selectTheme('atomic-light');
     service.openStudio();
 
-    expect(service.draftPalette()).toEqual(DARK_THEME_PALETTE);
+    expect(service.draftPalette()).toEqual(ATOMIC_LIGHT_THEME_PALETTE);
     service.setDraftColor('accent', '#ffffff');
     service.cancelStudio();
 
-    expect(service.themeId()).toBe('dark');
-    expect(service.activePalette()).toEqual(DARK_THEME_PALETTE);
+    expect(service.themeId()).toBe('atomic-light');
+    expect(service.activePalette()).toEqual(ATOMIC_LIGHT_THEME_PALETTE);
     expect(preferences.update).toHaveBeenCalledWith({
       accountId: '',
-      changes: { theme: 'dark' },
+      changes: { theme: 'atomic-light' },
     });
   });
 
@@ -206,18 +215,46 @@ describe('ThemeService', () => {
     };
     preferences.update = vi.fn(async () => failure);
 
-    expect(await service.selectTheme('light')).toBe(false);
+    expect(await service.selectTheme('atomic-light')).toBe(false);
     expect(service.themeId()).toBe('atomic');
     expect(service.activePalette()).toEqual(ATOMIC_THEME_PALETTE);
     expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
     expect(service.persistenceError()).toBe('falló');
   });
+
+  it('serializes rapid preset changes and keeps the last selection active', async () => {
+    const service = TestBed.inject(ThemeService);
+    await service.initialize();
+    const pending: Array<(result: Result<Partial<Preferences>>) => void> = [];
+    preferences.update = vi.fn(
+      () => new Promise<Result<Partial<Preferences>>>((resolve) => pending.push(resolve)),
+    );
+
+    const first = service.selectTheme('atomic-light');
+    const second = service.selectTheme('atomic');
+    for (let attempt = 0; attempt < 8 && pending.length === 0; attempt += 1)
+      await Promise.resolve();
+    expect(pending).toHaveLength(1);
+
+    pending[0](ok({ theme: 'atomic' }));
+
+    expect(await first).toBe(false);
+    expect(await second).toBe(true);
+    expect(service.themeId()).toBe('atomic');
+    expect(service.activePalette()).toEqual(ATOMIC_THEME_PALETTE);
+  });
 });
 
 describe('validateThemePalette', () => {
-  it('accepts both official presets', () => {
-    expect(validateThemePalette(DARK_THEME_PALETTE)).toEqual({ valid: true });
-    expect(validateThemePalette(LIGHT_THEME_PALETTE)).toEqual({ valid: true });
+  it('accepts the Wasteland Terminal light preset', () => {
+    expect(validateThemePalette(ATOMIC_LIGHT_THEME_PALETTE)).toEqual({ valid: true });
+  });
+
+  it('normalizes legacy corporate identifiers without exposing them as current ids', () => {
+    expect(normalizeThemeId('dark')).toBe('atomic');
+    expect(normalizeThemeId('light')).toBe('atomic-light');
+    expect(normalizeThemeId('atomic-light')).toBe('atomic-light');
+    expect(normalizeThemeId('corporate')).toBe('atomic');
   });
 
   it('rejects CSS injection and incomplete palettes', () => {

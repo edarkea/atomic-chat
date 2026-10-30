@@ -80,26 +80,56 @@ test('rejects arbitrary CSS keys and non-hex values', () => {
       ),
     /INVALID_INPUT/,
   );
+  for (const theme of ['dark', 'light'])
+    assert.throws(
+      () =>
+        handlers.get('preferences.update')(
+          { sender: { id: 1 } },
+          { accountId: 'account@example.invalid', changes: { theme } },
+        ),
+      /INVALID_INPUT/,
+    );
 });
 
-test('accepts corporate presets and switches only the active theme id', () => {
+test('accepts only the current Wasteland presets and switches only the active theme id', () => {
   const { handlers, calls, values } = setup();
   values.set('global:app', { theme: 'custom', customTheme: palette });
 
   handlers.get('preferences.update')(
     { sender: { id: 1 } },
-    { accountId: 'account@example.invalid', changes: { theme: 'light' } },
+    { accountId: 'account@example.invalid', changes: { theme: 'atomic-light' } },
   );
   handlers.get('preferences.update')(
     { sender: { id: 1 } },
-    { accountId: 'account@example.invalid', changes: { theme: 'dark' } },
+    { accountId: 'account@example.invalid', changes: { theme: 'atomic' } },
   );
 
   assert.deepEqual(calls, [
-    ['global', 'app', { theme: 'light' }],
-    ['global', 'app', { theme: 'dark' }],
+    ['global', 'app', { theme: 'atomic-light' }],
+    ['global', 'app', { theme: 'atomic' }],
   ]);
   assert.deepEqual(values.get('global:app').customTheme, palette);
+});
+
+test('normalizes legacy corporate ids on read and allows unrelated updates', () => {
+  const dark = setup();
+  dark.values.set('global:app', { theme: 'dark', customTheme: palette, notifications: false });
+  const darkResult = dark.handlers.get('preferences.get')({ sender: { id: 1 } }, { accountId: '' });
+  assert.equal(darkResult.value.theme, 'atomic');
+  dark.handlers.get('preferences.update')(
+    { sender: { id: 1 } },
+    { accountId: 'account@example.invalid', changes: { notifications: true } },
+  );
+  assert.deepEqual(dark.calls, [['global', 'app', { notifications: true }]]);
+  assert.equal(dark.values.get('global:app').theme, 'dark');
+
+  const light = setup();
+  light.values.set('global:app', { theme: 'light', customTheme: palette });
+  const lightResult = light.handlers.get('preferences.get')(
+    { sender: { id: 1 } },
+    { accountId: '' },
+  );
+  assert.equal(lightResult.value.theme, 'atomic-light');
 });
 
 test('reads global theme before account login and keeps legacy defaults', () => {
