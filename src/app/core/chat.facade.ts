@@ -17,6 +17,7 @@ import {
   PresenceInput,
   Preferences,
   Result,
+  StickerMessageRef,
   XmppConnectionProfile,
 } from './domain';
 import { UnreadStore } from './unread.store';
@@ -162,6 +163,10 @@ export class ChatFacade {
               void this.requestAttention(message.accountId, conversationId);
           }
         }
+      }
+      if (event.type === 'sticker.messageReceived' || event.type === 'sticker.stateChanged') {
+        const sticker = event.payload;
+        if (sticker.accountId === this.accountId()) this.upsertStickerMessage(sticker);
       }
       if (event.type === 'chatState.changed') this.receiveChatState(event.payload);
     });
@@ -656,6 +661,22 @@ export class ChatFacade {
       this.error.set('No fue posible enviar el mensaje.');
       return false;
     }
+  }
+
+  upsertStickerMessage(sticker: StickerMessageRef): void {
+    const activeConversation = this.historyContext?.conversationId;
+    if (activeConversation && this.bareConversation(sticker.conversationId) !== activeConversation) {
+      this.addConversation(sticker.accountId, sticker.conversationId, Date.parse(sticker.createdAt));
+      return;
+    }
+    this.timelineItems.update((items) => {
+      const next = items.filter((item) => item.kind !== 'sticker' || item.sticker.refId !== sticker.refId);
+      next.push({ kind: 'sticker', id: `sticker:${sticker.refId}`, sortAt: sticker.createdAt, sticker });
+      return next
+        .sort((left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id))
+        .slice(-200);
+    });
+    this.addConversation(sticker.accountId, sticker.conversationId, Date.parse(sticker.createdAt));
   }
 
   async sendMessageInput(input: MessageSendInput): Promise<Result<Message>> {

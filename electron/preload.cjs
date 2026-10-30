@@ -107,6 +107,11 @@ contextBridge.exposeInMainWorld(
         close: (input) => invoke('stickers.preview.close', input),
         revoke: (input) => invoke('stickers.preview.revoke', input),
       }),
+      messages: Object.freeze({
+        discover: (input) => invoke('stickerMessages.discover', input),
+        send: (input) => invoke('stickerMessages.send', input),
+        load: (input) => invoke('stickerMessages.load', input),
+      }),
       packs: Object.freeze({
         list: (input) => invoke('stickerPacks.list', input),
         get: (input) => invoke('stickerPacks.get', input),

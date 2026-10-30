@@ -49,6 +49,11 @@ import {
   StickerPreviewReadRequest,
   StickerPreviewRevokeRequest,
   StickerPreviewStreamRef,
+  StickerCapability,
+  StickerCapabilityRequest,
+  StickerMessageLoadRequest,
+  StickerMessageRef,
+  StickerSendRequest,
   Result,
   TimelinePage,
   TimelinePageInput,
@@ -77,6 +82,7 @@ import {
   StickerLibraryPort,
   StickerPackPort,
   StickerPreviewPort,
+  StickerMessagePort,
 } from './ports';
 
 const unsupported = <T>(requestId: string): Result<T> => ({
@@ -321,6 +327,22 @@ export class UnavailableStickerPreviewPort implements StickerPreviewPort {
   }
   revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>> {
     return Promise.resolve(unsupported(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableStickerMessagePort implements StickerMessagePort {
+  discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  send(input: StickerSendRequest): Promise<Result<StickerMessageRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  subscribe(_listener: (event: TypedDomainEvent) => void): () => void {
+    return () => undefined;
   }
 }
 

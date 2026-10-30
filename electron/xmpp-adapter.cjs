@@ -4,6 +4,7 @@ const { createRosterMessaging } = require('./xmpp-roster-messaging.cjs');
 const { createXmppCarbons } = require('./xmpp-carbons.cjs');
 const { createMucService } = require('./xmpp-muc.cjs');
 const { createFileService } = require('./xmpp-file.cjs');
+const { createXmppStickerService } = require('./xmpp-stickers.cjs');
 
 class XmppAdapter {
   constructor(
@@ -45,6 +46,7 @@ class XmppAdapter {
     this.carbons = createXmppCarbons(this);
     this.mucService = createMucService(this);
     this.fileService = createFileService(this);
+    this.stickerService = createXmppStickerService(this);
     if (this.fileTransfers)
       this.fileTransfers.onEvent((event) => {
         if (!event.type.endsWith('stateChanged')) return;
@@ -133,6 +135,16 @@ class XmppAdapter {
   }
   sendChatState(accountId, input) {
     return this.rosterMessaging.sendChatState(accountId, input);
+  }
+
+  discoverStickers(input) {
+    return this.stickerService.discover(input);
+  }
+  sendSticker(input, resolveSource) {
+    return this.stickerService.send(input, resolveSource);
+  }
+  parseStickerMessage(accountId, stanza, direction) {
+    return this.stickerService.parseMessage(accountId, stanza, direction);
   }
 
   sendFile(accountId, input) {
@@ -265,6 +277,7 @@ class XmppAdapter {
     if (this.handleMucStanza(accountId, stanza)) return;
     if (this.handleFileStanza(accountId, stanza)) return;
     if (stanza.is('message') && this.carbons.handleMessage(accountId, stanza)) return;
+    if (stanza.is('message') && this.stickerService.handleMessage(accountId, stanza)) return;
     if (stanza.is('presence')) {
       this.rosterMessaging.handlePresence(accountId, stanza);
       return;

@@ -50,6 +50,11 @@ import {
   StickerPreviewReadRequest,
   StickerPreviewRevokeRequest,
   StickerPreviewStreamRef,
+  StickerCapability,
+  StickerCapabilityRequest,
+  StickerMessageLoadRequest,
+  StickerMessageRef,
+  StickerSendRequest,
   HistoryPage,
   HistoryPageInput,
   MediaListInput,
@@ -211,6 +216,13 @@ export interface StickerPreviewPort {
   revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>>;
 }
 
+export interface StickerMessagePort {
+  discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>>;
+  send(input: StickerSendRequest): Promise<Result<StickerMessageRef>>;
+  load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>>;
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void;
+}
+
 export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');
 export const MUC_PORT = new InjectionToken<MucPort>('AtomicChat MucPort');
 export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountPort');
@@ -228,3 +240,4 @@ export const FILE_HISTORY_PORT = new InjectionToken<FileHistoryPort>('AtomicChat
 export const STICKER_LIBRARY_PORT = new InjectionToken<StickerLibraryPort>('AtomicChat StickerLibraryPort');
 export const STICKER_PACK_PORT = new InjectionToken<StickerPackPort>('AtomicChat StickerPackPort');
 export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>('AtomicChat StickerPreviewPort');
+export const STICKER_MESSAGE_PORT = new InjectionToken<StickerMessagePort>('AtomicChat StickerMessagePort');

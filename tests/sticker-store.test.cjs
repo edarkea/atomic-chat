@@ -24,7 +24,7 @@ test('E8.2-STORE-001 migrates v9 databases additively and imports PNG with publi
   assert.equal(result.asset.mimeType, 'image/png');
   assert.equal(result.asset.sizeBytes, String(png.length));
   assert.equal(result.sticker.accountId, 'alice@example.test');
-  assert.equal(value.persistence.database.prepare('SELECT version FROM schema_meta').get().version, 11);
+  assert.equal(value.persistence.database.prepare('SELECT version FROM schema_meta').get().version, 12);
   assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM messages').get().count, 0);
   value.persistence.close();
   await fs.rm(value.root, { recursive: true, force: true });

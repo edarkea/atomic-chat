@@ -51,6 +51,11 @@ import {
   StickerPreviewReadRequest,
   StickerPreviewRevokeRequest,
   StickerPreviewStreamRef,
+  StickerCapability,
+  StickerCapabilityRequest,
+  StickerMessageLoadRequest,
+  StickerMessageRef,
+  StickerSendRequest,
   Result,
   TypedDomainEvent,
   TimelinePage,
@@ -74,6 +79,7 @@ import {
   StickerLibraryPort,
   StickerPackPort,
   StickerPreviewPort,
+  StickerMessagePort,
 } from './ports';
 
 const unavailable = <T>(requestId: string): Result<T> => ({
@@ -401,5 +407,25 @@ export class ElectronStickerPreviewPort implements StickerPreviewPort {
   revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>> {
     const api = getAtomicChatApi();
     return api ? api.stickers.preview.revoke(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronStickerMessagePort implements StickerMessagePort {
+  discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.messages.discover(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  send(input: StickerSendRequest): Promise<Result<StickerMessageRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.messages.send(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.messages.load(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  subscribe(listener: (event: TypedDomainEvent) => void): () => void {
+    const subscribe = getAtomicChatApi()?.subscribe;
+    return subscribe ? subscribeToDomainEvents(subscribe, listener) : () => undefined;
   }
 }

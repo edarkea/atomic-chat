@@ -24,7 +24,7 @@
   @if (showEmoji()) {
     <span class="emoji" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-emoji" /></svg></span>
   }
-  <app-sticker-picker [accountId]="stickersAccountId()" [disabled]="disabled()" />
+  <app-sticker-picker [accountId]="stickersAccountId()" [disabled]="disabled()" (stickerSend)="stickerSend.emit($event)" />
   <button class="send" type="submit" aria-label="Enviar" [disabled]="disabled() || !draft().trim()">
     <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-send" /></svg>
   </button>

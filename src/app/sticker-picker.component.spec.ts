@@ -14,7 +14,7 @@ describe('StickerPickerComponent', () => {
     get: vi.fn(), open: vi.fn(), read: vi.fn(), close: vi.fn(), revoke: vi.fn(),
   };
 
-  it('opens Mis stickers and exposes individual import without a send action', async () => {
+  it('opens Mis stickers and exposes explicit import and send controls', async () => {
     await TestBed.configureTestingModule({
       imports: [StickerPickerComponent],
       providers: [
@@ -29,8 +29,29 @@ describe('StickerPickerComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Mis stickers');
     expect(fixture.nativeElement.querySelector('.import')?.textContent).toContain('Importar PNG/JPEG');
-    expect(fixture.nativeElement.querySelector('button[type="submit"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.send-sticker')).toBeNull();
     expect(library.list).toHaveBeenCalled();
+  });
+
+  it('emits the selected sticker only after explicit confirmation', async () => {
+    await TestBed.configureTestingModule({
+      imports: [StickerPickerComponent],
+      providers: [
+        { provide: STICKER_LIBRARY_PORT, useValue: library },
+        { provide: STICKER_PREVIEW_PORT, useValue: preview },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(StickerPickerComponent);
+    fixture.componentRef.setInput('accountId', 'alice@example.test');
+    fixture.detectChanges();
+    fixture.componentInstance.facade.selectSticker({
+      stickerId: 's1', accountId: 'alice@example.test', assetId: 'a1', name: 'one.png',
+      sortKey: '1', availability: 'available', createdAt: '2026-01-01', updatedAt: '2026-01-01',
+    });
+    const emitted: string[] = [];
+    fixture.componentInstance.stickerSend.subscribe((value) => emitted.push(value));
+    fixture.componentInstance.sendSelected();
+    expect(emitted).toEqual(['s1']);
   });
 
   it('does not expose library deletion while a package is selected', async () => {

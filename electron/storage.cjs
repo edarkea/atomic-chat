@@ -346,6 +346,50 @@ class PersistenceStore {
           UPDATE schema_meta SET version = 11;
         `);
       }
+      const currentSchemaVersion = this.database.prepare('SELECT version FROM schema_meta').get().version;
+      if (currentSchemaVersion < 12) {
+        this.database.exec(`
+          CREATE TABLE IF NOT EXISTS sticker_message_refs (
+            ref_id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            client_message_id TEXT NOT NULL,
+            stanza_id TEXT,
+            origin_id TEXT,
+            direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
+            sender_jid TEXT NOT NULL,
+            source_sticker_id TEXT,
+            preview_sticker_id TEXT NOT NULL,
+            name TEXT,
+            alt_text TEXT,
+            fallback_text TEXT,
+            mime_type TEXT NOT NULL CHECK (mime_type IN ('image/png', 'image/jpeg')),
+            size_bytes TEXT NOT NULL,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            hash_algorithm TEXT NOT NULL CHECK (hash_algorithm IN ('sha-256')),
+            hash_value TEXT NOT NULL,
+            remote_url TEXT,
+            local_asset_id TEXT,
+            storage_key TEXT,
+            transport_status TEXT NOT NULL CHECK (transport_status IN ('queued', 'uploading', 'sending', 'sent', 'failed')),
+            availability TEXT NOT NULL CHECK (availability IN ('available', 'missing', 'invalid', 'blocked')),
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (account_id, client_message_id),
+            FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idx_sticker_messages_account_conversation_created
+            ON sticker_message_refs(account_id, conversation_id, created_at, ref_id);
+          CREATE INDEX IF NOT EXISTS idx_sticker_messages_asset
+            ON sticker_message_refs(account_id, local_asset_id);
+          UPDATE schema_meta SET version = 12;
+        `);
+      }
+      const stickerMessageColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
+      if (stickerMessageColumns.length && !stickerMessageColumns.some((column) => column.name === 'fallback_text'))
+        this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN fallback_text TEXT');
     });
     migrate();
   }
@@ -802,7 +846,145 @@ class PersistenceStore {
   }
 
   hasStickerReferences(assetId) {
-    return this.database.prepare('SELECT 1 FROM stickers WHERE asset_id = ? LIMIT 1').get(assetId) !== undefined;
+    return this.database.prepare(
+      `SELECT 1 FROM stickers WHERE asset_id = ?
+       UNION ALL SELECT 1 FROM sticker_message_refs WHERE local_asset_id = ? LIMIT 1`,
+    ).get(assetId, assetId) !== undefined;
+  }
+
+  stickerMessageFromRow(row) {
+    if (!row) return null;
+    return {
+      refId: row.refId,
+      previewStickerId: row.previewStickerId,
+      accountId: row.accountId,
+      conversationId: row.conversationId,
+      clientMessageId: row.clientMessageId,
+      ...(row.stanzaId ? { stanzaId: row.stanzaId } : {}),
+      ...(row.originId ? { originId: row.originId } : {}),
+      direction: row.direction,
+      senderJid: row.senderJid,
+      ...(row.sourceStickerId ? { sourceStickerId: row.sourceStickerId } : {}),
+      ...(row.name ? { name: row.name } : {}),
+      ...(row.altText ? { altText: row.altText } : {}),
+      ...(row.fallbackText ? { fallbackText: row.fallbackText } : {}),
+      mimeType: row.mimeType,
+      sizeBytes: String(row.sizeBytes),
+      width: row.width,
+      height: row.height,
+      hashAlgorithm: row.hashAlgorithm,
+      hashValue: row.hashValue,
+      ...(row.remoteUrl ? { remoteUrl: row.remoteUrl } : {}),
+      ...(row.localAssetId ? { localAssetId: row.localAssetId } : {}),
+      ...(row.storageKey ? { storageKey: row.storageKey } : {}),
+      transportStatus: row.transportStatus,
+      availability: row.availability,
+      ...(row.errorCode ? { errorCode: row.errorCode } : {}),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  getStickerMessageRef(accountId, refId) {
+    return this.stickerMessageFromRow(this.database.prepare(
+      `SELECT ref_id AS refId, preview_sticker_id AS previewStickerId, account_id AS accountId,
+        conversation_id AS conversationId, client_message_id AS clientMessageId, stanza_id AS stanzaId,
+        origin_id AS originId, direction, sender_jid AS senderJid, source_sticker_id AS sourceStickerId,
+        name, alt_text AS altText, fallback_text AS fallbackText, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
+        hash_algorithm AS hashAlgorithm, hash_value AS hashValue, remote_url AS remoteUrl,
+        local_asset_id AS localAssetId, storage_key AS storageKey, transport_status AS transportStatus,
+        availability, error_code AS errorCode, created_at AS createdAt, updated_at AS updatedAt
+       FROM sticker_message_refs WHERE account_id = ? AND ref_id = ?`,
+    ).get(accountId, refId));
+  }
+
+  getStickerMessageRefByClientMessageId(accountId, clientMessageId) {
+    return this.stickerMessageFromRow(this.database.prepare(
+      `SELECT ref_id AS refId, preview_sticker_id AS previewStickerId, account_id AS accountId,
+        conversation_id AS conversationId, client_message_id AS clientMessageId, stanza_id AS stanzaId,
+        origin_id AS originId, direction, sender_jid AS senderJid, source_sticker_id AS sourceStickerId,
+        name, alt_text AS altText, fallback_text AS fallbackText, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
+        hash_algorithm AS hashAlgorithm, hash_value AS hashValue, remote_url AS remoteUrl,
+        local_asset_id AS localAssetId, storage_key AS storageKey, transport_status AS transportStatus,
+        availability, error_code AS errorCode, created_at AS createdAt, updated_at AS updatedAt
+       FROM sticker_message_refs WHERE account_id = ? AND client_message_id = ?`,
+    ).get(accountId, clientMessageId));
+  }
+
+  upsertStickerMessageRef(record) {
+    if (!record?.refId || !record.accountId || !record.conversationId || !record.clientMessageId || !record.previewStickerId)
+      throw persistenceError('INVALID_INPUT', 'referencia de sticker incompleta');
+    this.database.prepare(
+      `INSERT INTO sticker_message_refs(
+        ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
+        sender_jid, source_sticker_id, preview_sticker_id, name, alt_text, fallback_text, mime_type, size_bytes,
+        width, height, hash_algorithm, hash_value, remote_url, local_asset_id, storage_key,
+        transport_status, availability, error_code, created_at, updated_at
+      ) VALUES (
+        @refId, @accountId, @conversationId, @clientMessageId, @stanzaId, @originId, @direction,
+        @senderJid, @sourceStickerId, @previewStickerId, @name, @altText, @fallbackText, @mimeType, @sizeBytes,
+        @width, @height, @hashAlgorithm, @hashValue, @remoteUrl, @localAssetId, @storageKey,
+        @transportStatus, @availability, @errorCode, @createdAt, @updatedAt
+      ) ON CONFLICT(account_id, client_message_id) DO UPDATE SET
+        stanza_id = excluded.stanza_id,
+        origin_id = excluded.origin_id,
+        direction = excluded.direction,
+        sender_jid = excluded.sender_jid,
+        source_sticker_id = excluded.source_sticker_id,
+        preview_sticker_id = excluded.preview_sticker_id,
+        name = excluded.name,
+        alt_text = excluded.alt_text,
+        fallback_text = COALESCE(excluded.fallback_text, sticker_message_refs.fallback_text),
+        mime_type = excluded.mime_type,
+        size_bytes = excluded.size_bytes,
+        width = excluded.width,
+        height = excluded.height,
+        hash_algorithm = excluded.hash_algorithm,
+        hash_value = excluded.hash_value,
+        remote_url = COALESCE(excluded.remote_url, sticker_message_refs.remote_url),
+        local_asset_id = COALESCE(excluded.local_asset_id, sticker_message_refs.local_asset_id),
+        storage_key = COALESCE(excluded.storage_key, sticker_message_refs.storage_key),
+        transport_status = excluded.transport_status,
+        availability = CASE WHEN sticker_message_refs.availability = 'available' AND excluded.availability = 'missing' THEN 'available' ELSE excluded.availability END,
+        error_code = excluded.error_code,
+        updated_at = excluded.updated_at`,
+    ).run({
+      refId: record.refId, accountId: record.accountId, conversationId: record.conversationId,
+      clientMessageId: record.clientMessageId, stanzaId: record.stanzaId || null, originId: record.originId || null,
+      direction: record.direction, senderJid: record.senderJid || record.accountId, sourceStickerId: record.sourceStickerId || null,
+      previewStickerId: record.previewStickerId, name: record.name || null, altText: record.altText || null, fallbackText: record.fallbackText || null,
+      mimeType: record.mimeType, sizeBytes: String(record.sizeBytes), width: record.width, height: record.height,
+      hashAlgorithm: 'sha-256', hashValue: record.hashValue, remoteUrl: record.remoteUrl || null,
+      localAssetId: record.localAssetId || null, storageKey: record.storageKey || null,
+      transportStatus: record.transportStatus, availability: record.availability, errorCode: record.errorCode || null,
+      createdAt: record.createdAt, updatedAt: record.updatedAt,
+    });
+    return this.getStickerMessageRef(record.accountId, record.refId) || this.database.prepare(
+      'SELECT ref_id AS refId FROM sticker_message_refs WHERE account_id = ? AND client_message_id = ?',
+    ).get(record.accountId, record.clientMessageId);
+  }
+
+  markStickerMessageAvailable(accountId, refId, changes) {
+    this.database.prepare(
+      `UPDATE sticker_message_refs SET local_asset_id = ?, storage_key = ?, availability = ?, error_code = NULL, updated_at = ?
+       WHERE account_id = ? AND ref_id = ?`,
+    ).run(changes.localAssetId, changes.storageKey, changes.availability, changes.updatedAt, accountId, refId);
+    return this.getStickerMessageRef(accountId, refId);
+  }
+
+  listStickerMessageRefs(accountId, conversationId, limit = 100) {
+    const rows = this.database.prepare(
+      `SELECT ref_id AS refId, preview_sticker_id AS previewStickerId, account_id AS accountId,
+        conversation_id AS conversationId, client_message_id AS clientMessageId, stanza_id AS stanzaId,
+        origin_id AS originId, direction, sender_jid AS senderJid, source_sticker_id AS sourceStickerId,
+        name, alt_text AS altText, fallback_text AS fallbackText, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
+        hash_algorithm AS hashAlgorithm, hash_value AS hashValue, remote_url AS remoteUrl,
+        local_asset_id AS localAssetId, storage_key AS storageKey, transport_status AS transportStatus,
+        availability, error_code AS errorCode, created_at AS createdAt, updated_at AS updatedAt
+       FROM sticker_message_refs WHERE account_id = ? AND conversation_id = ?
+       ORDER BY created_at ASC, ref_id ASC LIMIT ?`,
+    ).all(accountId, conversationId, limit);
+    return rows.map((row) => this.stickerMessageFromRow(row));
   }
 
   createStickerAssetAndSticker(asset, sticker) {
@@ -1101,7 +1283,7 @@ class PersistenceStore {
   }
 
   listTimelinePage(accountId, conversationId, limit, direction, cursor) {
-    const values = [accountId, conversationId, accountId, conversationId, accountId, conversationId];
+    const values = [accountId, conversationId, accountId, conversationId, accountId, conversationId, accountId, conversationId];
     let predicate = '';
     let order = 'ORDER BY sort_at DESC, id DESC';
     if (cursor) {
@@ -1120,19 +1302,29 @@ class PersistenceStore {
           SELECT id, created_at AS sort_at, 'text' AS kind, account_id AS account_id,
             conversation_id AS conversation_id, client_message_id, sender_jid, body, status,
             classification, NULL AS transfer_id, NULL AS media_id, NULL AS direction,
-            NULL AS original_name, NULL AS mime_type, NULL AS size_bytes, NULL AS width,
-            NULL AS height, NULL AS availability
+            NULL AS original_name, NULL AS alt_text, NULL AS fallback_text, NULL AS mime_type, NULL AS size_bytes, NULL AS width,
+            NULL AS height, NULL AS availability, NULL AS stanza_id, NULL AS origin_id,
+            NULL AS source_sticker_id, NULL AS hash_algorithm, NULL AS hash_value,
+            NULL AS remote_url, NULL AS local_asset_id
           FROM messages WHERE account_id = ? AND conversation_id = ?
           UNION ALL
           SELECT media_id AS id, created_at AS sort_at, 'image' AS kind, account_id,
             conversation_id, NULL, sender_jid, NULL, NULL, NULL, transfer_id, media_id,
-            direction, original_name, mime_type, size_bytes, width, height, availability
+            direction, original_name, NULL, NULL, mime_type, size_bytes, width, height, availability,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL
           FROM media_assets WHERE account_id = ? AND conversation_id = ?
           UNION ALL
           SELECT file_id AS id, created_at AS sort_at, 'file' AS kind, account_id,
             conversation_id, NULL, sender_jid, NULL, NULL, NULL, transfer_id, NULL,
-            direction, original_name, mime_type, size_bytes, NULL, NULL, availability
+            direction, original_name, NULL, NULL, mime_type, size_bytes, NULL, NULL, availability,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL
           FROM file_assets WHERE account_id = ? AND conversation_id = ?
+          UNION ALL
+          SELECT ref_id AS id, created_at AS sort_at, 'sticker' AS kind, account_id,
+            conversation_id, client_message_id, sender_jid, NULL, transport_status, error_code,
+            ref_id, preview_sticker_id, direction, name, alt_text, fallback_text, mime_type, size_bytes, width, height, availability,
+            stanza_id, origin_id, source_sticker_id, hash_algorithm, hash_value, remote_url, local_asset_id
+          FROM sticker_message_refs WHERE account_id = ? AND conversation_id = ?
         ) AS timeline WHERE 1 = 1${predicate} ${order} LIMIT ?`,
       )
       .all(...values, limit + 1);
@@ -1174,6 +1366,39 @@ class PersistenceStore {
             availability: row.availability,
           },
         };
+      if (row.kind === 'sticker')
+        return {
+          kind: 'sticker',
+          id: row.id,
+          sortAt: row.sort_at,
+          sticker: {
+            refId: row.transfer_id,
+            previewStickerId: row.media_id,
+            accountId: row.account_id,
+            conversationId: row.conversation_id,
+            clientMessageId: row.client_message_id,
+            direction: row.direction,
+            senderJid: row.sender_jid,
+            ...(row.stanza_id ? { stanzaId: row.stanza_id } : {}),
+            ...(row.origin_id ? { originId: row.origin_id } : {}),
+            ...(row.source_sticker_id ? { sourceStickerId: row.source_sticker_id } : {}),
+            ...(row.original_name ? { name: row.original_name } : {}),
+            ...(row.alt_text ? { altText: row.alt_text } : {}),
+            ...(row.fallback_text ? { fallbackText: row.fallback_text } : {}),
+            mimeType: row.mime_type,
+            sizeBytes: String(row.size_bytes),
+            width: row.width,
+            height: row.height,
+            hashAlgorithm: row.hash_algorithm,
+            hashValue: row.hash_value,
+            ...(row.local_asset_id ? { localAssetId: row.local_asset_id } : {}),
+            transportStatus: row.status,
+            availability: row.availability,
+            ...(row.classification ? { errorCode: row.classification } : {}),
+            createdAt: row.sort_at,
+            updatedAt: row.sort_at,
+          },
+        };
       return {
         kind: 'image',
         id: row.media_id,
@@ -1209,6 +1434,8 @@ class PersistenceStore {
         SELECT account_id, conversation_id, created_at AS last_activity FROM media_assets
         UNION ALL
         SELECT account_id, conversation_id, created_at AS last_activity FROM file_assets
+        UNION ALL
+        SELECT account_id, conversation_id, created_at AS last_activity FROM sticker_message_refs
       ) WHERE account_id = ?
       GROUP BY account_id, conversation_id ORDER BY lastActivity DESC`,
       )

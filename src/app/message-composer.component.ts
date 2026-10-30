@@ -21,5 +21,6 @@ export class MessageComposerComponent {
   readonly inputFocus = output<void>();
   readonly inputBlur = output<void>();
   readonly messageSubmitted = output<void>();
+  readonly stickerSend = output<string>();
   readonly attach = output<void>();
 }

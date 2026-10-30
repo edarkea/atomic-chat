@@ -139,6 +139,7 @@ function createXmppSession(adapter) {
       adapter.sessionEndpoints.delete(accountId);
       adapter.sessionJids.delete(accountId);
       adapter.carbons.clear(accountId);
+      adapter.stickerService?.clear(accountId);
       adapter.sessionGenerations.set(
         accountId,
         (adapter.sessionGenerations.get(accountId) || 0) + 1,
@@ -191,6 +192,7 @@ function createXmppSession(adapter) {
         adapter.sessionEndpoints.delete(accountId);
         adapter.sessionJids.delete(accountId);
         adapter.carbons.clear(accountId);
+        adapter.stickerService?.clear(accountId);
         adapter.sessionGenerations.set(
           accountId,
           (adapter.sessionGenerations.get(accountId) || 0) + 1,

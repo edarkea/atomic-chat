@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, HostListener, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { StickerLibraryFacade } from './core/sticker-library.facade';
 import { StickerPackFacade } from './core/sticker-pack.facade';
@@ -15,6 +15,7 @@ import { StickerStudioComponent } from './sticker-studio.component';
 export class StickerPickerComponent {
   readonly accountId = input.required<string>();
   readonly disabled = input(false);
+  readonly stickerSend = output<string>();
   readonly open = signal(false);
   readonly facade = inject(StickerLibraryFacade);
   readonly packFacade = inject(StickerPackFacade);
@@ -31,6 +32,12 @@ export class StickerPickerComponent {
 
   toggle(): void { if (!this.disabled() && this.accountId()) this.open.update((value) => !value); }
   close(): void { this.open.set(false); }
+  sendSelected(): void {
+    const selected = this.facade.selectedSticker();
+    if (!selected || this.disabled() || !this.accountId()) return;
+    this.stickerSend.emit(selected.stickerId);
+    this.close();
+  }
   selectPack(packId: string): void { this.facade.selectPack(packId); }
   openStudio(event: Event): void {
     this.studioReturnFocus = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;

@@ -329,6 +329,7 @@ export interface StickerRecord {
   readonly assetId: string;
   readonly name?: string;
   readonly altText?: string;
+  readonly fallbackText?: string;
   readonly sortKey: string;
   readonly availability: StickerAssetAvailability;
   readonly createdAt: string;
@@ -501,6 +502,64 @@ export interface ChatImageRecord {
   readonly createdAt: string;
   readonly availability: ChatMediaAvailability;
 }
+export type StickerMessageTransportStatus = 'queued' | 'uploading' | 'sending' | 'sent' | 'failed';
+export type StickerMessageAvailability = 'available' | 'missing' | 'invalid' | 'blocked';
+export interface StickerMessageRef {
+  readonly refId: string;
+  readonly previewStickerId: string;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly clientMessageId: ClientMessageId;
+  readonly stanzaId?: string;
+  readonly originId?: string;
+  readonly direction: ChatMediaDirection;
+  readonly senderJid: string;
+  readonly sourceStickerId?: string;
+  readonly name?: string;
+  readonly altText?: string;
+  readonly fallbackText?: string;
+  readonly mimeType: StaticImageMimeType;
+  readonly sizeBytes: DecimalByteCount;
+  readonly width: number;
+  readonly height: number;
+  readonly hashAlgorithm: 'sha-256';
+  readonly hashValue: string;
+  readonly remoteUrl?: string;
+  readonly localAssetId?: string;
+  readonly transportStatus: StickerMessageTransportStatus;
+  readonly availability: StickerMessageAvailability;
+  readonly errorCode?: AppErrorCode;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+export interface StickerCapability {
+  readonly accountId: string;
+  readonly supported: boolean;
+  readonly uploadService?: string;
+  readonly maxFileSize?: DecimalByteCount;
+  readonly sessionGeneration: number;
+  readonly expiresAt: string;
+}
+export interface StickerCapabilityRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+}
+export interface StickerSendRequest {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly clientMessageId: ClientMessageId;
+  readonly stickerId: string;
+}
+export interface StickerMessageLoadRequest {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly refId: string;
+}
 export type ChatFileAvailability = 'unchecked' | 'available' | 'missing' | 'changed' | 'blocked';
 export interface ChatFileHistoryRecord {
   readonly fileId: string;
@@ -547,6 +606,12 @@ export type HistoryTimelineItem =
       readonly id: string;
       readonly sortAt: string;
       readonly file: ChatFileHistoryRecord;
+    }
+  | {
+      readonly kind: 'sticker';
+      readonly id: string;
+      readonly sortAt: string;
+      readonly sticker: StickerMessageRef;
     };
 export interface TimelinePageInput {
   readonly version: 1;
@@ -662,6 +727,9 @@ export interface DomainEventPayloadMap {
   'file.offerReceived': FileOffer;
   'file.stateChanged': FileTransfer;
   'media.available': ChatImageRecord;
+  'sticker.messageReceived': StickerMessageRef;
+  'sticker.stateChanged': StickerMessageRef;
+  'sticker.capabilityChanged': StickerCapability;
 }
 export type DomainEventType = keyof DomainEventPayloadMap;
 export interface DomainEvent<T> {

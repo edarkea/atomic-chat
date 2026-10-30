@@ -36,6 +36,7 @@ const { MediaStore } = require('./media-store.cjs');
 const { FileHistoryStore } = require('./file-history.cjs');
 const { StickerStore } = require('./sticker-store.cjs');
 const { StickerPackStore } = require('./sticker-pack-store.cjs');
+const { StickerMessageStore } = require('./sticker-message-store.cjs');
 const { StickerGrantRegistry } = require('./sticker-grants.cjs');
 const { persistCompletedTransfer } = require('./media-transfer-persistence.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
@@ -74,7 +75,13 @@ const previewGrants = new PreviewGrantRegistry({
       : localFileActions.resolveForPreview(senderId, input),
 });
 const stickerGrants = new StickerGrantRegistry({
-  resolveSource: (accountId, stickerId) => runtime.stickers.resolveForPreview(accountId, stickerId),
+  resolveSource: (accountId, stickerId) => {
+    try {
+      return runtime.stickers.resolveForPreview(accountId, stickerId);
+    } catch (error) {
+      return runtime.stickerMessages.resolveForPreview(accountId, stickerId);
+    }
+  },
 });
 let runtime;
 const currentTransferTimeout = () => {
@@ -197,6 +204,15 @@ function attachEventSources() {
   });
   outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
   runtime.xmpp.onEvent((event) => {
+    if (event.type === 'sticker.messageReceived') {
+      try {
+        const persisted = runtime.stickerMessages.save(event.payload);
+        eventRouter.forwardXmppEvent({ type: event.type, payload: persisted });
+      } catch (error) {
+        console.error('[STICKER] Could not save incoming sticker:', error?.message || 'STORAGE_FAILED');
+      }
+      return;
+    }
     const processed = processIncomingMessage(event);
     messageNotifications.handle(processed);
     eventRouter.forwardXmppEvent(processed);
@@ -215,6 +231,7 @@ function initializeRuntime() {
     FileHistoryStore,
     StickerStore,
     StickerPackStore,
+    StickerMessageStore,
     nativeImage,
     fileTransfers,
     outgoingFileTransfers,

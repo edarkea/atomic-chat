@@ -69,6 +69,11 @@ import {
   StickerPreviewReadRequest,
   StickerPreviewRevokeRequest,
   StickerPreviewStreamRef,
+  StickerCapability,
+  StickerCapabilityRequest,
+  StickerMessageLoadRequest,
+  StickerMessageRef,
+  StickerSendRequest,
 } from './domain';
 
 export interface AtomicChatApi {
@@ -156,6 +161,11 @@ export interface AtomicChatApi {
       read(input: StickerPreviewReadRequest): Promise<Result<StickerPreviewChunk>>;
       close(input: StickerPreviewCloseRequest): Promise<Result<void>>;
       revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>>;
+    };
+    messages: {
+      discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>>;
+      send(input: StickerSendRequest): Promise<Result<StickerMessageRef>>;
+      load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>>;
     };
     packs: {
       list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>>;

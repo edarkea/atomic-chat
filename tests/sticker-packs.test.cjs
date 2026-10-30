@@ -29,13 +29,13 @@ async function close(value) {
   await fs.rm(value.root, { recursive: true, force: true });
 }
 
-test('E8.3-PACK-001 migrates v10 to v11 without losing existing stickers', async () => {
+test('E8.3-PACK-001 migrates v10 to v12 without losing existing stickers', async () => {
   const value = await fixture();
   const preservedStickerId = value.first.sticker.stickerId;
   value.persistence.database.exec('DROP TABLE sticker_draft_items; DROP TABLE sticker_drafts; DROP TABLE sticker_pack_items; DROP TABLE sticker_packs; UPDATE schema_meta SET version = 10;');
   value.persistence.close();
   const reopened = new PersistenceStore(value.root);
-  assert.equal(reopened.database.prepare('SELECT version FROM schema_meta').get().version, 11);
+  assert.equal(reopened.database.prepare('SELECT version FROM schema_meta').get().version, 12);
   assert.ok(reopened.getSticker('alice@example.test', preservedStickerId));
   const reopenedPacks = new StickerPackStore(reopened);
   const draft = await reopenedPacks.createDraft('alice@example.test');

@@ -48,6 +48,13 @@
           [classification]="item.message.classification"
           [persistenceStatus]="item.message.persistenceStatus"
         />
+      } @else if (item.kind === 'sticker') {
+        <app-sticker-message-card
+          [accountId]="accountId()"
+          [sticker]="item.sticker"
+          [outgoing]="item.outgoing"
+          (loadRequested)="stickerLoad.emit($event)"
+        />
       } @else {
         <app-file-transfer-card
           [transfer]="item.transfer"
@@ -84,6 +91,7 @@
     (inputFocus)="typingFocus.emit()"
     (inputBlur)="typingBlur.emit()"
     (messageSubmitted)="messageSend.emit()"
+    (stickerSend)="stickerSend.emit($event)"
     (attach)="attach.emit()"
   />
   @if (dropActive()) {

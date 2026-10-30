@@ -53,6 +53,7 @@ import {
   PreferencesSaveState,
 } from './preferences-dialog.component';
 import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
+import { StickerMessageFacade } from './core/sticker-message.facade';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -85,6 +86,7 @@ export class App {
   private readonly conversationVisibility = inject(ConversationVisibilityStore);
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
+  protected readonly stickerMessages = inject(StickerMessageFacade);
   protected readonly theme = inject(ThemeService);
   private readonly broadcast = inject(BroadcastFacade);
   protected readonly fileActionPending = (transferId: string): boolean =>
@@ -441,7 +443,22 @@ export class App {
           label: this.fileHistoryLabel(file),
           progressLabel: this.fileHistoryLabel(file),
         }));
-      return [...messages, ...files, ...historicalImages, ...historicalFiles].sort(
+      const stickers: ConversationTimelineItem[] = this.chat.timelineItems()
+        .filter((item): item is Extract<HistoryTimelineItem, { kind: 'sticker' }> => item.kind === 'sticker')
+        .map((item) => item.sticker)
+        .filter((sticker) =>
+          sticker.accountId === this.chat.accountId() &&
+          this.bareJid(sticker.conversationId) === this.bareJid(this.selectedJid()),
+        )
+        .map((sticker) => ({
+          kind: 'sticker' as const,
+          id: `sticker:${sticker.refId}`,
+          sortAt: sticker.createdAt,
+          sticker,
+          senderLabel: sticker.direction === 'outgoing' ? 'Tú' : sticker.senderJid,
+          outgoing: sticker.direction === 'outgoing',
+        }));
+      return [...messages, ...files, ...historicalImages, ...historicalFiles, ...stickers].sort(
         (left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id),
       );
     },
@@ -901,6 +918,26 @@ export class App {
     } catch {
       this.chat.error.set('No fue posible enviar el mensaje.');
     }
+  }
+
+  protected async sendSticker(stickerId: string): Promise<void> {
+    const conversationId = this.selectedJid();
+    const accountId = this.chat.accountId();
+    if (!accountId || !conversationId || !this.chat.isConnected()) return;
+    const result = await this.stickerMessages.send(accountId, conversationId, stickerId);
+    if (result.ok) this.chat.upsertStickerMessage(result.value);
+    else this.chat.error.set('No se pudo enviar el sticker.');
+  }
+
+  protected async loadSticker(refId: string): Promise<void> {
+    const item = this.chat.timelineItems().find(
+      (candidate): candidate is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
+        candidate.kind === 'sticker' && candidate.sticker.refId === refId,
+    );
+    if (!item) return;
+    const result = await this.stickerMessages.load(item.sticker);
+    if (result.ok) this.chat.upsertStickerMessage(result.value);
+    else this.chat.error.set('No se pudo cargar el sticker.');
   }
 
   protected openBroadcast(): void {

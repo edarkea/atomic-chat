@@ -17,10 +17,12 @@ import {
   Contact,
   FileTransfer,
   Message,
+  StickerMessageRef,
 } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
+import { StickerMessageCardComponent } from './sticker-message-card.component';
 
 export type ConversationTimelineItem =
   | {
@@ -42,6 +44,14 @@ export type ConversationTimelineItem =
       readonly outgoing: boolean;
       readonly label: string;
       readonly progressLabel: string;
+    }
+  | {
+      readonly kind: 'sticker';
+      readonly id: string;
+      readonly sortAt: string;
+      readonly sticker: StickerMessageRef;
+      readonly senderLabel: string;
+      readonly outgoing: boolean;
     };
 
 export interface OlderMessagesRequest {
@@ -52,7 +62,7 @@ export interface OlderMessagesRequest {
 
 @Component({
   selector: 'app-conversation-view',
-  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent],
+  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, StickerMessageCardComponent],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -77,6 +87,8 @@ export class ConversationViewComponent {
   readonly typingBlur = output<void>();
   readonly messageSend = output<void>();
   readonly attach = output<void>();
+  readonly stickerSend = output<string>();
+  readonly stickerLoad = output<string>();
   readonly accept = output<string>();
   readonly reject = output<string>();
   readonly fileCancel = output<string>();

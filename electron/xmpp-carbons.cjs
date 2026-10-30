@@ -28,6 +28,15 @@ function createXmppCarbons(adapter) {
     const original = forwarded?.getChild('message', 'jabber:client');
     if (!original || original.attrs.type === 'groupchat') return null;
 
+    let sticker;
+    try { sticker = adapter.parseStickerMessage?.(accountId, original, direction); }
+    catch (error) {
+      if (process.env.ATOMIC_XMPP_DEBUG === 'true')
+        console.warn('[XMPP_CARBON_STICKER] Ignoring invalid sticker stanza:', error?.code || error?.message);
+      return null;
+    }
+    if (sticker) return { sticker };
+
     const body = original.getChildText('body');
     const from = String(original.attrs.from || '');
     const to = String(original.attrs.to || '');
@@ -126,6 +135,10 @@ function createXmppCarbons(adapter) {
         received ? 'received' : 'sent',
       );
       if (!message) return true;
+      if (message.sticker) {
+        adapter.emit({ type: 'sticker.messageReceived', payload: message.sticker });
+        return true;
+      }
       adapter.emit({ type: 'message.received', payload: message });
       if (process.env.ATOMIC_XMPP_DEBUG === 'true')
         console.debug(

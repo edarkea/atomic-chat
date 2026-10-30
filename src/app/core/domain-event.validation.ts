@@ -19,13 +19,14 @@ import {
   RoomParticipant,
   RoomRef,
   RoomState,
+  StickerCapability,
+  StickerMessageRef,
   TypedDomainEvent,
 } from './domain';
 
 interface EventRecord {
   accountId?: unknown;
   affiliation?: unknown;
-  availability?: unknown;
   body?: unknown;
   bytesTransferred?: unknown;
   certificate?: unknown;
@@ -37,8 +38,14 @@ interface EventRecord {
   conversationId?: unknown;
   correlationId?: unknown;
   createdAt?: unknown;
+  expiresAt?: unknown;
   description?: unknown;
   direction?: unknown;
+  stanzaId?: unknown;
+  originId?: unknown;
+  sourceStickerId?: unknown;
+  altText?: unknown;
+  fallbackText?: unknown;
   endReason?: unknown;
   errorCode?: unknown;
   eventId?: unknown;
@@ -98,6 +105,17 @@ interface EventRecord {
   transport?: unknown;
   type?: unknown;
   updatedAt?: unknown;
+  supported?: unknown;
+  uploadService?: unknown;
+  maxFileSize?: unknown;
+  refId?: unknown;
+  previewStickerId?: unknown;
+  hashAlgorithm?: unknown;
+  hashValue?: unknown;
+  remoteUrl?: unknown;
+  localAssetId?: unknown;
+  transportStatus?: unknown;
+  availability?: unknown;
   validFrom?: unknown;
   validTo?: unknown;
   verificationError?: unknown;
@@ -196,6 +214,9 @@ const domainEventTypes: readonly DomainEventType[] = [
   'file.offerReceived',
   'file.stateChanged',
   'media.available',
+  'sticker.messageReceived',
+  'sticker.stateChanged',
+  'sticker.capabilityChanged',
 ];
 
 function isDomainEventType(value: unknown): value is DomainEventType {
@@ -442,6 +463,50 @@ function isChatImageRecord(value: unknown): value is ChatImageRecord {
   );
 }
 
+function isStickerMessageRef(value: unknown): value is StickerMessageRef {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value.refId) &&
+    isString(value.previewStickerId) &&
+    isString(value.accountId) &&
+    isString(value.conversationId) &&
+    isString(value.clientMessageId) &&
+    isOneOf(value.direction, ['incoming', 'outgoing']) &&
+    isString(value.senderJid) &&
+    isOptionalString(value.stanzaId) &&
+    isOptionalString(value.originId) &&
+    isOptionalString(value.sourceStickerId) &&
+    isOptionalString(value.name) &&
+    isOptionalString(value.altText) &&
+    isOptionalString(value.fallbackText) &&
+    isOneOf(value.mimeType, ['image/png', 'image/jpeg']) &&
+    isString(value.sizeBytes) &&
+    isPositiveInteger(value.width) &&
+    isPositiveInteger(value.height) &&
+    value.hashAlgorithm === 'sha-256' &&
+    isString(value.hashValue) &&
+    isOptionalString(value.remoteUrl) &&
+    isOptionalString(value.localAssetId) &&
+    isOneOf(value.transportStatus, ['queued', 'uploading', 'sending', 'sent', 'failed']) &&
+    isOneOf(value.availability, ['available', 'missing', 'invalid', 'blocked']) &&
+    isOptionalOneOf(value.errorCode, appErrorCodes) &&
+    isString(value.createdAt) &&
+    isString(value.updatedAt)
+  );
+}
+
+function isStickerCapability(value: unknown): value is StickerCapability {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value.accountId) &&
+    isBoolean(value.supported) &&
+    isOptionalString(value.uploadService) &&
+    isOptionalString(value.maxFileSize) &&
+    isPositiveInteger(value.sessionGeneration) &&
+    isString(value.expiresAt)
+  );
+}
+
 function isMucNotice(value: unknown): value is MucNotice {
   if (!isRecord(value)) return false;
   const codes: readonly MucNoticeCode[] = ['IDENTITY_VISIBLE', 'PUBLIC_LOGGING', 'SERVER_NICKNAME'];
@@ -535,6 +600,15 @@ export function validateDomainEvent(value: unknown): TypedDomainEvent | undefine
         : undefined;
     case 'media.available':
       return isChatImageRecord(value.payload)
+        ? typedEvent(value, value.type, value.payload)
+        : undefined;
+    case 'sticker.messageReceived':
+    case 'sticker.stateChanged':
+      return isStickerMessageRef(value.payload)
+        ? typedEvent(value, value.type, value.payload)
+        : undefined;
+    case 'sticker.capabilityChanged':
+      return isStickerCapability(value.payload)
         ? typedEvent(value, value.type, value.payload)
         : undefined;
   }

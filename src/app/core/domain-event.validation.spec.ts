@@ -11,6 +11,7 @@ import {
   RoomParticipant,
   RoomRef,
   RoomState,
+  StickerMessageRef,
   TypedDomainEvent,
 } from './domain';
 import { validateDomainEvent, subscribeToDomainEvents } from './domain-event.validation';
@@ -63,6 +64,19 @@ const fileOffer: FileOffer = {
 };
 
 describe('domain event validation', () => {
+  it('validates static sticker message events without widening text messages', () => {
+    const sticker: StickerMessageRef = {
+      refId: 'ref-1', previewStickerId: 'message:ref-1', accountId: 'a@example.invalid',
+      conversationId: 'b@example.invalid', clientMessageId: 'sticker-1', direction: 'incoming',
+      senderJid: 'b@example.invalid', mimeType: 'image/png', sizeBytes: '4', width: 1, height: 1,
+      hashAlgorithm: 'sha-256', hashValue: 'a'.repeat(64), transportStatus: 'sent',
+      availability: 'missing', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const event = validateDomainEvent(envelope('sticker.messageReceived', sticker));
+    expect(event?.type).toBe('sticker.messageReceived');
+    expect(validateDomainEvent(envelope('message.received', { ...message, body: { kind: 'sticker', sticker } }))).toBeUndefined();
+  });
+
   it('narrows each payload using the event discriminator', () => {
     const event = validateDomainEvent(envelope('message.received', message));
     expect(event?.type).toBe('message.received');

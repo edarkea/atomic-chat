@@ -33,6 +33,7 @@ function createRuntime({
   FileHistoryStore,
   StickerStore,
   StickerPackStore,
+  StickerMessageStore,
   nativeImage,
   fileTransfers,
   outgoingFileTransfers,
@@ -44,6 +45,7 @@ function createRuntime({
   const fileHistory = new FileHistoryStore(persistence, shell);
   const stickers = new StickerStore(app.getPath('userData'), persistence, nativeImage);
   const stickerPacks = new StickerPackStore(persistence);
+  const stickerMessages = new StickerMessageStore(app.getPath('userData'), persistence, nativeImage);
   void media.reconcile();
   void stickers.reconcile();
   const secrets = new SecretStore(safeStorage, app.getPath('userData'));
@@ -54,7 +56,7 @@ function createRuntime({
     fileTransfers,
     outgoingFileTransfers,
   );
-  return { persistence, media, fileHistory, stickers, stickerPacks, secrets, xmpp };
+  return { persistence, media, fileHistory, stickers, stickerPacks, stickerMessages, secrets, xmpp };
 }
 
 module.exports = { createRuntime, loadMucPolicies };

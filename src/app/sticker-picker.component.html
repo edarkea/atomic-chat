@@ -36,8 +36,9 @@
         <app-sticker-thumbnail [accountId]="accountId()" [sticker]="selected" [large]="true" />
         <span>{{ selected.name || selected.altText || 'Sticker seleccionado' }}</span>
       </div>
+      <button type="button" class="send-sticker" (click)="sendSelected()" [disabled]="disabled()">Enviar sticker</button>
     }
-    <small class="sticker-hint">Los stickers se guardan localmente. Seleccionar no envía mensajes.</small>
+    <small class="sticker-hint">Selecciona un sticker y confirma el envío.</small>
   </section>
 }
 @if (studioOpen()) { <app-sticker-studio [accountId]="accountId()" (closed)="closeStudio()" /> }
