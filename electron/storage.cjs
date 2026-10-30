@@ -181,6 +181,12 @@ class PersistenceStore {
           'ALTER TABLE trusted_certificates ADD COLUMN identity_mismatch INTEGER NOT NULL DEFAULT 0',
         );
       this.database.prepare('UPDATE schema_meta SET version = 6').run();
+      const messageColumns = this.database.prepare('PRAGMA table_info(messages)').all();
+      if (!messageColumns.some((column) => column.name === 'classification'))
+        this.database.exec(
+          "ALTER TABLE messages ADD COLUMN classification TEXT NOT NULL DEFAULT 'direct'",
+        );
+      this.database.prepare('UPDATE schema_meta SET version = 7').run();
     });
     migrate();
   }
@@ -337,20 +343,22 @@ class PersistenceStore {
 
   saveMessage(message) {
     if (!message.accountId) throw new Error('INVALID_INPUT');
+    const classification = message.classification || 'direct';
+    if (!['direct', 'broadcast'].includes(classification)) throw new Error('INVALID_INPUT');
     this.database
       .prepare(
-        `INSERT INTO messages(id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at)
-      VALUES (@id, @accountId, @conversationId, @clientMessageId, @senderJid, @body, @status, @createdAt)
-      ON CONFLICT(account_id, client_message_id) DO UPDATE SET status=@status, body=@body`,
+        `INSERT INTO messages(id, account_id, conversation_id, client_message_id, sender_jid, body, status, created_at, classification)
+      VALUES (@id, @accountId, @conversationId, @clientMessageId, @senderJid, @body, @status, @createdAt, @classification)
+      ON CONFLICT(account_id, client_message_id) DO UPDATE SET status=@status, body=@body, classification=@classification`,
       )
-      .run({ ...message, body: JSON.stringify(message.body) });
+      .run({ ...message, classification, body: JSON.stringify(message.body) });
   }
 
   listMessages(accountId, conversationId) {
     return this.database
       .prepare(
         `SELECT id, conversation_id AS conversationId, client_message_id AS clientMessageId,
-      sender_jid AS senderJid, body, status, created_at AS createdAt
+      sender_jid AS senderJid, body, status, created_at AS createdAt, classification
       FROM messages WHERE account_id = ? AND conversation_id = ? ORDER BY created_at ASC`,
       )
       .all(accountId, conversationId)
@@ -374,7 +382,7 @@ class PersistenceStore {
     const rows = this.database
       .prepare(
         `SELECT id, conversation_id AS conversationId, client_message_id AS clientMessageId,
-      sender_jid AS senderJid, body, status, created_at AS createdAt FROM messages
+      sender_jid AS senderJid, body, status, created_at AS createdAt, classification FROM messages
       WHERE account_id = ? AND conversation_id = ?${predicate} ${order} LIMIT ?`,
       )
       .all(...values, limit + 1);

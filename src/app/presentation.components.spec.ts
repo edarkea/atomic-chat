@@ -14,6 +14,7 @@ import { ConversationTimelineItem, ConversationViewComponent } from './conversat
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { LoginPanelComponent } from './login-panel.component';
 import { MessageComposerComponent } from './message-composer.component';
+import { MessageItemComponent } from './message-item.component';
 import { MucViewComponent } from './muc-view.component';
 import { OperatorPresenceComponent } from './operator-presence.component';
 import { PreferencesDialogComponent } from './preferences-dialog.component';
@@ -55,6 +56,22 @@ const certificateRequest: CertificateTrustRequest = {
 };
 
 describe('extracted Angular presentation components', () => {
+  it('shows the broadcast badge only for classified broadcast messages', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.invalid');
+    fixture.componentRef.setInput('body', 'difusión');
+    fixture.componentRef.setInput('outgoing', false);
+    fixture.componentRef.setInput('classification', 'broadcast');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.broadcast-badge')?.textContent).toContain(
+      'DIFUSIÓN',
+    );
+    fixture.componentRef.setInput('classification', 'direct');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.broadcast-badge')).toBeNull();
+  });
+
   it('renders login fields and emits changes and submit', async () => {
     await TestBed.configureTestingModule({ imports: [LoginPanelComponent] }).compileComponents();
     const fixture = TestBed.createComponent(LoginPanelComponent);

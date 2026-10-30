@@ -29,6 +29,7 @@ export type ConnectionStatus =
   'idle' | 'connecting' | 'authenticating' | 'connected' | 'disconnecting' | 'failed';
 export type MessageStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed';
 export type MessagePersistenceStatus = 'persisted' | 'memory-only';
+export type MessageClassification = 'direct' | 'broadcast';
 export interface ConnectionState {
   accountId: string;
   status: ConnectionStatus;
@@ -62,6 +63,7 @@ export interface Message {
   body: { kind: 'text'; text: string };
   status: MessageStatus;
   createdAt: string;
+  classification?: MessageClassification;
   errorCode?: AppError['code'];
   persistenceStatus?: MessagePersistenceStatus;
 }

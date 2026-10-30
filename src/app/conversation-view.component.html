@@ -45,6 +45,7 @@
           [sender]="item.senderLabel"
           [body]="item.message.body.text"
           [outgoing]="item.outgoing"
+          [classification]="item.message.classification"
           [persistenceStatus]="item.message.persistenceStatus"
         />
       } @else {

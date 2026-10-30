@@ -31,6 +31,7 @@ interface EventRecord {
   certificatePem?: unknown;
   chain?: unknown;
   clientMessageId?: unknown;
+  classification?: unknown;
   code?: unknown;
   conversationId?: unknown;
   correlationId?: unknown;
@@ -240,6 +241,7 @@ function isMessage(value: unknown): value is Message {
     isString(value.body.text) &&
     isOneOf(value.status, ['draft', 'queued', 'sending', 'sent', 'failed']) &&
     isString(value.createdAt) &&
+    isOptionalOneOf(value.classification, ['direct', 'broadcast']) &&
     isOptionalOneOf(value.errorCode, appErrorCodes) &&
     isOptionalOneOf(value.persistenceStatus, ['persisted', 'memory-only'])
   );

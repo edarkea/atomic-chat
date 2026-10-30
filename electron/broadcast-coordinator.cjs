@@ -52,6 +52,7 @@ function createBroadcastCoordinator({ xmpp }) {
             requestId: `${input.requestId}:${index + 1}`,
             to: current.recipientJid,
             clientMessageId: current.clientMessageId,
+            broadcast: true,
             body: input.body,
           });
           results[index] = { ...current, status: 'submitted' };

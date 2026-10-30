@@ -1,6 +1,21 @@
 :host {
   display: contents;
 }
+.message-sender-line {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+.broadcast-badge {
+  border: 1px solid var(--atomic-green);
+  border-radius: 999px;
+  color: var(--atomic-green);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  padding: 3px 6px;
+}
 .message-persistence-warning {
   color: var(--atomic-danger);
   display: block;

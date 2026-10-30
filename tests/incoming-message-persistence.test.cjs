@@ -20,7 +20,20 @@ test('marks incoming messages persisted before forwarding them', () => {
   });
   const result = process({ type: 'message.received', payload: message });
   assert.equal(result.payload.persistenceStatus, 'persisted');
-  assert.deepEqual(saved, [message]);
+  assert.deepEqual(saved, [{ ...message, classification: 'direct' }]);
+});
+
+test('preserves the explicit broadcast classification before persistence', () => {
+  const saved = [];
+  const process = createIncomingMessageProcessor({
+    persistence: { saveMessage: (value) => saved.push(value) },
+  });
+  const result = process({
+    type: 'message.received',
+    payload: { ...message, classification: 'broadcast' },
+  });
+  assert.equal(result.payload.classification, 'broadcast');
+  assert.equal(saved[0].classification, 'broadcast');
 });
 
 test('keeps incoming messages in memory and exposes storage failure', () => {

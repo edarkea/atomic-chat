@@ -1,5 +1,10 @@
 <article class="message" [class.outgoing]="outgoing()" [class.incoming]="!outgoing()">
-  <p class="message-sender">{{ sender() }}</p>
+  <div class="message-sender-line">
+    <p class="message-sender">{{ sender() }}</p>
+    @if (classification() === 'broadcast') {
+      <span class="broadcast-badge">DIFUSIÓN</span>
+    }
+  </div>
   <p>{{ body() }}</p>
   @if (persistenceStatus() === 'memory-only') {
     <small class="message-persistence-warning"

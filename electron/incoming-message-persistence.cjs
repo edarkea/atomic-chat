@@ -2,30 +2,34 @@ function createIncomingMessageProcessor({ persistence, onPersistenceError = () =
   return function process(event) {
     if (event?.type !== 'message.received') return event;
     const message = event.payload;
+    const normalizedMessage = {
+      ...message,
+      classification: message?.classification === 'broadcast' ? 'broadcast' : 'direct',
+    };
     if (
-      !message?.id ||
-      !message?.accountId ||
-      !message?.conversationId ||
-      !message?.clientMessageId ||
-      !message?.senderJid ||
-      !message?.body ||
-      !message?.createdAt
+      !normalizedMessage?.id ||
+      !normalizedMessage?.accountId ||
+      !normalizedMessage?.conversationId ||
+      !normalizedMessage?.clientMessageId ||
+      !normalizedMessage?.senderJid ||
+      !normalizedMessage?.body ||
+      !normalizedMessage?.createdAt
     ) {
       onPersistenceError(new Error('INVALID_INPUT'), message);
       return {
         ...event,
-        payload: { ...message, persistenceStatus: 'memory-only' },
+        payload: { ...normalizedMessage, persistenceStatus: 'memory-only' },
       };
     }
     try {
-      persistence.saveMessage(message);
-      return { ...event, payload: { ...message, persistenceStatus: 'persisted' } };
+      persistence.saveMessage(normalizedMessage);
+      return { ...event, payload: { ...normalizedMessage, persistenceStatus: 'persisted' } };
     } catch (error) {
       onPersistenceError(error, message);
       return {
         ...event,
         payload: {
-          ...message,
+          ...normalizedMessage,
           persistenceStatus: 'memory-only',
           errorCode: 'STORAGE_FAILED',
         },

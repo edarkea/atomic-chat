@@ -1,6 +1,8 @@
 const crypto = require('node:crypto');
 const { xml } = require('@xmpp/client');
 
+const BROADCAST_NAMESPACE = 'urn:atomic-chat:message:broadcast:1';
+
 function createRosterMessaging(adapter) {
   const CHAT_STATES_NS = 'http://jabber.org/protocol/chatstates';
   const PENDING_PRESENCE_LIMIT = 512;
@@ -118,6 +120,7 @@ function createRosterMessaging(adapter) {
           { type: 'chat', to: input.to, id: input.clientMessageId },
           xml('body', {}, input.body.text),
           xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }),
+          ...(input.broadcast ? [xml('broadcast', { xmlns: BROADCAST_NAMESPACE })] : []),
         ),
       );
       return { ...input, status: 'sent', createdAt: new Date().toISOString() };
@@ -171,6 +174,9 @@ function createRosterMessaging(adapter) {
       const stanzaId = explicitId
         ? `received_${crypto.createHash('sha256').update(identity).digest('hex')}`
         : `received_${crypto.randomUUID()}`;
+      const classification = stanza.getChild('broadcast', BROADCAST_NAMESPACE)
+        ? 'broadcast'
+        : 'direct';
       adapter.emit({
         type: 'message.received',
         payload: {
@@ -182,6 +188,7 @@ function createRosterMessaging(adapter) {
           body: { kind: 'text', text: bodyText },
           status: 'sent',
           createdAt: new Date().toISOString(),
+          classification,
         },
       });
       if (process.env.ATOMIC_XMPP_DEBUG === 'true')
@@ -194,4 +201,4 @@ function createRosterMessaging(adapter) {
   };
 }
 
-module.exports = { createRosterMessaging };
+module.exports = { BROADCAST_NAMESPACE, createRosterMessaging };

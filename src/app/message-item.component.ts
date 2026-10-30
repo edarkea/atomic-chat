@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { MessagePersistenceStatus } from './core/domain';
+import { MessageClassification, MessagePersistenceStatus } from './core/domain';
 
 @Component({
   selector: 'app-message-item',
@@ -11,5 +11,6 @@ export class MessageItemComponent {
   readonly sender = input.required<string>();
   readonly body = input.required<string>();
   readonly outgoing = input.required<boolean>();
+  readonly classification = input<MessageClassification>();
   readonly persistenceStatus = input<MessagePersistenceStatus>();
 }
