@@ -715,6 +715,20 @@ class PersistenceStore {
     return this.getSticker(record.accountId, record.stickerId);
   }
 
+  insertStickerReference(record) {
+    const transaction = this.database.transaction(() => {
+      this.database.prepare('UPDATE sticker_assets SET orphaned_at = NULL, updated_at = ? WHERE account_id = ? AND asset_id = ?')
+        .run(record.updatedAt, record.accountId, record.assetId);
+      this.database.prepare(
+        `INSERT INTO stickers(
+          sticker_id, account_id, asset_id, pack_id, name, alt_text, sort_key, availability, created_at, updated_at
+        ) VALUES (@stickerId, @accountId, @assetId, NULL, @name, @altText, @sortKey, @availability, @createdAt, @updatedAt)`,
+      ).run({ ...record, name: record.name || null, altText: record.altText || null });
+    });
+    transaction();
+    return this.getSticker(record.accountId, record.stickerId);
+  }
+
   clearStickerAssetOrphaned(accountId, assetId) {
     this.database.prepare('UPDATE sticker_assets SET orphaned_at = NULL, updated_at = ? WHERE account_id = ? AND asset_id = ?')
       .run(new Date().toISOString(), accountId, assetId);
@@ -744,6 +758,23 @@ class PersistenceStore {
       asset: this.getStickerAsset(asset.accountId, asset.assetId),
       sticker: this.getSticker(sticker.accountId, sticker.stickerId),
     };
+  }
+
+  recoverStickerAssetAndSticker(asset, sticker) {
+    const transaction = this.database.transaction(() => {
+      this.database.prepare(
+        `UPDATE sticker_assets SET mime_type = @mimeType, size_bytes = @sizeBytes, width = @width,
+          height = @height, storage_key = @storageKey, availability = 'available', orphaned_at = NULL,
+          updated_at = @updatedAt WHERE account_id = @accountId AND asset_id = @assetId`,
+      ).run(asset);
+      this.database.prepare(
+        `INSERT INTO stickers(
+          sticker_id, account_id, asset_id, pack_id, name, alt_text, sort_key, availability, created_at, updated_at
+        ) VALUES (@stickerId, @accountId, @assetId, NULL, @name, @altText, @sortKey, 'available', @createdAt, @updatedAt)`,
+      ).run({ ...sticker, name: sticker.name || null, altText: sticker.altText || null });
+    });
+    transaction();
+    return { asset: this.getStickerAsset(asset.accountId, asset.assetId), sticker: this.getSticker(sticker.accountId, sticker.stickerId) };
   }
 
   getSticker(accountId, stickerId) {

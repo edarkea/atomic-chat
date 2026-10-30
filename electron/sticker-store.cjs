@@ -46,26 +46,31 @@ class StickerStore {
     this.activeGrantChecker = checker;
   }
 
-  async importFile(accountId, sourcePath) {
-    if (typeof accountId !== 'string' || !accountId.trim() || typeof sourcePath !== 'string' || !sourcePath.trim())
-      throw error('INVALID_INPUT', 'la fuente de sticker no es válida');
+  withAccountLock(accountId, operation) {
     const previous = this.locks.get(accountId) || Promise.resolve();
-    const operation = previous.catch(() => undefined).then(() => this.importLocked(accountId, sourcePath));
-    const tracked = operation.finally(() => { if (this.locks.get(accountId) === tracked) this.locks.delete(accountId); });
+    const tracked = previous.catch(() => undefined).then(operation).finally(() => {
+      if (this.locks.get(accountId) === tracked) this.locks.delete(accountId);
+    });
     this.locks.set(accountId, tracked);
     return tracked;
   }
 
-  async importLocked(accountId, sourcePath) {
+  async importFile(accountId, sourcePath, isAuthorized = () => true) {
+    if (typeof accountId !== 'string' || !accountId.trim() || typeof sourcePath !== 'string' || !sourcePath.trim())
+      throw error('INVALID_INPUT', 'la fuente de sticker no es válida');
+    return this.withAccountLock(accountId, () => this.importLocked(accountId, sourcePath, isAuthorized));
+  }
+
+  async importLocked(accountId, sourcePath, isAuthorized = () => true) {
     const inspected = await this.readAndInspect(sourcePath);
     const hashValue = crypto.createHash('sha256').update(inspected.data).digest('hex');
+    if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
     const existing = this.persistence.getStickerAssetByHash(accountId, hashValue);
     if (existing) {
       const count = this.persistence.countStickers(accountId);
       if (count >= MAX_STICKERS_PER_ACCOUNT) throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
-      this.persistence.clearStickerAssetOrphaned(accountId, existing.assetId);
       const now = new Date().toISOString();
-      const sticker = this.persistence.insertSticker({
+      const sticker = {
         stickerId: `sticker_${crypto.randomUUID()}`,
         accountId,
         assetId: existing.assetId,
@@ -75,14 +80,43 @@ class StickerStore {
         availability: existing.availability === 'available' ? 'available' : existing.availability,
         createdAt: now,
         updatedAt: now,
-      });
-      return { sticker: this.publicSticker(sticker), asset: this.publicAsset(existing), deduplicated: true };
+      };
+      const usable = existing.availability === 'available' && await this.isManagedAssetValid(existing);
+      if (usable) {
+        const reference = this.persistence.insertStickerReference({
+          stickerId: sticker.stickerId,
+          accountId,
+          assetId: existing.assetId,
+          name: sticker.name,
+          altText: sticker.altText,
+          sortKey: sticker.sortKey,
+          availability: 'available',
+          createdAt: sticker.createdAt,
+          updatedAt: sticker.updatedAt,
+        });
+        return { sticker: this.publicSticker(reference), asset: this.publicAsset({ ...existing, availability: 'available' }), deduplicated: true };
+      }
+      if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+      const published = await this.publishBytes(existing.assetId, inspected.data);
+      try {
+        const recovered = this.persistence.recoverStickerAssetAndSticker(
+          { accountId, assetId: existing.assetId, mimeType: inspected.image.mimeType, sizeBytes: String(inspected.data.length), width: inspected.image.width, height: inspected.image.height, storageKey: published.storageKey, updatedAt: now },
+          { ...sticker, availability: 'available' },
+        );
+        if (existing.storageKey && existing.storageKey !== published.storageKey)
+          await fsp.rm(path.join(this.directory, existing.storageKey), { force: true }).catch(() => undefined);
+        return { sticker: this.publicSticker(recovered.sticker), asset: this.publicAsset(recovered.asset), deduplicated: true };
+      } catch (cause) {
+        await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+        throw error(cause?.code === 'SQLITE_FULL' ? 'STORAGE_FAILED' : 'STORAGE_FAILED', 'no se pudo recuperar el asset');
+      }
     }
     if (this.persistence.countStickers(accountId) >= MAX_STICKERS_PER_ACCOUNT)
       throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
     const used = Number(this.persistence.sumStickerStorage(accountId));
     if (used + inspected.data.length > MAX_STORAGE_BYTES_PER_ACCOUNT)
       throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de almacenamiento de stickers');
+    if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
     const now = new Date().toISOString();
     const assetId = `sticker_asset_${crypto.randomUUID()}`;
     const storageKey = `${assetId}.bin`;
@@ -106,6 +140,7 @@ class StickerStore {
         altText: path.basename(sourcePath), sortKey: `${now}_${crypto.randomUUID()}`,
         availability: 'available', createdAt: now, updatedAt: now,
       };
+      if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
       try {
         const saved = this.persistence.createStickerAssetAndSticker(asset, sticker);
         return { sticker: this.publicSticker(saved.sticker), asset: this.publicAsset(saved.asset), deduplicated: false };
@@ -118,6 +153,48 @@ class StickerStore {
     } finally {
       await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+
+  async isManagedAssetValid(asset) {
+    const targetPath = path.join(this.directory, asset.storageKey);
+    let initial;
+    try { initial = await fsp.lstat(targetPath); } catch { return false; }
+    if (initial.isSymbolicLink() || !initial.isFile() || String(initial.size) !== String(asset.sizeBytes)) return false;
+    const handle = await fsp.open(targetPath, SAFE_READ_FLAGS).catch(() => null);
+    if (!handle) return false;
+    const digest = crypto.createHash('sha256');
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || !sameMetadata(metadata(initial), metadata(opened))) return false;
+      const buffer = Buffer.alloc(64 * 1024);
+      let offset = 0;
+      while (offset < Number(asset.sizeBytes)) {
+        const result = await handle.read(buffer, 0, Math.min(buffer.length, Number(asset.sizeBytes) - offset), offset);
+        if (!result.bytesRead) return false;
+        digest.update(buffer.subarray(0, result.bytesRead));
+        offset += result.bytesRead;
+      }
+      const final = await handle.stat();
+      return sameMetadata(metadata(opened), metadata(final)) && digest.digest('hex') === asset.hashValue;
+    } catch { return false; }
+    finally { await handle.close().catch(() => undefined); }
+  }
+
+  async publishBytes(assetId, data) {
+    const storageKey = `${assetId}_${crypto.randomUUID()}.bin`;
+    const targetPath = path.join(this.directory, storageKey);
+    const temporaryDirectory = await fsp.mkdtemp(path.join(this.directory, '.tmp-'));
+    const temporaryPath = path.join(temporaryDirectory, `${crypto.randomUUID()}.bin`);
+    try {
+      await fsp.writeFile(temporaryPath, data, { flag: 'wx', mode: 0o600 });
+      const handle = await fsp.open(temporaryPath, 'r+');
+      try { await handle.sync(); } finally { await handle.close().catch(() => undefined); }
+      await fsp.rename(temporaryPath, targetPath);
+      return { storageKey, targetPath };
+    } catch (cause) {
+      await fsp.rm(targetPath, { force: true }).catch(() => undefined);
+      throw cause;
+    } finally { await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined); }
   }
 
   async readAndInspect(sourcePath) {
@@ -150,11 +227,11 @@ class StickerStore {
     }));
   }
 
-  delete(accountId, stickerId) {
-    const sticker = this.persistence.deleteSticker(accountId, stickerId);
-    if (!sticker) return;
-    const asset = this.persistence.getStickerAsset(accountId, sticker.assetId);
-    if (asset?.orphanedAt && !this.activeGrantChecker(accountId, asset.assetId)) void this.cleanupOrphans();
+  async delete(accountId, stickerId) {
+    return this.withAccountLock(accountId, async () => {
+      const sticker = this.persistence.deleteSticker(accountId, stickerId);
+      if (sticker) await this.cleanupAccountOrphans(accountId);
+    });
   }
 
   resolveForPreview(accountId, stickerId) {
@@ -163,7 +240,7 @@ class StickerStore {
     if (!sticker || !asset || asset.availability !== 'available') throw error('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
     return {
       accountId, stickerId, assetId: asset.assetId, path: path.join(this.directory, asset.storageKey),
-      mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height,
+      mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height, hashValue: asset.hashValue,
     };
   }
 
@@ -172,7 +249,11 @@ class StickerStore {
       const filePath = path.join(this.directory, asset.storageKey);
       try {
         const stats = await fsp.lstat(filePath);
-        if (stats.isSymbolicLink() || !stats.isFile() || String(stats.size) !== String(asset.sizeBytes))
+        if (stats.isSymbolicLink() || !stats.isFile() || String(stats.size) !== String(asset.sizeBytes)) {
+          this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'invalid');
+          continue;
+        }
+        if (!(await this.isManagedAssetValid(asset)))
           this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'invalid');
       } catch { this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'missing'); }
     }
@@ -180,12 +261,19 @@ class StickerStore {
   }
 
   async cleanupOrphans(now = Date.now()) {
-    for (const asset of this.persistence.listStickerAssets()) {
-      if (!asset.orphanedAt || now - Date.parse(asset.orphanedAt) < ORPHAN_RETENTION_MS) continue;
-      if (this.persistence.hasStickerReferences(asset.assetId)) continue;
-      if (this.activeGrantChecker(asset.accountId, asset.assetId)) continue;
+    const accounts = new Set(this.persistence.listStickerAssets().map((asset) => asset.accountId));
+    await Promise.all([...accounts].map((accountId) => this.withAccountLock(accountId, () => this.cleanupAccountOrphans(accountId, now))));
+  }
+
+  async cleanupAccountOrphans(accountId, now = Date.now()) {
+    for (const candidate of this.persistence.listStickerAssets(accountId)) {
+      if (!candidate.orphanedAt || now - Date.parse(candidate.orphanedAt) < ORPHAN_RETENTION_MS) continue;
+      const asset = this.persistence.getStickerAsset(accountId, candidate.assetId);
+      if (!asset?.orphanedAt || this.persistence.hasStickerReferences(asset.assetId) || this.activeGrantChecker(accountId, asset.assetId)) continue;
       await fsp.rm(path.join(this.directory, asset.storageKey), { force: true }).catch(() => undefined);
-      this.persistence.deleteStickerAsset(asset.accountId, asset.assetId);
+      const current = this.persistence.getStickerAsset(accountId, asset.assetId);
+      if (current?.orphanedAt && !this.persistence.hasStickerReferences(asset.assetId) && !this.activeGrantChecker(accountId, asset.assetId))
+        this.persistence.deleteStickerAsset(accountId, asset.assetId);
     }
   }
 

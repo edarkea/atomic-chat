@@ -55,3 +55,51 @@ test('E8.2-STORE-003 rejects oversized input before invoking the decoder', async
   value.persistence.close();
   await fs.rm(value.root, { recursive: true, force: true });
 });
+
+test('E8.2-STORE-004 repairs a deduplicated asset whose private copy was corrupted', async () => {
+  const value = await fixture();
+  const source = path.join(value.root, 'source.png');
+  await fs.writeFile(source, png);
+  const first = await value.store.importFile('alice@example.test', source);
+  const asset = value.persistence.getStickerAsset('alice@example.test', first.asset.assetId);
+  await fs.writeFile(path.join(value.root, 'sticker-assets', asset.storageKey), Buffer.alloc(png.length, 7));
+  await value.store.delete('alice@example.test', first.sticker.stickerId);
+  const recovered = await value.store.importFile('alice@example.test', source);
+  assert.equal(recovered.asset.assetId, first.asset.assetId);
+  assert.equal(recovered.asset.availability, 'available');
+  assert.deepEqual(await fs.readFile(path.join(value.root, 'sticker-assets', value.persistence.getStickerAsset('alice@example.test', first.asset.assetId).storageKey)), png);
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});
+
+test('E8.2-STORE-005 accepts the exact 2 MiB limit without allocating a larger source', async () => {
+  const value = await fixture();
+  const source = path.join(value.root, 'exact.png');
+  await fs.writeFile(source, Buffer.concat([png, Buffer.alloc(MAX_STICKER_BYTES - png.length)]));
+  const result = await value.store.importFile('alice@example.test', source);
+  assert.equal(result.asset.sizeBytes, String(MAX_STICKER_BYTES));
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});
+
+test('E8.2-STORE-006 serializes orphan cleanup and reimport per account', async () => {
+  const value = await fixture();
+  const source = path.join(value.root, 'source.png');
+  await fs.writeFile(source, png);
+  const first = await value.store.importFile('alice@example.test', source);
+  let releaseCleanup;
+  const cleanupStarted = new Promise((resolve) => { releaseCleanup = resolve; });
+  value.store.cleanupAccountOrphans = async () => cleanupStarted;
+  const deletion = value.store.delete('alice@example.test', first.sticker.stickerId);
+  await Promise.resolve();
+  let settled = false;
+  const reimport = value.store.importFile('alice@example.test', source).finally(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  releaseCleanup();
+  await deletion;
+  const result = await reimport;
+  assert.equal(result.asset.assetId, first.asset.assetId);
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});

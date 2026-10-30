@@ -18,16 +18,23 @@ export class StickerLibraryFacade {
   readonly selectedPack = computed(() => undefined);
 
   async load(accountId: string): Promise<void> {
-    if (!accountId.trim()) {
-      this.account.set('');
+    const normalizedAccountId = accountId.trim();
+    const switchedAccount = this.account() !== normalizedAccountId;
+    const current = this.generation() + 1;
+    this.generation.set(current);
+    this.account.set(normalizedAccountId);
+    if (switchedAccount) {
       this.stickers.set([]);
+      this.selectedSticker.set(undefined);
+      this.selectedCollection.set(normalizedAccountId ? 'my-stickers' : undefined);
+      this.query.set('');
+      this.error.set(null);
+    }
+    if (!normalizedAccountId) {
       this.state.set('idle');
       return;
     }
-    this.account.set(accountId);
     this.selectedCollection.set('my-stickers');
-    const current = this.generation() + 1;
-    this.generation.set(current);
     this.state.set('loading');
     this.error.set(null);
     if (!this.port) {
@@ -35,8 +42,8 @@ export class StickerLibraryFacade {
       this.error.set('Los stickers locales no están disponibles.');
       return;
     }
-    const result = await this.port.list({ version: 1, requestId: createOpaqueId('stickers-list'), accountId, query: this.query(), limit: 250 });
-    if (current !== this.generation()) return;
+    const result = await this.port.list({ version: 1, requestId: createOpaqueId('stickers-list'), accountId: normalizedAccountId, query: this.query(), limit: 250 });
+    if (!this.isCurrentContext(normalizedAccountId, current)) return;
     if (!result.ok) {
       this.state.set('error');
       this.error.set(result.error.code === 'UNSUPPORTED' ? 'Los stickers locales no están disponibles.' : 'No se pudo cargar Mis stickers.');
@@ -65,8 +72,10 @@ export class StickerLibraryFacade {
     const accountId = this.account();
     if (!accountId) return;
     if (!this.port) { this.error.set('Los stickers locales no están disponibles.'); return; }
+    const current = this.generation();
     this.state.set('loading');
     const result = await this.port.import({ version: 1, requestId: createOpaqueId('sticker-import'), accountId });
+    if (!this.isCurrentContext(accountId, current)) return;
     if (!result.ok) {
       this.state.set('error');
       this.error.set(result.error.code === 'RESOURCE_CONSTRAINT' ? 'Se alcanzó el límite local de stickers.' : 'No se pudo importar el sticker.');
@@ -79,7 +88,9 @@ export class StickerLibraryFacade {
     const accountId = this.account();
     if (!accountId) return;
     if (!this.port) { this.error.set('Los stickers locales no están disponibles.'); return; }
+    const current = this.generation();
     const result = await this.port.delete({ version: 1, requestId: createOpaqueId('sticker-delete'), accountId, stickerId });
+    if (!this.isCurrentContext(accountId, current)) return;
     if (!result.ok) {
       this.error.set('No se pudo eliminar el sticker.');
       return;
@@ -91,7 +102,25 @@ export class StickerLibraryFacade {
   private applySnapshot(result: Result<StickerLibrarySnapshot>): void {
     if (!result.ok) return;
     this.stickers.set(result.value.stickers);
+    const selected = this.selectedSticker();
+    if (selected && !result.value.stickers.some((sticker) => sticker.stickerId === selected.stickerId))
+      this.selectedSticker.set(undefined);
     this.state.set('ready');
     this.error.set(null);
+  }
+
+  reset(): void {
+    this.generation.set(this.generation() + 1);
+    this.account.set('');
+    this.query.set('');
+    this.stickers.set([]);
+    this.selectedSticker.set(undefined);
+    this.selectedCollection.set(undefined);
+    this.state.set('idle');
+    this.error.set(null);
+  }
+
+  private isCurrentContext(accountId: string, generation: number): boolean {
+    return this.account() === accountId && this.generation() === generation;
   }
 }

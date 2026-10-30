@@ -19,7 +19,8 @@ export class StickerPickerComponent {
   constructor() {
     effect(() => {
       const accountId = this.accountId();
-      if (this.open() && accountId) untracked(() => void this.facade.load(accountId));
+      if (!accountId) untracked(() => this.facade.reset());
+      else if (this.open()) untracked(() => void this.facade.load(accountId));
     });
   }
 

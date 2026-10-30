@@ -28,13 +28,12 @@ function sameIdentity(left, right) {
 class StickerGrantRegistry {
   constructor(options = {}) {
     this.resolveSource = options.resolveSource;
+    this.lstat = options.lstat || ((filePath) => fsp.lstat(filePath));
     this.openFile = options.openFile || ((filePath) => fsp.open(filePath, SAFE_READ_FLAGS));
     this.grants = new Map();
     this.revoked = new Map();
     this.senderEpochs = new Map();
     this.accountEpochs = new Map();
-    this.timer = setInterval(() => this.prune(), 15_000);
-    this.timer.unref?.();
   }
 
   async get(senderId, input) {
@@ -44,7 +43,8 @@ class StickerGrantRegistry {
     const source = await this.resolveSource(input.accountId, input.stickerId);
     if (senderEpoch !== (this.senderEpochs.get(senderId) || 0) || accountEpoch !== (this.accountEpochs.get(input.accountId) || 0))
       throw grantError('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
-    const stats = await fsp.lstat(source.path);
+    const stats = await this.lstat(source.path);
+    this.assertEpochs(senderId, input.accountId, senderEpoch, accountEpoch);
     if (stats.isSymbolicLink() || !stats.isFile() || Number(stats.size) !== Number(source.sizeBytes))
       throw grantError('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
     if (this.grants.size >= MAX_GRANTS || [...this.grants.values()].filter((item) => item.senderId === senderId).length >= MAX_GRANTS_PER_SENDER)
@@ -54,10 +54,11 @@ class StickerGrantRegistry {
     const grant = {
       grantId, senderId, accountId: input.accountId, stickerId: input.stickerId, assetId: source.assetId,
       path: source.path, mimeType: source.mimeType, sizeBytes: Number(source.sizeBytes), width: source.width,
-      height: source.height, identity: fileIdentity(stats), expiresAtMs, streams: new Map(), opening: undefined, revoking: false,
+      height: source.height, hashValue: source.hashValue, identity: fileIdentity(stats), expiresAtMs, streams: new Map(), opening: undefined, revoking: false,
     };
     this.grants.set(grantId, grant);
     grant.timer = setTimeout(() => void this.revokeGrant(grant), TTL_MS);
+    grant.timer.unref?.();
     return this.publicGrant(grant);
   }
 
@@ -75,9 +76,10 @@ class StickerGrantRegistry {
       const stats = await handle.stat();
       if (!stats.isFile() || Number(stats.size) !== grant.sizeBytes || (process.platform !== 'win32' && !sameIdentity(grant.identity, fileIdentity(stats))))
         throw grantError('STORAGE_FAILED', 'el asset cambió');
+      if (!(await this.matchesHash(handle, grant.hashValue))) throw grantError('STORAGE_FAILED', 'la integridad del asset no coincide');
       await this.assertActive(grant);
       const streamId = crypto.randomUUID();
-      grant.streams.set(streamId, { handle, offset: 0, sequence: 0, done: false, reading: undefined, closed: false });
+      grant.streams.set(streamId, { handle, offset: 0, sequence: 0, done: false, reading: undefined, closed: false, hash: crypto.createHash('sha256') });
       grant.opening = undefined;
       return { grantId: grant.grantId, streamId, accountId: grant.accountId, assetId: grant.assetId, expiresAt: new Date(grant.expiresAtMs).toISOString(), chunkSize: CHUNK_SIZE };
     } catch (cause) {
@@ -110,6 +112,7 @@ class StickerGrantRegistry {
     const buffer = Buffer.alloc(Math.min(CHUNK_SIZE, remaining));
     const result = await stream.handle.read(buffer, 0, buffer.length, stream.offset);
     await this.assertReadable(grant, stream, input.streamId);
+    stream.hash.update(buffer.subarray(0, result.bytesRead));
     const after = await stream.handle.stat();
     await this.assertReadable(grant, stream, input.streamId);
     if (!this.identityValid(grant, after) || !Number.isInteger(result.bytesRead) || result.bytesRead <= 0 || result.bytesRead > buffer.length)
@@ -117,6 +120,10 @@ class StickerGrantRegistry {
     stream.offset += result.bytesRead;
     stream.sequence += 1;
     stream.done = stream.offset >= grant.sizeBytes;
+    if (stream.done && stream.hash.digest('hex') !== grant.hashValue) {
+      await this.revokeGrant(grant);
+      throw grantError('STORAGE_FAILED', 'la integridad del asset no coincide');
+    }
     return { grantId: grant.grantId, streamId: input.streamId, sequence: input.sequence, bytes: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + result.bytesRead), done: stream.done };
   }
 
@@ -185,6 +192,26 @@ class StickerGrantRegistry {
   async assertReadable(grant, stream, streamId) {
     await this.assertActive(grant);
     if (grant.streams.get(streamId) !== stream || stream.closed) throw grantError('CONFLICT', 'el stream ya no está abierto');
+  }
+
+  async matchesHash(handle, expectedHash) {
+    if (typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(expectedHash)) return false;
+    const digest = crypto.createHash('sha256');
+    const buffer = Buffer.alloc(CHUNK_SIZE);
+    let offset = 0;
+    while (offset < 2 * 1024 * 1024) {
+      const result = await handle.read(buffer, 0, buffer.length, offset);
+      if (!result.bytesRead) break;
+      digest.update(buffer.subarray(0, result.bytesRead));
+      offset += result.bytesRead;
+      if (result.bytesRead < buffer.length) break;
+    }
+    return digest.digest('hex') === expectedHash;
+  }
+
+  assertEpochs(senderId, accountId, senderEpoch, accountEpoch) {
+    if (senderEpoch !== (this.senderEpochs.get(senderId) || 0) || accountEpoch !== (this.accountEpochs.get(accountId) || 0))
+      throw grantError('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
   }
 
   identityValid(grant, stats) { return stats.isFile() && Number(stats.size) === grant.sizeBytes && (process.platform === 'win32' || sameIdentity(grant.identity, fileIdentity(stats))); }

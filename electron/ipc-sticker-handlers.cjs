@@ -47,9 +47,21 @@ function registerStickerHandlers({
   ipcMain.handle('stickers.import', async (event, input) => {
     try {
       authorize(event, input);
+      const senderId = event.sender.id;
+      const isAuthorizationCurrent = () => {
+        try {
+          assertSender(event);
+          return event.sender.id === senderId && historySecurity.authorize(senderId, input.accountId);
+        } catch {
+          return false;
+        }
+      };
       const sourcePath = await selectStickerSource();
       if (!sourcePath) return success(input, null);
-      return success(input, await getRuntime().stickers.importFile(input.accountId, sourcePath));
+      if (!isAuthorizationCurrent()) throw new Error('UNAUTHORIZED');
+      const value = await getRuntime().stickers.importFile(input.accountId, sourcePath, isAuthorizationCurrent);
+      if (!isAuthorizationCurrent()) throw new Error('UNAUTHORIZED');
+      return success(input, value);
     } catch (error) { return resultError(error, event, input); }
   });
   ipcMain.handle('stickers.list', async (event, input) => {
@@ -63,7 +75,7 @@ function registerStickerHandlers({
     } catch (error) { return resultError(error, event, input); }
   });
   ipcMain.handle('stickers.delete', async (event, input) => {
-    try { authorize(event, input, { sticker: true }); getRuntime().stickers.delete(input.accountId, input.stickerId); return success(input, undefined); }
+    try { authorize(event, input, { sticker: true }); await getRuntime().stickers.delete(input.accountId, input.stickerId); return success(input, undefined); }
     catch (error) { return resultError(error, event, input); }
   });
   ipcMain.handle('stickers.preview.get', async (event, input) => {
