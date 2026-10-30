@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileTransfer, TypedDomainEvent } from './domain';
 import { FileFacade } from './file.facade';
-import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
+import { FILE_HISTORY_PORT, FILE_TRANSFER_PORT, FileHistoryPort, FileTransferPort } from './ports';
 
 const ok = <T>(value: T) => ({ ok: true as const, value, version: 1 as const, requestId: 'test' });
 const transfer = (accountId: string, transferId: string): FileTransfer => ({
@@ -24,6 +24,7 @@ const transfer = (accountId: string, transferId: string): FileTransfer => ({
 
 describe('FileFacade injected transfer port', () => {
   let port: FileTransferPort;
+  let historyPort: FileHistoryPort;
   let emit: (event: TypedDomainEvent) => void;
   let unsubscribeCalled: boolean;
 
@@ -47,8 +48,15 @@ describe('FileFacade injected transfer port', () => {
         };
       }),
     };
+    historyPort = {
+      open: vi.fn(async () => ok<void>(undefined)),
+      reveal: vi.fn(async () => ok<void>(undefined)),
+    };
     TestBed.configureTestingModule({
-      providers: [{ provide: FILE_TRANSFER_PORT, useValue: port }],
+      providers: [
+        { provide: FILE_TRANSFER_PORT, useValue: port },
+        { provide: FILE_HISTORY_PORT, useValue: historyPort },
+      ],
     });
   });
 
@@ -187,6 +195,23 @@ describe('FileFacade injected transfer port', () => {
     expect(facade.isLocalActionPending('completed')).toBe(false);
     await facade.reveal('completed');
     expect(port.reveal).toHaveBeenCalledOnce();
+  });
+
+  it('maps historical opening failures to a friendly message', async () => {
+    historyPort.open = vi.fn(async () => ({
+      ok: false as const,
+      version: 1 as const,
+      error: {
+        code: 'UNAUTHORIZED' as const,
+        retryable: false,
+        requestId: 'history-error',
+        message: 'La ventana o la cuenta no están autorizadas para este archivo.',
+      },
+    }));
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    await facade.openHistory('file-1', 'contact@example.invalid');
+    expect(facade.error()).toBe('No se pudo abrir el archivo');
   });
 
   it('unsubscribes from transfer events when destroyed', () => {

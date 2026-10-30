@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ChatFileHistoryRecord,
   FileTransfer,
   ImagePreviewRef,
   PreviewStreamRef,
@@ -36,6 +37,29 @@ const unavailable = (): Result<ImagePreviewRef> => ({
     transferId: 'transfer-preview',
     reasonCode: 'MEDIA_TYPE_UNSUPPORTED',
   },
+});
+
+const documentTransfer = (): FileTransfer => ({
+  ...transfer(),
+  offer: {
+    ...transfer().offer,
+    name: 'report.pdf',
+    mimeType: 'application/pdf',
+  },
+  localActions: { open: true, reveal: true },
+});
+
+const historicalFile = (availability: ChatFileHistoryRecord['availability']): ChatFileHistoryRecord => ({
+  fileId: 'file-history-1',
+  accountId: 'account@example.invalid',
+  conversationId: 'contact@example.invalid',
+  transferId: 'transfer-history',
+  direction: 'incoming',
+  senderJid: 'contact@example.invalid',
+  originalName: 'report.pdf',
+  sizeBytes: '132020',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  availability,
 });
 
 describe('FileTransferCardComponent preview lifecycle', () => {
@@ -122,5 +146,66 @@ describe('FileTransferCardComponent preview lifecycle', () => {
 
     expect(read).not.toHaveBeenCalled();
     expect(revoke).toHaveBeenCalledOnce();
+  });
+
+  it('opens an available historical file from its compact heading', async () => {
+    let openedId = '';
+    fixture.componentInstance.historicalOpened.subscribe((value) => (openedId = value));
+    fixture.componentRef.setInput('transfer', documentTransfer());
+    fixture.componentRef.setInput('history', historicalFile('available'));
+    fixture.componentRef.setInput('label', 'Archivo histórico disponible');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const heading = fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement;
+    expect(heading.disabled).toBe(false);
+    expect(heading.getAttribute('aria-label')).toBe('Abrir archivo report.pdf');
+    heading.click();
+    expect(openedId).toBe('file-history-1');
+    expect(fixture.nativeElement.querySelectorAll('.file-action-icon')).toHaveLength(0);
+    expect(fixture.nativeElement.textContent).not.toContain('Abrir archivo');
+    expect(fixture.nativeElement.textContent).not.toContain('Archivo histórico disponible');
+  });
+
+  it('opens a completed received file from its compact heading', async () => {
+    let openedId = '';
+    fixture.componentInstance.opened.subscribe((value) => (openedId = value));
+    fixture.componentRef.setInput('transfer', documentTransfer());
+    fixture.componentRef.setInput('label', 'Archivo recibido correctamente');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const heading = fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement;
+    heading.click();
+    expect(openedId).toBe('transfer-preview');
+    expect(fixture.nativeElement.querySelectorAll('.file-action-icon')).toHaveLength(0);
+  });
+
+  it('shows a friendly unavailable state without exposing internal messages', async () => {
+    fixture.componentRef.setInput('transfer', documentTransfer());
+    fixture.componentRef.setInput('history', historicalFile('changed'));
+    fixture.componentRef.setInput('label', 'La ventana, cuenta o transferencia no están autorizadas.');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const heading = fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement;
+    expect(heading.disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Archivo no disponible');
+    expect(fixture.nativeElement.textContent).not.toContain('La ventana, cuenta o transferencia');
+    expect(fixture.nativeElement.textContent).not.toContain('Abrir carpeta');
+  });
+
+  it('keeps image preview content free of MIME and byte metadata', async () => {
+    fixture.componentRef.setInput('transfer', {
+      ...transfer(),
+      offer: { ...transfer().offer, mimeType: 'image/png' },
+    });
+    fixture.componentRef.setInput('label', 'Archivo recibido correctamente');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('.image-meta')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('image/png');
+    expect(fixture.nativeElement.textContent).not.toContain('17 bytes');
   });
 });

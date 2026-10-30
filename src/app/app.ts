@@ -1262,11 +1262,7 @@ export class App {
     };
   }
   private fileHistoryLabel(file: ChatFileHistoryRecord): string {
-    if (file.availability === 'available') return 'Archivo histórico disponible';
-    if (file.availability === 'missing') return 'El archivo fue movido o eliminado';
-    if (file.availability === 'changed') return 'El archivo original cambió';
-    if (file.availability === 'blocked') return 'Archivo histórico bloqueado';
-    return 'Disponibilidad del archivo no comprobada';
+    return file.availability === 'available' ? '' : 'Archivo no disponible';
   }
   private isFileDrag(event: DragEvent): boolean {
     return event.dataTransfer?.types.includes('Files') ?? false;

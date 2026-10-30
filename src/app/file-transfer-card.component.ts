@@ -94,21 +94,21 @@ export class FileTransferCardComponent {
     return Boolean(this.media() || this.transfer().offer.mimeType?.startsWith('image/'));
   }
 
-  protected hasLocalActions(): boolean {
-    const history = this.history();
-    if (history) return history.availability === 'available';
-    const actions = this.transfer().localActions;
-    return (
-      this.transfer().direction === 'incoming' &&
-      this.transfer().state === 'completed' &&
-      Boolean(actions?.open || actions?.reveal)
-    );
-  }
-
   protected canOpenFile(): boolean {
     const history = this.history();
     if (history) return history.availability === 'available';
     return this.transfer().direction === 'incoming' && this.transfer().localActions?.open === true;
+  }
+
+  protected openFile(): void {
+    if (!this.canOpenFile() || this.actionBusy()) return;
+    const history = this.history();
+    if (history) this.historicalOpened.emit(history.fileId);
+    else this.opened.emit(this.transfer().offer.transferId);
+  }
+
+  protected historyStatus(): string {
+    return this.history()?.availability === 'available' ? '' : 'Archivo no disponible';
   }
 
   protected canRevealFolder(): boolean {
@@ -177,7 +177,7 @@ export class FileTransferCardComponent {
       if (get.ok && get.value.state === 'ready') session.preview = get.value;
       if (session.cancelled || this.currentSession !== session) return;
       if (!get.ok) {
-        this.setUnavailable(get.error.message, session);
+        this.setUnavailable('Preview no disponible para este archivo.', session);
         return;
       }
       if (get.value.state !== 'ready') {
@@ -191,7 +191,7 @@ export class FileTransferCardComponent {
         previewId: get.value.previewId,
       });
       if (!open.ok) {
-        this.setUnavailable(open.error.message, session);
+        this.setUnavailable('Preview no disponible para este archivo.', session);
         return;
       }
       session.streamId = open.value.streamId;
@@ -222,12 +222,9 @@ export class FileTransferCardComponent {
         () => this.expireSession(session),
         Math.max(0, Date.parse(get.value.expiresAt) - Date.now()),
       );
-    } catch (error) {
+    } catch {
       if (!session.cancelled && this.currentSession === session)
-        this.setUnavailable(
-          error instanceof Error ? error.message : 'No se pudo renderizar la imagen.',
-          session,
-        );
+        this.setUnavailable('No se pudo renderizar la imagen.', session);
     } finally {
       await this.closeSessionStream(session, request).catch(() => undefined);
       if (!keepGrant || session.cancelled)

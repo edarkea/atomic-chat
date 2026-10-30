@@ -22,9 +22,25 @@
 }
 .file-heading {
   align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--atomic-radius-sm);
   display: flex;
   gap: var(--atomic-space-2);
   min-width: 0;
+  padding: 3px 4px;
+  text-align: left;
+  width: 100%;
+}
+.file-heading:not(:disabled) {
+  cursor: pointer;
+}
+.file-heading:not(:disabled):hover {
+  background: var(--atomic-surface-active);
+}
+.file-heading:focus-visible {
+  outline: 2px solid var(--atomic-focus);
+  outline-offset: 2px;
 }
 .file-heading-icon {
   color: var(--atomic-text-secondary);
@@ -35,6 +51,7 @@
 }
 .file-title {
   color: var(--atomic-text);
+  display: block;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -57,7 +74,7 @@
   gap: 6px;
 }
 .file-actions button,
-.file-message > button {
+.file-message > button:not(.file-heading) {
   background: var(--atomic-surface);
   border: 1px solid var(--atomic-border);
   border-radius: var(--atomic-radius-sm);
@@ -68,16 +85,8 @@
   min-height: 34px;
   padding: 5px 8px;
 }
-.file-actions .file-action-icon {
-  align-items: center;
-  display: inline-flex;
-  justify-content: center;
-  min-height: 30px;
-  min-width: 30px;
-  padding: 5px;
-}
 .file-actions button:hover,
-.file-message > button:hover {
+.file-message > button:not(.file-heading):hover {
   background: var(--atomic-surface-active);
 }
 .file-actions button:focus-visible,
@@ -88,9 +97,13 @@
   outline-offset: 2px;
 }
 .file-actions button:disabled,
-.file-message > button:disabled {
+.file-message > button:not(.file-heading):disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+.file-message > .file-heading:disabled {
+  cursor: default;
+  opacity: 1;
 }
 .file-preview {
   background: var(--atomic-surface);
@@ -98,10 +111,6 @@
   cursor: zoom-in;
   max-width: 100%;
   padding: 4px;
-}
-.image-meta {
-  color: var(--atomic-text-secondary);
-  font-size: 12px;
 }
 .file-preview img {
   display: block;

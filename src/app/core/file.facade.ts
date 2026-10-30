@@ -235,7 +235,7 @@ export class FileFacade {
       });
       if (this.account !== accountId) return;
       if (result.ok) this.error.set(null);
-      else this.error.set(result.error.message);
+      else this.error.set(action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta');
     } finally {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);
@@ -264,7 +264,7 @@ export class FileFacade {
       const result = await this.historyPort[action](input);
       if (this.account !== accountId) return;
       if (result.ok) this.error.set(null);
-      else this.error.set(result.error.message);
+      else this.error.set(action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta');
     } finally {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);

@@ -12,13 +12,22 @@
     {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
   </p>
   @if (!isImageTransfer()) {
-    <div class="file-heading">
+    <button
+      class="file-heading"
+      type="button"
+      [disabled]="!canOpenFile() || actionBusy()"
+      [attr.aria-label]="
+        canOpenFile() ? 'Abrir archivo ' + transfer().offer.name : 'Archivo no disponible'
+      "
+      [attr.title]="canOpenFile() ? 'Abrir archivo' : 'Archivo no disponible'"
+      (click)="openFile()"
+    >
       <svg class="ac-icon ac-icon--20 file-heading-icon" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg>
-      <div class="file-heading-copy">
-        <p class="file-title" [title]="transfer().offer.name">{{ transfer().offer.name }}</p>
-        <small class="file-meta">{{ transfer().offer.mimeType || 'Archivo' }} · {{ transfer().offer.sizeBytes }} bytes</small>
-      </div>
-    </div>
+      <span class="file-heading-copy">
+        <span class="file-title">{{ transfer().offer.name }}</span>
+        <small class="file-meta">Archivo · {{ transfer().offer.sizeBytes }} bytes</small>
+      </span>
+    </button>
   }
   @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
     <p class="file-security">
@@ -36,12 +45,12 @@
     </p>
     <button type="button" (click)="cancelled.emit(transfer().offer.transferId)">Cancelar</button>
   }
-  @if (isTerminal() && !isImageTransfer()) {
+  @if (isTerminal() && !isImageTransfer() && !history()) {
     <p aria-live="polite">{{ label() }}</p>
   }
   @if (history(); as historical) {
     @if (historical.availability !== 'available') {
-      <p class="file-preview-status" role="status">{{ label() }}</p>
+      <p class="file-preview-status" role="status">{{ historyStatus() }}</p>
     }
   }
   @if (previewState() === 'loading') {
@@ -52,58 +61,8 @@
       <img [src]="preview" [alt]="'Preview de ' + transfer().offer.name" />
     </button>
   }
-  @if (isImageTransfer()) {
-    <small class="image-meta">{{ transfer().offer.mimeType || 'Imagen' }} · {{ transfer().offer.sizeBytes }} bytes</small>
-  }
   @if (previewState() === 'unavailable') {
     <p class="file-preview-status" role="status">{{ previewMessage() }}</p>
-  }
-  @if (hasLocalActions()) {
-    <div class="file-actions" aria-label="Acciones del archivo">
-      @if (history(); as historical) {
-        @if (canOpenFile()) {
-          <button
-            class="file-action-icon"
-            type="button"
-            [disabled]="actionBusy()"
-            aria-label="Abrir archivo"
-            title="Abrir archivo"
-            (click)="historicalOpened.emit(historical.fileId)"
-          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg></button>
-        }
-        @if (canRevealFolder()) {
-          <button
-            class="file-action-icon"
-            type="button"
-            [disabled]="actionBusy()"
-            aria-label="Abrir carpeta"
-            title="Abrir carpeta"
-            (click)="historicalRevealed.emit(historical.fileId)"
-          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-expand" /></svg></button>
-        }
-      } @else {
-        @if (canOpenFile()) {
-          <button
-            class="file-action-icon"
-            type="button"
-            [disabled]="actionBusy()"
-            aria-label="Abrir archivo"
-            title="Abrir archivo"
-            (click)="opened.emit(transfer().offer.transferId)"
-          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg></button>
-        }
-        @if (canRevealFolder()) {
-          <button
-            class="file-action-icon"
-            type="button"
-            [disabled]="actionBusy()"
-            aria-label="Abrir carpeta"
-            title="Abrir carpeta"
-            (click)="revealed.emit(transfer().offer.transferId)"
-          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-expand" /></svg></button>
-        }
-      }
-    </div>
   }
 </article>
 @if (enlarged() && previewUrl(); as preview) {
