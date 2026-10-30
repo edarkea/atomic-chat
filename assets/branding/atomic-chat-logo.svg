@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+<title id="title">Atomic Chat — átomo de conversación</title>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Orbitas del atomo: dibujo original, no marcas de terceros. -->
+  <g stroke="#04170b" stroke-width="15">
+    <ellipse cx="128" cy="128" rx="40" ry="115"/>
+    <ellipse cx="128" cy="128" rx="119" ry="43" transform="rotate(28 128 128)"/>
+    <ellipse cx="128" cy="128" rx="119" ry="43" transform="rotate(-28 128 128)"/>
+  </g>
+  <g stroke="#65ed70" stroke-width="9.2">
+    <ellipse cx="128" cy="128" rx="40" ry="115"/>
+    <ellipse cx="128" cy="128" rx="119" ry="43" transform="rotate(28 128 128)"/>
+    <ellipse cx="128" cy="128" rx="119" ry="43" transform="rotate(-28 128 128)"/>
+  </g>
+</g>
+<!-- Tres electrones. -->
+<g fill="#03170c" stroke="#04170b" stroke-width="13">
+  <circle cx="47" cy="106" r="13"/>
+  <circle cx="183" cy="61" r="13"/>
+  <circle cx="200" cy="193" r="13"/>
+</g>
+<g fill="#03170c" stroke="#65ed70" stroke-width="6">
+  <circle cx="47" cy="106" r="13"/>
+  <circle cx="183" cy="61" r="13"/>
+  <circle cx="200" cy="193" r="13"/>
+</g>
+<g fill="#65ed70" stroke="none">
+  <circle cx="42" cy="101" r="4.5"/>
+  <circle cx="178" cy="56" r="4.5"/>
+  <circle cx="195" cy="188" r="4.5"/>
+</g>
+<!-- Bocadillo de dialogo delante de las orbitas. -->
+<path id="bubble" d="M125 81 C151 81 172 101 172 127 C172 153 151 173 125 173 C115 173 105 169 97 164 L85 175 Q80 178 81 171 L87 149 C82 143 78 135 78 126 C78 101 99 81 125 81 Z" fill="#03170c" stroke="#04170b" stroke-width="17" stroke-linejoin="round"/>
+<path d="M125 81 C151 81 172 101 172 127 C172 153 151 173 125 173 C115 173 105 169 97 164 L85 175 Q80 178 81 171 L87 149 C82 143 78 135 78 126 C78 101 99 81 125 81 Z" fill="#03170c" stroke="#65ed70" stroke-width="10" stroke-linejoin="round"/>
+<g fill="#65ed70"><circle cx="106" cy="126" r="6.3"/><circle cx="125" cy="126" r="6.3"/><circle cx="144" cy="126" r="6.3"/></g>
+</svg>

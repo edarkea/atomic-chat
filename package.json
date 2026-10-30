@@ -62,9 +62,13 @@
     "asarUnpack": [
       "node_modules/better-sqlite3/**"
     ],
+    "win": {
+      "icon": "build/icon.ico"
+    },
     "linux": {
       "category": "Network",
-      "maintainer": "Steeven Ayui <edison.ayui@gmail.com>"
+      "maintainer": "Steeven Ayui <edison.ayui@gmail.com>",
+      "icon": "build/icons"
     }
   },
   "description": "Atomic Chat Desktop",
