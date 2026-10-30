@@ -1,7 +1,7 @@
 import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, OnDestroy, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { StickerLibraryFacade } from './core/sticker-library.facade';
-import { StickerPackFacade } from './core/sticker-pack.facade';
+import { StickerDraftSnapshot, StickerPackFacade } from './core/sticker-pack.facade';
 import { StickerDraftDTO, StickerRecord } from './core/domain';
 import { StickerThumbnailComponent } from './sticker-thumbnail.component';
 
@@ -44,8 +44,9 @@ export class StickerStudioComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  async createDraft(): Promise<void> { await this.packs.createDraft(this.packs.selectedPackId()); }
-  async selectPack(packId: string): Promise<void> { this.packs.selectPack(packId); await this.packs.createDraft(packId); }
+  async createDraft(): Promise<void> { await this.packs.createDraft(this.draftSnapshot()); }
+  async editPack(packId: string): Promise<void> { await this.packs.openPack(packId, this.draftSnapshot()); }
+  async openDraft(draftId: string): Promise<void> { await this.packs.openDraft(draftId, this.draftSnapshot()); }
   async addSticker(stickerId: string): Promise<void> {
     const draft = this.packs.draft();
     if (!draft || draft.stickerIds.includes(stickerId)) return;
@@ -79,6 +80,9 @@ export class StickerStudioComponent implements AfterViewInit, OnDestroy {
   hasSticker(stickerId: string): boolean { return this.packs.draft()?.stickerIds.includes(stickerId) || false; }
   indexOf(stickerId: string): number { return this.packs.draft()?.stickerIds.indexOf(stickerId) ?? -1; }
   stickerById(stickerId: string): StickerRecord | undefined { return this.library.allStickers().find((sticker) => sticker.stickerId === stickerId); }
+  draftBaseName(draft: { readonly basePackId?: string }): string {
+    return draft.basePackId ? this.packs.packs().find((pack) => pack.packId === draft.basePackId)?.name || 'Paquete no disponible' : 'Paquete nuevo';
+  }
 
   ngAfterViewInit(): void { this.scheduleFocus(); }
 
@@ -136,5 +140,10 @@ export class StickerStudioComponent implements AfterViewInit, OnDestroy {
 
   private hasUnsavedChanges(draft: StickerDraftDTO): boolean {
     return draft.name !== this.name() || (draft.description || '') !== this.description();
+  }
+
+  private draftSnapshot(): StickerDraftSnapshot | undefined {
+    const draft = this.packs.draft();
+    return draft ? { name: this.name(), description: this.description(), stickerIds: [...draft.stickerIds] } : undefined;
   }
 }

@@ -5,7 +5,9 @@ import { STICKER_PACK_PORT, StickerPackPort } from './ports';
 import { StickerPackFacade } from './sticker-pack.facade';
 
 const pack: StickerPackDTO = { packId: 'p1', accountId: 'alice', source: 'created', status: 'installed', name: 'Local', stickerIds: ['s1'], revision: 1, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+const secondPack: StickerPackDTO = { ...pack, packId: 'p2', name: 'Otro' };
 const draft: StickerDraftDTO = { draftId: 'd1', accountId: 'alice', status: 'editing', name: 'Borrador', stickerIds: ['s1'], revision: 1, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+const secondDraft: StickerDraftDTO = { ...draft, draftId: 'd2', basePackId: 'p2', name: 'Otro borrador' };
 
 describe('StickerPackFacade', () => {
   it('recovers packages and active drafts for the current account', async () => {
@@ -19,6 +21,9 @@ describe('StickerPackFacade', () => {
     const facade = TestBed.inject(StickerPackFacade);
     await facade.load('alice');
     expect(facade.packs()).toEqual([pack]);
+    expect(facade.draft()).toBeUndefined();
+    expect(facade.drafts()).toEqual([draft]);
+    await facade.openDraft(draft.draftId);
     expect(facade.draft()).toEqual(draft);
   });
 
@@ -59,6 +64,7 @@ describe('StickerPackFacade', () => {
     TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
     const facade = TestBed.inject(StickerPackFacade);
     await facade.load('alice');
+    await facade.openDraft(draft.draftId);
     const first = facade.updateDraft('Uno', '', ['s1']);
     const second = facade.updateDraft('Dos', '', ['s1']);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -89,6 +95,7 @@ describe('StickerPackFacade', () => {
     TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
     const facade = TestBed.inject(StickerPackFacade);
     await facade.load('alice');
+    await facade.openDraft(draft.draftId);
     await facade.commitDraft({ name: 'Final', description: 'persistido', stickerIds: ['s1'] });
     expect(calls).toEqual(['update:1', 'commit:2']);
   });
@@ -106,8 +113,100 @@ describe('StickerPackFacade', () => {
     TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
     const facade = TestBed.inject(StickerPackFacade);
     await facade.load('alice');
+    await facade.openDraft(draft.draftId);
     await facade.commitDraft({ name: 'No confirmado', description: '', stickerIds: ['s1'] });
     expect(commitDraft).not.toHaveBeenCalled();
     expect(facade.draft()?.name).toBe('Borrador');
+  });
+
+  it('does not choose a draft arbitrarily and can reopen either recovered draft', async () => {
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [pack, secondPack] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft: vi.fn(),
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft, secondDraft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    expect(facade.draft()).toBeUndefined();
+    expect(facade.drafts()).toEqual([draft, secondDraft]);
+    await facade.openDraft(secondDraft.draftId);
+    expect(facade.draft()).toEqual(secondDraft);
+    expect(facade.selectedDraftId()).toBe(secondDraft.draftId);
+  });
+
+  it('separates New from Edit and reuses the active draft for a package', async () => {
+    const created: StickerDraftDTO = { ...draft, draftId: 'd3', basePackId: undefined, name: '' };
+    const editDraft: StickerDraftDTO = { ...draft, basePackId: 'p1' };
+    let createCount = 0;
+    const createDraftMock = vi.fn(async (input: Parameters<StickerPackPort['createDraft']>[0]) => ({ ok: true as const, version: 1 as const, requestId: input.requestId, value: { ...created, draftId: `new${++createCount}`, accountId: input.accountId } }));
+    const createDraft: StickerPackPort['createDraft'] = createDraftMock;
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [pack] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft: vi.fn(), createDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [editDraft] } })),
+      getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.openPack(pack.packId);
+    expect(createDraft).not.toHaveBeenCalled();
+    await Promise.all([facade.createDraft(), facade.createDraft()]);
+    expect(createDraft).toHaveBeenCalledOnce();
+    expect(createDraftMock.mock.calls[0][0].basePackId).toBeUndefined();
+    expect(facade.selectedPackId()).toBeUndefined();
+  });
+
+  it('persists before changing package and does not navigate after a storage failure', async () => {
+    const calls: string[] = [];
+    const updateDraft: StickerPackPort['updateDraft'] = vi.fn(async (input) => {
+      calls.push(`update:${input.revision}`);
+      return { ok: true as const, version: 1 as const, requestId: input.requestId, value: { ...draft, name: input.name, revision: input.revision + 1 } };
+    });
+    const createDraft: StickerPackPort['createDraft'] = vi.fn(async (input) => {
+      calls.push('create');
+      return { ok: true as const, version: 1 as const, requestId: input.requestId, value: { ...secondDraft, draftId: 'd3', basePackId: input.basePackId } };
+    });
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [pack, secondPack] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft, createDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft] } })),
+      getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.openDraft(draft.draftId);
+    await facade.openPack(secondPack.packId, { name: 'Editado', description: '', stickerIds: ['s1'] });
+    expect(calls).toEqual(['update:1', 'create']);
+    expect(facade.draft()?.basePackId).toBe(secondPack.packId);
+
+    (updateDraft as ReturnType<typeof vi.fn>).mockImplementationOnce(async (input) => ({ ok: false as const, version: 1 as const, requestId: input.requestId, error: { code: 'STORAGE_FAILED' as const, retryable: true, requestId: input.requestId, message: 'fail' } }));
+    await facade.openPack('p3', { name: 'No navega', description: '', stickerIds: ['s1'] });
+    expect(createDraft).toHaveBeenCalledTimes(1);
+    expect(facade.draft()?.basePackId).toBe(secondPack.packId);
+    expect(facade.error()).toContain('No se pudo guardar');
+  });
+
+  it('ignores a pending navigation after the account changes', async () => {
+    let resolveCreate!: (value: Result<StickerDraftDTO>) => void;
+    const createDraft: StickerPackPort['createDraft'] = vi.fn(() => new Promise<Result<StickerDraftDTO>>((resolve) => { resolveCreate = resolve; }));
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft: vi.fn(), createDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [] } })),
+      getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    const pending = facade.openPack('p2');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await facade.load('bob');
+    resolveCreate({ ok: true, version: 1, requestId: 'late', value: { ...draft, draftId: 'late', accountId: 'alice', basePackId: 'p2' } });
+    expect(await pending).toBe(false);
+    expect(facade.draft()).toBeUndefined();
   });
 });

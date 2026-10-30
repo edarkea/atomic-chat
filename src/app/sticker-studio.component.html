@@ -14,13 +14,22 @@
         @if (!packs.packs().length) { <p class="muted">Aún no hay paquetes.</p> }
         @for (pack of packs.packs(); track pack.packId) {
           <div class="pack-row" [class.pack-row--selected]="packs.selectedPackId() === pack.packId">
-            <button type="button" class="pack-select" [disabled]="isBusy()" [attr.aria-label]="'Editar ' + pack.name" (click)="void selectPack(pack.packId)">
+            <button type="button" class="pack-select" [disabled]="isBusy()" [attr.aria-label]="'Editar ' + pack.name" (click)="void editPack(pack.packId)">
               <strong>{{ pack.name }}</strong><small>{{ pack.stickerIds.length }} stickers</small>
             </button>
             <button type="button" class="icon-button icon-button--small" [disabled]="isBusy()" [attr.aria-label]="'Eliminar ' + pack.name" title="Eliminar paquete" (click)="void deletePack(pack.packId)">×</button>
           </div>
         }
-        @if (packs.drafts().length) { <p class="draft-note" role="status">Borrador recuperado.</p> }
+        @if (packs.drafts().length) {
+          <section class="draft-list" aria-labelledby="draft-list-title">
+            <h3 id="draft-list-title">Borradores</h3>
+            @for (draft of packs.drafts(); track draft.draftId) {
+              <button type="button" class="draft-row" [disabled]="isBusy()" [class.draft-row--selected]="packs.selectedDraftId() === draft.draftId" (click)="void openDraft(draft.draftId)" [attr.aria-label]="'Abrir borrador ' + (draft.name || 'sin nombre')">
+                <strong>{{ draft.name || 'Sin nombre' }}</strong><small>{{ draftBaseName(draft) }} · revisión {{ draft.revision }}</small>
+              </button>
+            }
+          </section>
+        }
       </aside>
       <main class="studio-editor">
         @if (packs.draft(); as draft) {

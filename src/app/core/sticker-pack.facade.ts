@@ -26,8 +26,10 @@ export class StickerPackFacade {
   readonly state = signal<'idle' | 'loading' | 'ready' | 'saving' | 'error'>('idle');
   readonly error = signal<string | null>(null);
   readonly selectedPackId = signal<string | undefined>(undefined);
+  readonly selectedDraftId = signal<string | undefined>(undefined);
   readonly selectedPack = computed(() => this.packs().find((pack) => pack.packId === this.selectedPackId()));
   private readonly draftQueues = new Map<string, Promise<unknown>>();
+  private navigationQueue: Promise<unknown> = Promise.resolve();
 
   selectPack(packId: string | undefined): void { this.selectedPackId.set(packId); }
 
@@ -40,6 +42,7 @@ export class StickerPackFacade {
     this.packs.set([]);
     this.drafts.set([]);
     this.draft.set(undefined);
+    this.selectedDraftId.set(undefined);
     if (switched) this.selectedPackId.set(undefined);
     if (!normalized) { this.state.set('idle'); return; }
     if (!this.port) { this.state.set('error'); this.error.set('El Sticker Studio no está disponible.'); return; }
@@ -61,23 +64,45 @@ export class StickerPackFacade {
     this.state.set('ready');
   }
 
-  async createDraft(basePackId?: string): Promise<void> {
+  async createDraft(snapshot?: StickerDraftSnapshot): Promise<boolean> {
     const accountId = this.account();
-    if (!accountId || !this.port) return;
-    const current = this.generation();
-    this.state.set('saving');
-    let result: Result<StickerDraftDTO>;
-    try {
-      result = await this.port.createDraft({ version: 1, requestId: createOpaqueId('sticker-draft-create'), accountId, ...(basePackId ? { basePackId } : {}) });
-    } catch {
-      if (this.isCurrent(accountId, current)) this.fail('STORAGE_FAILED');
-      return;
-    }
-    if (!this.isCurrent(accountId, current)) return;
-    if (!result.ok) { this.fail(result.error.code); return; }
-    this.draft.set(result.value);
-    this.state.set('ready');
-    this.error.set(null);
+    const originGeneration = this.generation();
+    const originDraftId = this.draft()?.draftId;
+    if (!accountId || !this.port) return false;
+    return this.enqueueNavigation(async () => {
+      if (!this.isCurrentAccount(accountId, originGeneration)) return false;
+      if (!await this.persistCurrentSnapshot(snapshot)) return false;
+      if (this.draft()?.draftId !== originDraftId) return false;
+      this.selectedPackId.set(undefined);
+      return this.createDraftInternal(undefined);
+    });
+  }
+
+  async openPack(packId: string, snapshot?: StickerDraftSnapshot): Promise<boolean> {
+    const accountId = this.account();
+    const originGeneration = this.generation();
+    if (!accountId || !this.port || !packId.trim()) return false;
+    const normalizedPackId = packId.trim();
+    return this.enqueueNavigation(async () => {
+      if (!this.isCurrentAccount(accountId, originGeneration)) return false;
+      if (!await this.persistCurrentSnapshot(snapshot)) return false;
+      this.selectedPackId.set(normalizedPackId);
+      const existing = this.findActiveDraftForPack(normalizedPackId);
+      if (existing) return this.openDraftInternal(existing.draftId);
+      return this.createDraftInternal(normalizedPackId);
+    });
+  }
+
+  async openDraft(draftId: string, snapshot?: StickerDraftSnapshot): Promise<boolean> {
+    const accountId = this.account();
+    const originGeneration = this.generation();
+    if (!accountId || !this.port || !draftId.trim()) return false;
+    const normalizedDraftId = draftId.trim();
+    return this.enqueueNavigation(async () => {
+      if (!this.isCurrentAccount(accountId, originGeneration)) return false;
+      if (!await this.persistCurrentSnapshot(snapshot)) return false;
+      return this.openDraftInternal(normalizedDraftId);
+    });
   }
 
   async updateDraft(name: string, description: string, stickerIds: readonly string[]): Promise<boolean> {
@@ -161,6 +186,7 @@ export class StickerPackFacade {
     this.drafts.set([]);
     this.draft.set(undefined);
     this.selectedPackId.set(undefined);
+    this.selectedDraftId.set(undefined);
     this.state.set('idle');
     this.error.set(null);
   }
@@ -169,7 +195,85 @@ export class StickerPackFacade {
   private applyDrafts(result: Result<StickerDraftListSnapshot>): void {
     if (!result.ok) return;
     this.drafts.set(result.value.drafts);
-    this.draft.set(result.value.drafts[0]);
+    this.draft.set(undefined);
+    this.selectedDraftId.set(undefined);
+  }
+  private async createDraftInternal(basePackId: string | undefined): Promise<boolean> {
+    const accountId = this.account();
+    const current = this.generation();
+    if (!accountId || !this.port) return false;
+    if (basePackId) {
+      const existing = this.findActiveDraftForPack(basePackId);
+      if (existing) return this.openDraftInternal(existing.draftId);
+    }
+    this.state.set('saving');
+    let result: Result<StickerDraftDTO>;
+    try {
+      result = await this.port.createDraft({ version: 1, requestId: createOpaqueId('sticker-draft-create'), accountId, ...(basePackId ? { basePackId } : {}) });
+    } catch {
+      if (this.isCurrent(accountId, current)) this.fail('STORAGE_FAILED');
+      return false;
+    }
+    if (!this.isCurrent(accountId, current)) return false;
+    if (!result.ok) { this.fail(result.error.code); return false; }
+    this.rememberDraft(result.value);
+    this.setCurrentDraft(result.value);
+    this.state.set('ready');
+    this.error.set(null);
+    return true;
+  }
+  private async openDraftInternal(draftId: string): Promise<boolean> {
+    const accountId = this.account();
+    const current = this.generation();
+    if (!accountId || !this.port) return false;
+    const known = this.drafts().find((item) => item.draftId === draftId);
+    if (known) {
+      this.setCurrentDraft(known);
+      this.state.set('ready');
+      this.error.set(null);
+      return true;
+    }
+    this.state.set('loading');
+    try {
+      const result = await this.port.getDraft({ version: 1, requestId: createOpaqueId('sticker-draft-get'), accountId, draftId });
+      if (!this.isCurrent(accountId, current)) return false;
+      if (!result.ok) { this.fail(result.error.code); return false; }
+      this.rememberDraft(result.value);
+      this.setCurrentDraft(result.value);
+      this.state.set('ready');
+      this.error.set(null);
+      return true;
+    } catch {
+      if (this.isCurrent(accountId, current)) this.fail('STORAGE_FAILED');
+      return false;
+    }
+  }
+  private async persistCurrentSnapshot(snapshot?: StickerDraftSnapshot): Promise<boolean> {
+    const current = this.draft();
+    if (!current || !snapshot || this.sameSnapshot(current, snapshot)) return true;
+    const result = await this.enqueueDraftMutation(current.draftId, () => this.persistDraftSnapshot(this.account(), current.draftId, snapshot));
+    return Boolean(result);
+  }
+  private rememberDraft(value: StickerDraftDTO): void {
+    const existing = this.drafts();
+    const index = existing.findIndex((item) => item.draftId === value.draftId);
+    if (index < 0) this.drafts.set([...existing, value]);
+    else this.drafts.set(existing.map((item, position) => position === index ? value : item));
+  }
+  private setCurrentDraft(value: StickerDraftDTO): void {
+    this.draft.set(value);
+    this.selectedDraftId.set(value.draftId);
+    this.selectedPackId.set(value.basePackId);
+  }
+  private findActiveDraftForPack(packId: string): StickerDraftDTO | undefined {
+    return this.drafts().find((item) => item.basePackId === packId && !['discarded', 'saved'].includes(item.status));
+  }
+  private enqueueNavigation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.navigationQueue.catch(() => undefined).then(operation);
+    this.navigationQueue = next;
+    return next.finally(() => {
+      if (this.navigationQueue === next) this.navigationQueue = Promise.resolve();
+    });
   }
   private enqueueDraftMutation<T>(draftId: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.draftQueues.get(draftId) || Promise.resolve();
@@ -209,6 +313,7 @@ export class StickerPackFacade {
   private sameSnapshot(draft: StickerDraftDTO, snapshot: StickerDraftSnapshot): boolean {
     return draft.name === snapshot.name && (draft.description || '') === snapshot.description && draft.stickerIds.length === snapshot.stickerIds.length && draft.stickerIds.every((id, index) => id === snapshot.stickerIds[index]);
   }
+  private isCurrentAccount(accountId: string, generation: number): boolean { return this.account() === accountId && this.generation() === generation && Boolean(this.port); }
   private fail(code: string): void {
     this.state.set('error');
     this.error.set(code === 'CONFLICT' ? 'El paquete cambió en otra ventana. Vuelve a cargarlo.' : code === 'UNSUPPORTED' ? 'El Sticker Studio no está disponible.' : 'No se pudo guardar el paquete local.');
