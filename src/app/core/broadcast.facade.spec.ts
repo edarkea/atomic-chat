@@ -8,7 +8,12 @@ describe('BroadcastFacade', () => {
   let facade: BroadcastFacade;
 
   beforeEach(() => {
-    send = vi.fn(async (input: { broadcastId: string; recipientJids: readonly string[] }) => ({
+    send = vi.fn(
+      async (input: {
+        broadcastId: string;
+        mode?: 'normal' | 'alert';
+        recipientJids: readonly string[];
+      }) => ({
       ok: true as const,
       version: 1 as const,
       requestId: 'request-1',
@@ -20,7 +25,8 @@ describe('BroadcastFacade', () => {
           status: 'submitted' as const,
         })),
       },
-    }));
+      }),
+    );
     TestBed.configureTestingModule({
       providers: [BroadcastFacade, { provide: BROADCAST_PORT, useValue: { send } }],
     });
@@ -43,12 +49,13 @@ describe('BroadcastFacade', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         body: { kind: 'text', text: 'hola' },
+        mode: 'normal',
         recipientJids: ['one@example.invalid', 'two@example.invalid'],
       }),
     );
   });
 
-  it('does not send alert mode through the normal transport', async () => {
+  it('propagates alert mode through the broadcast transport', async () => {
     const result = await facade.send({
       broadcastId: 'broadcast-2',
       accountId: 'operator@example.invalid',
@@ -56,9 +63,10 @@ describe('BroadcastFacade', () => {
       body: 'hola',
       recipientJids: ['one@example.invalid'],
     });
-    expect(result.recipients[0].status).toBe('failed');
-    expect(result.recipients[0].errorCode).toBe('UNSUPPORTED');
-    expect(send).not.toHaveBeenCalled();
+    expect(result.recipients[0].status).toBe('submitted');
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'alert' }),
+    );
   });
 
   it('normalizes a resource-bearing jid', () => {

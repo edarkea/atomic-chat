@@ -150,7 +150,11 @@ function createRosterMessaging(adapter) {
       await session.send(
         xml(
           'message',
-          { type: 'chat', to: input.to, id: input.clientMessageId },
+          {
+            type: input.broadcast && input.mode === 'alert' ? 'headline' : 'chat',
+            to: input.to,
+            id: input.clientMessageId,
+          },
           xml('body', {}, input.body.text),
           xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }),
           ...(input.broadcast ? [xml('broadcast', { xmlns: BROADCAST_NAMESPACE })] : []),

@@ -18,6 +18,8 @@ function registerBroadcastHandlers({
     requireText(input.requestId, 'REQUEST_ID');
     requireText(input.accountId, 'ACCOUNT');
     requireText(input.broadcastId, 'BROADCAST_ID');
+    if (input.mode !== undefined && !['normal', 'alert'].includes(input.mode))
+      throw new Error('INVALID_INPUT');
     if (
       input.body?.kind !== 'text' ||
       typeof input.body.text !== 'string' ||
@@ -72,7 +74,10 @@ function registerBroadcastHandlers({
       )
         throw new Error('NOT_CONNECTED');
       const { createBroadcastCoordinator } = require('./broadcast-coordinator.cjs');
-      const value = await createBroadcastCoordinator({ xmpp }).send(input);
+      const value = await createBroadcastCoordinator({ xmpp }).send({
+        ...input,
+        mode: input.mode || 'normal',
+      });
       return { ok: true, value, version: 1, requestId: input.requestId };
     } catch (error) {
       return resultError(error, event, input);

@@ -446,6 +446,7 @@ export interface BroadcastSendInput {
   readonly requestId: RequestId;
   readonly accountId: string;
   readonly broadcastId: RequestId;
+  readonly mode?: BroadcastMode;
   readonly recipientJids: readonly string[];
   readonly body: { readonly kind: 'text'; readonly text: string };
 }

@@ -40,6 +40,39 @@ test('adds the Atomic Chat broadcast marker without changing the chat stanza con
   assert.equal(stanza.getChild('broadcast', BROADCAST_NAMESPACE)?.name, 'broadcast');
 });
 
+test('sends alert broadcasts as headline with the existing ids and marker', async () => {
+  const sent = [];
+  const { adapter } = createAdapter(sent);
+  const messaging = createRosterMessaging(adapter);
+  await messaging.sendMessage('receiver@example.invalid', {
+    to: 'contact@example.invalid',
+    clientMessageId: 'client-alert-1',
+    broadcast: true,
+    mode: 'alert',
+    body: { kind: 'text', text: 'alerta' },
+  });
+  const stanza = sent[0];
+  assert.equal(stanza.attrs.type, 'headline');
+  assert.equal(stanza.attrs.id, 'client-alert-1');
+  assert.equal(stanza.getChildText('body'), 'alerta');
+  assert.equal(stanza.getChild('origin-id', 'urn:xmpp:sid:0')?.attrs.id, 'client-alert-1');
+  assert.equal(stanza.getChild('broadcast', BROADCAST_NAMESPACE)?.name, 'broadcast');
+});
+
+test('keeps private sends as chat even if an internal mode value is present', async () => {
+  const sent = [];
+  const { adapter } = createAdapter(sent);
+  const messaging = createRosterMessaging(adapter);
+  await messaging.sendMessage('receiver@example.invalid', {
+    to: 'contact@example.invalid',
+    clientMessageId: 'client-private-1',
+    mode: 'alert',
+    body: { kind: 'text', text: 'privado' },
+  });
+  assert.equal(sent[0].attrs.type, 'chat');
+  assert.equal(sent[0].getChild('broadcast', BROADCAST_NAMESPACE), undefined);
+});
+
 test('classifies Atomic, Spark and private stanzas without treating server headlines as broadcasts', () => {
   const sent = [];
   const { adapter, events } = createAdapter(sent);

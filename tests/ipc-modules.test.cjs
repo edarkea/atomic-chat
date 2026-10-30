@@ -233,6 +233,37 @@ test('broadcast uses the transport without persisting sender copies', async () =
   assert.equal(callsWith(harness.calls, 'saveMessage').length, 0);
 });
 
+test('validates and propagates alert mode through the authorized IPC path', async () => {
+  const harness = createHarness();
+  const sent = [];
+  harness.xmpp.sendMessage = async (_accountId, input) => {
+    sent.push(input);
+    return { body: input.body, createdAt: 'now' };
+  };
+  const result = await harness.handlers.get('broadcast.send')(event(), {
+    version: 1,
+    requestId: 'alert-request',
+    accountId: 'one@example.invalid',
+    broadcastId: 'broadcast-alert',
+    mode: 'alert',
+    recipientJids: ['two@example.invalid'],
+    body: { kind: 'text', text: 'alerta' },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(sent[0].mode, 'alert');
+  const invalid = await harness.handlers.get('broadcast.send')(event(), {
+    version: 1,
+    requestId: 'invalid-mode-request',
+    accountId: 'one@example.invalid',
+    broadcastId: 'broadcast-invalid',
+    mode: 'headline',
+    recipientJids: ['two@example.invalid'],
+    body: { kind: 'text', text: 'invalido' },
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, 'INVALID_INPUT');
+});
+
 test('private message.send keeps its existing sender persistence', async () => {
   const harness = createHarness();
   const result = await harness.handlers.get('message.send')(event(), {

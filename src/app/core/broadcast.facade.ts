@@ -13,22 +13,12 @@ export class BroadcastFacade {
 
   async send(request: BroadcastRequest): Promise<BroadcastResult> {
     const recipients = [...new Set(request.recipientJids.map(bareBroadcastJid).filter(Boolean))];
-    if (request.mode === 'alert') {
-      return {
-        broadcastId: request.broadcastId,
-        recipients: recipients.map((recipientJid) => ({
-          recipientJid,
-          clientMessageId: createOpaqueId('client-msg'),
-          status: 'failed',
-          errorCode: 'UNSUPPORTED',
-        })),
-      };
-    }
     const result = await this.port.send({
       version: 1,
       requestId: createOpaqueId('broadcast'),
       accountId: request.accountId,
       broadcastId: request.broadcastId,
+      mode: request.mode,
       recipientJids: recipients,
       body: { kind: 'text', text: request.body.trim() },
     });

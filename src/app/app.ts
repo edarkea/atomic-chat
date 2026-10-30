@@ -55,6 +55,8 @@ type ConversationSelection =
   | { kind: 'direct'; accountId: string; jid: string }
   | { kind: 'muc'; accountId: string; roomJid: string };
 
+type BroadcastAttempt = Readonly<{ mode: BroadcastMode; body: string }>;
+
 @Component({
   selector: 'app-root',
   imports: [
@@ -114,6 +116,7 @@ export class App {
   protected readonly broadcastBusy = signal(false);
   protected readonly broadcastError = signal<string | null>(null);
   protected readonly broadcastResult = signal<ReadonlyArray<BroadcastRecipientResult> | null>(null);
+  private broadcastAttempt: BroadcastAttempt | null = null;
   private broadcastRun = 0;
   protected readonly preferencesSaveState = signal<PreferencesSaveState>('idle');
   protected readonly preferencesError = signal<string | null>(null);
@@ -854,6 +857,7 @@ export class App {
     this.broadcastBusy.set(false);
     this.broadcastError.set(null);
     this.broadcastResult.set(null);
+    this.broadcastAttempt = null;
     this.broadcastOpen.set(true);
   }
 
@@ -893,9 +897,10 @@ export class App {
     this.broadcastError.set(null);
   }
 
-  protected async submitBroadcast(): Promise<void> {
+  protected async submitBroadcast(retryAttempt?: BroadcastAttempt): Promise<void> {
     if (this.broadcastBusy()) return;
-    const body = this.broadcastBody().trim();
+    const mode = retryAttempt?.mode ?? this.broadcastMode();
+    const body = (retryAttempt?.body ?? this.broadcastBody()).trim();
     const currentJids = new Set(this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid)));
     const recipientJids = [...this.broadcastSelectedJids()].filter((jid) => currentJids.has(jid));
     if (!body) {
@@ -911,6 +916,7 @@ export class App {
       return;
     }
     const run = ++this.broadcastRun;
+    this.broadcastAttempt = { mode, body };
     this.broadcastBusy.set(true);
     this.broadcastError.set(null);
     this.broadcastResult.set(null);
@@ -918,7 +924,7 @@ export class App {
       const result = await this.broadcast.send({
         broadcastId: createOpaqueId('broadcast'),
         accountId: this.chat.accountId(),
-        mode: this.broadcastMode(),
+        mode,
         body,
         recipientJids,
       });
@@ -937,10 +943,14 @@ export class App {
       ?.filter((item) => item.status === 'failed')
       .map((item) => item.recipientJid);
     if (!failed?.length) return;
+    const attempt = this.broadcastAttempt;
+    if (!attempt) return;
+    this.broadcastMode.set(attempt.mode);
+    this.broadcastBody.set(attempt.body);
     this.broadcastSelectedJids.set(new Set(failed));
     this.broadcastResult.set(null);
     this.broadcastError.set(null);
-    void this.submitBroadcast();
+    void this.submitBroadcast(attempt);
   }
 
   private cancelBroadcastForAccount(): void {

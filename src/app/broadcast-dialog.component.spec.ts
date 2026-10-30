@@ -42,4 +42,29 @@ describe('BroadcastDialogComponent', () => {
     expect(toggleContact).toHaveBeenCalledWith('two@example.invalid');
     expect(hideOffline).toHaveBeenCalledWith(true);
   });
+
+  it('allows alert selection and locks both modes while sending', async () => {
+    await TestBed.configureTestingModule({ imports: [BroadcastDialogComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(BroadcastDialogComponent);
+    fixture.componentRef.setInput('model', model);
+    const modeChange = vi.fn();
+    fixture.componentInstance.modeChange.subscribe(modeChange);
+    fixture.detectChanges();
+
+    const alert = fixture.nativeElement.querySelector(
+      'input[value="alert"]',
+    ) as HTMLInputElement;
+    alert.click();
+    expect(modeChange).toHaveBeenCalledWith('alert');
+    expect(alert.disabled).toBe(false);
+
+    fixture.componentRef.setInput('model', { ...model, mode: 'alert', busy: true });
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('input[value="normal"]') as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(
+      (fixture.nativeElement.querySelector('input[value="alert"]') as HTMLInputElement).disabled,
+    ).toBe(true);
+  });
 });

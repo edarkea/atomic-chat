@@ -47,16 +47,21 @@
             name="broadcast-mode"
             value="normal"
             [checked]="model().mode === 'normal'"
+            [disabled]="model().busy"
             (change)="modeChange.emit('normal')"
           />
           Mensaje normal
         </label>
-        <label
-          class="option-disabled"
-          title="La ruta XMPP actual solo evidencia mensajes chat individuales."
-        >
-          <input type="radio" name="broadcast-mode" value="alert" disabled />
-          Notificación de alerta <small>No disponible: contrato XMPP no evidenciado</small>
+        <label>
+          <input
+            type="radio"
+            name="broadcast-mode"
+            value="alert"
+            [checked]="model().mode === 'alert'"
+            [disabled]="model().busy"
+            (change)="modeChange.emit('alert')"
+          />
+          Notificación de alerta
         </label>
       </fieldset>
 

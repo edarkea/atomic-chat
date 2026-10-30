@@ -24,10 +24,34 @@ test('coordinator sends unique bare JIDs without invoking persistence', async ()
     ['b@example.invalid', 'c@example.invalid'],
   );
   assert.deepEqual(
+    sent.map((item) => item.input.mode),
+    ['normal', 'normal'],
+  );
+  assert.deepEqual(
     result.recipients.map((item) => item.status),
     ['submitted', 'submitted'],
   );
   assert.equal(new Set(result.recipients.map((item) => item.clientMessageId)).size, 2);
+});
+
+test('coordinator propagates alert mode to every individual XMPP send', async () => {
+  const sent = [];
+  const xmpp = {
+    sessions: new Map([['a@example.invalid', {}]]),
+    states: new Map([['a@example.invalid', { status: 'connected' }]]),
+    sendMessage: async (_accountId, input) => sent.push(input),
+  };
+  await createBroadcastCoordinator({ xmpp }).send({
+    version: 1,
+    requestId: 'request-alert',
+    accountId: 'a@example.invalid',
+    broadcastId: 'broadcast-alert',
+    mode: 'alert',
+    recipientJids: ['b@example.invalid'],
+    body: { kind: 'text', text: 'alerta' },
+  });
+  assert.equal(sent[0].mode, 'alert');
+  assert.equal(sent[0].broadcast, true);
 });
 
 test('coordinator reports uncertain transport errors without retrying automatically', async () => {
