@@ -34,6 +34,7 @@ export class SidebarComponent {
   readonly searchChange = output<string>();
   readonly useJid = output<void>();
   readonly selectContact = output<Contact>();
+  readonly broadcastToggle = output<void>();
   readonly newMessageToggle = output<void>();
   readonly preferencesToggle = output<void>();
   readonly refreshRoster = output<void>();

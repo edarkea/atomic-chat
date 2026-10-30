@@ -45,6 +45,7 @@ export class ConversationListComponent {
   readonly useJid = output<void>();
   readonly selectRoom = output<string>();
   readonly selectContact = output<Contact>();
+  readonly broadcastToggle = output<void>();
   readonly newMessageToggle = output<void>();
   readonly preferencesToggle = output<void>();
   readonly nicknameChange = output<string>();

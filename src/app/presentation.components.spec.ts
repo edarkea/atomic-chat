@@ -227,9 +227,12 @@ describe('extracted Angular presentation components', () => {
     });
     const selectRoom = vi.fn();
     const selectContact = vi.fn();
+    const broadcast = vi.fn();
     fixture.componentInstance.selectRoom.subscribe(selectRoom);
     fixture.componentInstance.selectContact.subscribe(selectContact);
+    fixture.componentInstance.broadcastToggle.subscribe(broadcast);
     fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.broadcast-toggle') as HTMLButtonElement).click();
     (fixture.nativeElement.querySelector('.muc-conversation-item') as HTMLButtonElement).click();
     (
       fixture.nativeElement.querySelector(
@@ -238,6 +241,7 @@ describe('extracted Angular presentation components', () => {
     ).click();
     expect(selectRoom).toHaveBeenCalledWith(room.jid);
     expect(selectContact).toHaveBeenCalledWith(contacts[0]);
+    expect(broadcast).toHaveBeenCalledOnce();
   });
 
   it('renders individual conversation items and emits file actions', async () => {

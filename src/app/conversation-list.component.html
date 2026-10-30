@@ -9,18 +9,31 @@
 /></label>
 <header class="conversation-heading">
   <p class="section-label">MI ÁREA DE TRABAJO</p>
-  <button
-    #newMessageTrigger
-    class="directory-toggle"
-    type="button"
-    (click)="newMessageToggle.emit()"
-    aria-label="Nuevo mensaje"
-    title="Nuevo mensaje"
-  >
-    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
-      <use href="#ac-add" />
-    </svg>
-  </button>
+  <div class="conversation-heading-actions">
+    <button
+      class="broadcast-toggle"
+      type="button"
+      (click)="broadcastToggle.emit()"
+      aria-label="Difundir mensaje"
+      title="Difundir mensaje"
+    >
+      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+        <use href="#ac-broadcast" />
+      </svg>
+    </button>
+    <button
+      #newMessageTrigger
+      class="directory-toggle"
+      type="button"
+      (click)="newMessageToggle.emit()"
+      aria-label="Nuevo mensaje"
+      title="Nuevo mensaje"
+    >
+      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+        <use href="#ac-add" />
+      </svg>
+    </button>
+  </div>
 </header>
 <nav class="conversation-list" aria-label="Conversaciones">
   @if (model().workspaceItems; as items) {

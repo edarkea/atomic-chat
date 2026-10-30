@@ -37,9 +37,17 @@
   display: flex;
   justify-content: space-between;
 }
+.conversation-heading-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-right: 4px;
+  margin-top: 10px;
+}
 .conversation-heading .section-label {
   margin-bottom: 0;
 }
+.broadcast-toggle,
 .directory-toggle {
   background: transparent;
   border: 1px solid var(--atomic-border);
@@ -48,8 +56,6 @@
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
-  margin-right: 4px;
-  margin-top: 10px;
   min-height: 28px;
   min-width: 28px;
 }
