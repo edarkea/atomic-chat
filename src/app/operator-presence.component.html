@@ -62,11 +62,21 @@
   <section id="preferences-panel" class="preferences-panel" aria-label="Preferencias">
     <strong>Preferencias</strong
     ><label
-      >Tema<select [ngModel]="theme.themeId()" disabled>
-        <option value="atomic">Wasteland Terminal</option>
-        <option value="custom">Personalizado</option>
+      >Tema<select
+        aria-label="Tema"
+        [ngModel]="theme.themeId()"
+        [disabled]="theme.saving()"
+        (ngModelChange)="selectTheme($event)"
+      >
+        @for (option of themeOptions; track option.id) {
+          <option [value]="option.id">{{ option.label }}</option>
+        }
       </select></label
-    ><button
+    >
+    @if (theme.persistenceError(); as error) {
+      <p class="preference-error" role="alert">{{ error }}</p>
+    }
+    <button
       #themeStudioTrigger
       type="button"
       class="theme-studio-trigger"

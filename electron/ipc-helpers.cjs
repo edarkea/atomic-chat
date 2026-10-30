@@ -413,14 +413,20 @@ function createIpcHelpers({
 
   function validatePreferences(changes) {
     const allowed = {
-      theme: (value) => value === 'atomic' || value === 'custom',
+      theme: (value) =>
+        value === 'atomic' || value === 'dark' || value === 'light' || value === 'custom',
       customTheme: validateThemePalette,
       notifications: (value) => typeof value === 'boolean',
       autoLogin: (value) => typeof value === 'boolean',
     };
     for (const [key, value] of Object.entries(changes || {}))
       if (!allowed[key] || !allowed[key](value)) throw new Error('INVALID_INPUT');
-    if (changes?.theme === 'custom' && !changes.customTheme) throw new Error('INVALID_INPUT');
+    if (
+      changes?.theme === 'custom' &&
+      Object.hasOwn(changes, 'customTheme') &&
+      !changes.customTheme
+    )
+      throw new Error('INVALID_INPUT');
   }
 
   return {

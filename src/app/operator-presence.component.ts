@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Preferences } from './core/domain';
-import { ThemeService } from './core/theme.service';
+import { isThemeId, THEME_OPTIONS, ThemeService } from './core/theme.service';
 import { ThemeStudioComponent } from './theme-studio.component';
 import { PresenceOption } from './sidebar.models';
 
@@ -41,6 +41,7 @@ export class OperatorPresenceComponent {
   private readonly themeStudioTrigger?: ElementRef<HTMLButtonElement>;
 
   protected readonly theme = inject(ThemeService);
+  protected readonly themeOptions = THEME_OPTIONS;
   readonly model = input.required<OperatorPresenceModel>();
   readonly presenceToggle = output<void>();
   readonly presenceClose = output<void>();
@@ -119,6 +120,10 @@ export class OperatorPresenceComponent {
   }
   protected openThemeStudio(): void {
     this.theme.openStudio();
+  }
+  protected async selectTheme(value: string): Promise<void> {
+    if (!isThemeId(value)) return;
+    await this.theme.selectTheme(value);
   }
   private focusSelectedOption(): void {
     const options =

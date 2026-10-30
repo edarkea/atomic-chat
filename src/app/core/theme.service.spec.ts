@@ -2,7 +2,13 @@ import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Preferences, Result, ThemePalette } from './domain';
 import { PREFERENCES_PORT, PreferencesPort } from './ports';
-import { ATOMIC_THEME_PALETTE, ThemeService, validateThemePalette } from './theme.service';
+import {
+  ATOMIC_THEME_PALETTE,
+  DARK_THEME_PALETTE,
+  LIGHT_THEME_PALETTE,
+  ThemeService,
+  validateThemePalette,
+} from './theme.service';
 
 const validCustomPalette: ThemePalette = {
   ...ATOMIC_THEME_PALETTE,
@@ -128,9 +134,92 @@ describe('ThemeService', () => {
     expect(stored.notifications).toBe(false);
     expect(stored.autoLogin).toBe(true);
   });
+
+  it('switches presets immediately without overwriting the saved custom palette', async () => {
+    stored = {
+      theme: 'dark',
+      customTheme: validCustomPalette,
+      notifications: true,
+      autoLogin: false,
+    };
+    const service = TestBed.inject(ThemeService);
+    await service.initialize();
+
+    expect(service.themeId()).toBe('dark');
+    expect(service.activePalette()).toEqual(DARK_THEME_PALETTE);
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
+
+    expect(await service.selectTheme('light')).toBe(true);
+    expect(service.activePalette()).toEqual(LIGHT_THEME_PALETTE);
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('light');
+    expect(preferences.update).toHaveBeenLastCalledWith({
+      accountId: '',
+      changes: { theme: 'light' },
+    });
+    expect(stored.customTheme).toEqual(validCustomPalette);
+
+    expect(await service.selectTheme('custom')).toBe(true);
+    expect(service.themeId()).toBe('custom');
+    expect(service.activePalette()).toEqual(validCustomPalette);
+    expect(stored.customTheme).toEqual(validCustomPalette);
+    expect(preferences.update).toHaveBeenLastCalledWith({
+      accountId: '',
+      changes: { theme: 'custom' },
+    });
+  });
+
+  it('uses the active preset as the studio draft and keeps it on cancel', async () => {
+    const service = TestBed.inject(ThemeService);
+    await service.initialize();
+    await service.selectTheme('dark');
+    service.openStudio();
+
+    expect(service.draftPalette()).toEqual(DARK_THEME_PALETTE);
+    service.setDraftColor('accent', '#ffffff');
+    service.cancelStudio();
+
+    expect(service.themeId()).toBe('dark');
+    expect(service.activePalette()).toEqual(DARK_THEME_PALETTE);
+    expect(preferences.update).toHaveBeenCalledWith({
+      accountId: '',
+      changes: { theme: 'dark' },
+    });
+  });
+
+  it('opens the studio instead of inventing a custom theme', async () => {
+    const service = TestBed.inject(ThemeService);
+    await service.initialize();
+
+    expect(await service.selectTheme('custom')).toBe(false);
+    expect(service.editorOpen()).toBe(true);
+    expect(service.themeId()).toBe('atomic');
+    expect(preferences.update).not.toHaveBeenCalled();
+  });
+
+  it('rolls a preset change back when persistence fails', async () => {
+    const service = TestBed.inject(ThemeService);
+    await service.initialize();
+    const failure: Result<Partial<Preferences>> = {
+      ok: false,
+      version: 1,
+      error: { code: 'STORAGE_FAILED', retryable: false, requestId: 'save', message: 'falló' },
+    };
+    preferences.update = vi.fn(async () => failure);
+
+    expect(await service.selectTheme('light')).toBe(false);
+    expect(service.themeId()).toBe('atomic');
+    expect(service.activePalette()).toEqual(ATOMIC_THEME_PALETTE);
+    expect(document.documentElement.style.getPropertyValue('color-scheme')).toBe('dark');
+    expect(service.persistenceError()).toBe('falló');
+  });
 });
 
 describe('validateThemePalette', () => {
+  it('accepts both official presets', () => {
+    expect(validateThemePalette(DARK_THEME_PALETTE)).toEqual({ valid: true });
+    expect(validateThemePalette(LIGHT_THEME_PALETTE)).toEqual({ valid: true });
+  });
+
   it('rejects CSS injection and incomplete palettes', () => {
     expect(validateThemePalette({ ...ATOMIC_THEME_PALETTE, text: 'url(https://invalid)' })).toEqual(
       { valid: false, message: expect.stringContaining('#RRGGBB') },

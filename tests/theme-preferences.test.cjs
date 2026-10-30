@@ -82,6 +82,26 @@ test('rejects arbitrary CSS keys and non-hex values', () => {
   );
 });
 
+test('accepts corporate presets and switches only the active theme id', () => {
+  const { handlers, calls, values } = setup();
+  values.set('global:app', { theme: 'custom', customTheme: palette });
+
+  handlers.get('preferences.update')(
+    { sender: { id: 1 } },
+    { accountId: 'account@example.invalid', changes: { theme: 'light' } },
+  );
+  handlers.get('preferences.update')(
+    { sender: { id: 1 } },
+    { accountId: 'account@example.invalid', changes: { theme: 'dark' } },
+  );
+
+  assert.deepEqual(calls, [
+    ['global', 'app', { theme: 'light' }],
+    ['global', 'app', { theme: 'dark' }],
+  ]);
+  assert.deepEqual(values.get('global:app').customTheme, palette);
+});
+
 test('reads global theme before account login and keeps legacy defaults', () => {
   const { handlers, values } = setup();
   values.set('global:app', { theme: 'custom', customTheme: palette, notifications: false });

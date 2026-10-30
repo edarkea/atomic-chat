@@ -129,6 +129,10 @@
   color: var(--atomic-text);
   font-size: 14px;
 }
+.preference-error {
+  color: var(--atomic-danger);
+  margin: 0;
+}
 .preferences-panel select {
   background: var(--atomic-bg);
   border: 1px solid var(--atomic-border-soft);

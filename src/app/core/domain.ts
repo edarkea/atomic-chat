@@ -418,7 +418,7 @@ export interface MessageSendInput {
   clientMessageId: ClientMessageId;
   body: { kind: 'text'; text: string };
 }
-export type ThemeId = 'atomic' | 'custom';
+export type ThemeId = 'atomic' | 'dark' | 'light' | 'custom';
 export type ThemeColorKey =
   | 'background'
   | 'surface'

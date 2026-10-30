@@ -772,7 +772,7 @@ export class App {
   }
   protected async resetPreferences(): Promise<void> {
     await this.chat.resetPreferences();
-    await this.theme.restoreOriginal();
+    this.theme.resetPreferences();
   }
   protected onUserScrollIntent(): void {
     this.conversationView?.onUserScrollIntent();

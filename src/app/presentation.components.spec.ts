@@ -593,4 +593,35 @@ describe('extracted Angular presentation components', () => {
     expect(document.activeElement).toBe(previousFocus);
     previousFocus.remove();
   });
+
+  it('renders the four theme choices in preferences', async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperatorPresenceComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(OperatorPresenceComponent);
+    fixture.componentRef.setInput('model', {
+      accountId: 'operator@example.invalid',
+      connectionLabel: 'Conectado',
+      presenceLabel: 'En línea',
+      presenceDot: 'online',
+      presenceOpen: false,
+      presenceOptions: [],
+      presenceOptionId: 'online',
+      presenceStatus: '',
+      settingsOpen: true,
+      preferences: { theme: 'atomic', notifications: true, autoLogin: false },
+    });
+    fixture.detectChanges();
+
+    const select = fixture.nativeElement.querySelector(
+      'select[aria-label="Tema"]',
+    ) as HTMLSelectElement;
+    expect(select.disabled).toBe(false);
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+      'Wasteland Terminal',
+      'Oscuro corporativo',
+      'Claro corporativo',
+      'Personalizado',
+    ]);
+  });
 });

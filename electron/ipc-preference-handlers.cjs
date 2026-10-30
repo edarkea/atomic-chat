@@ -25,7 +25,9 @@ function registerPreferenceHandlers({ ipcMain, assertSender, getRuntime, helpers
       const target = preferenceScope(key, accountId);
       Object.assign(current, persistence.getPreferences(target.scope, target.scopeId));
     }
-    validatePreferences({ ...current, ...changes });
+    const merged = { ...current, ...changes };
+    validatePreferences(merged);
+    if (merged.theme === 'custom' && !merged.customTheme) throw new Error('INVALID_INPUT');
     const grouped = new Map();
     for (const [key, value] of Object.entries(changes)) {
       const target = preferenceScope(key, accountId);
