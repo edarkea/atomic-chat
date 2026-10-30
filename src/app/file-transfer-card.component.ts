@@ -7,9 +7,27 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
-import { FileTransfer, ImagePreviewReady } from './core/domain';
-import { FileFacade } from './core/file.facade';
+import {
+  FileTransfer,
+  ImagePreviewFailureCode,
+  ImagePreviewReady,
+  ImagePreviewRequest,
+} from './core/domain';
+import { createOpaqueId } from './core/ids';
+import { PREVIEW_PORT, PreviewPort } from './core/ports';
+
+interface PreviewSession {
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly transferId: string;
+  cancelled: boolean;
+  preview?: ImagePreviewReady;
+  streamId?: string;
+  objectUrl?: string;
+  expiryTimer?: ReturnType<typeof setTimeout>;
+}
 
 @Component({
   selector: 'app-file-transfer-card',
@@ -19,12 +37,10 @@ import { FileFacade } from './core/file.facade';
 })
 export class FileTransferCardComponent {
   private readonly destroyRef = inject(DestroyRef);
-  private readonly files = inject(FileFacade);
-  private readonly run = signal(0);
-  private activePreview: ImagePreviewReady | undefined;
-  private activeStreamId: string | undefined;
-  private currentObjectUrl: string | undefined;
-  private expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly previewPort = inject<PreviewPort | null>(PREVIEW_PORT, { optional: true });
+  private currentSession: PreviewSession | undefined;
+  private destroyed = false;
+
   readonly transfer = input.required<FileTransfer>();
   readonly label = input.required<string>();
   readonly accepted = output<string>();
@@ -39,15 +55,17 @@ export class FileTransferCardComponent {
   protected readonly enlarged = signal(false);
 
   constructor() {
-    this.destroyRef.onDestroy(() => void this.releasePreview());
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      const session = this.currentSession;
+      this.currentSession = undefined;
+      this.clearView();
+      if (session) void this.cancelSession(session);
+    });
     effect(
       () => {
         const transfer = this.transfer();
-        if (transfer.direction === 'incoming' && transfer.state === 'completed') {
-          void this.loadPreview(transfer);
-        } else {
-          void this.releasePreview();
-        }
+        untracked(() => this.synchronizePreview(transfer));
       },
       { allowSignalWrites: true },
     );
@@ -58,6 +76,7 @@ export class FileTransferCardComponent {
       this.transfer().state,
     );
   }
+
   protected isTerminal(): boolean {
     return ['completed', 'failed', 'cancelled'].includes(this.transfer().state);
   }
@@ -90,49 +109,72 @@ export class FileTransferCardComponent {
     this.enlarged.set(false);
   }
 
-  private async loadPreview(transfer: FileTransfer): Promise<void> {
-    const request = this.files.previewRequest(transfer.offer.transferId);
-    if (!request) return;
+  private synchronizePreview(transfer: FileTransfer): void {
+    const eligible =
+      this.previewPort && transfer.direction === 'incoming' && transfer.state === 'completed';
+    const transferId = eligible ? transfer.offer.transferId : undefined;
+    const current = this.currentSession;
     if (
-      this.activePreview?.transferId !== transfer.offer.transferId &&
-      (this.activePreview !== undefined || this.currentObjectUrl !== undefined || this.previewState() !== 'idle')
+      current &&
+      current.accountId === transfer.offer.accountId &&
+      current.conversationId === transfer.offer.conversationId &&
+      current.transferId === transferId &&
+      !current.cancelled
     )
-      await this.releasePreview();
-    const generation = this.run() + 1;
-    this.run.set(generation);
-    if (this.previewUrl() || this.previewState() === 'loading') return;
-    this.previewState.set('loading');
-    this.previewMessage.set(null);
-    const get = await this.files.previewPortForUse().get(request);
-    if (generation !== this.run()) return;
-    if (!get.ok) {
-      this.setUnavailable(get.error.message);
       return;
+
+    const previous = this.currentSession;
+    this.currentSession = transferId
+      ? {
+          accountId: transfer.offer.accountId,
+          conversationId: transfer.offer.conversationId,
+          transferId,
+          cancelled: false,
+        }
+      : undefined;
+    this.clearView();
+    if (previous) void this.cancelSession(previous);
+    if (this.currentSession) {
+      this.previewState.set('loading');
+      void this.loadPreview(transfer, this.currentSession);
     }
-    if (get.value.state !== 'ready') {
-      this.setUnavailable(this.previewReason(get.value.reasonCode));
-      return;
-    }
-    this.activePreview = get.value;
-    const open = await this.files.previewPortForUse().open({
-      ...request,
-      requestId: `${request.requestId}-open`,
-      previewId: get.value.previewId,
-    });
-    if (!open.ok) {
-      this.setUnavailable(open.error.message);
-      await this.revokeActivePreview(request.accountId, request.transferId);
-      return;
-    }
-    this.activeStreamId = open.value.streamId;
-    const chunks: ArrayBuffer[] = [];
-    let sequence = 0;
-    let done = false;
+  }
+
+  private async loadPreview(transfer: FileTransfer, session: PreviewSession): Promise<void> {
+    const port = this.previewPort;
+    if (!port) return;
+    const request = this.createPreviewRequest(transfer);
+    let keepGrant = false;
     try {
-      while (!done && sequence < 256) {
-        const chunk = await this.files.previewPortForUse().read({
+      const get = await port.get(request);
+      if (get.ok && get.value.state === 'ready') session.preview = get.value;
+      if (session.cancelled || this.currentSession !== session) return;
+      if (!get.ok) {
+        this.setUnavailable(get.error.message, session);
+        return;
+      }
+      if (get.value.state !== 'ready') {
+        this.setUnavailable(this.previewReason(get.value.reasonCode), session);
+        return;
+      }
+
+      const open = await port.open({
+        ...request,
+        requestId: createOpaqueId('preview-open'),
+        previewId: get.value.previewId,
+      });
+      if (!open.ok) {
+        this.setUnavailable(open.error.message, session);
+        return;
+      }
+      session.streamId = open.value.streamId;
+      const chunks: ArrayBuffer[] = [];
+      let sequence = 0;
+      let done = false;
+      while (!done && !session.cancelled && sequence < 256) {
+        const chunk = await port.read({
           ...request,
-          requestId: `${request.requestId}-read-${sequence}`,
+          requestId: createOpaqueId('preview-read'),
           previewId: get.value.previewId,
           streamId: open.value.streamId,
           sequence,
@@ -142,73 +184,109 @@ export class FileTransferCardComponent {
         done = chunk.value.done;
         sequence += 1;
       }
-      if (!done || generation !== this.run()) throw new Error('La previsualización expiró.');
-      this.currentObjectUrl = URL.createObjectURL(new Blob(chunks, { type: get.value.mimeType }));
-      this.previewUrl.set(this.currentObjectUrl);
+      if (!done || session.cancelled || this.currentSession !== session)
+        throw new Error('La previsualización expiró.');
+
+      session.objectUrl = URL.createObjectURL(new Blob(chunks, { type: get.value.mimeType }));
+      this.previewUrl.set(session.objectUrl);
       this.previewState.set('ready');
-      this.expiryTimer = setTimeout(
-        () => void this.releasePreview(),
+      keepGrant = true;
+      session.expiryTimer = setTimeout(
+        () => this.expireSession(session),
         Math.max(0, Date.parse(get.value.expiresAt) - Date.now()),
       );
     } catch (error) {
-      this.setUnavailable(error instanceof Error ? error.message : 'No se pudo renderizar la imagen.');
-      await this.revokeActivePreview(request.accountId, request.transferId);
+      if (!session.cancelled && this.currentSession === session)
+        this.setUnavailable(
+          error instanceof Error ? error.message : 'No se pudo renderizar la imagen.',
+          session,
+        );
     } finally {
-      await this.closeActiveStream(request.accountId, request.transferId);
+      await this.closeSessionStream(session, request);
+      if (!keepGrant || session.cancelled) await this.revokeSession(session, request);
+      if (!keepGrant && session.objectUrl) {
+        URL.revokeObjectURL(session.objectUrl);
+        session.objectUrl = undefined;
+      }
     }
   }
 
-  private async releasePreview(): Promise<void> {
-    this.run.update((value) => value + 1);
-    this.enlarged.set(false);
-    if (this.expiryTimer) clearTimeout(this.expiryTimer);
-    this.expiryTimer = undefined;
-    const preview = this.activePreview;
-    const transferId = preview?.transferId;
-    const accountId = preview?.accountId;
-    if (this.currentObjectUrl) URL.revokeObjectURL(this.currentObjectUrl);
-    this.currentObjectUrl = undefined;
-    this.previewUrl.set(null);
-    this.previewState.set('idle');
-    this.activePreview = undefined;
-    if (accountId && transferId) await this.revokeActivePreview(accountId, transferId);
-    this.activeStreamId = undefined;
+  private async cancelSession(session: PreviewSession): Promise<void> {
+    session.cancelled = true;
+    if (session.expiryTimer) clearTimeout(session.expiryTimer);
+    session.expiryTimer = undefined;
+    const request: ImagePreviewRequest = {
+      version: 1,
+      requestId: createOpaqueId('preview-cancel'),
+      accountId: session.accountId,
+      transferId: session.transferId,
+    };
+    await this.closeSessionStream(session, request);
+    await this.revokeSession(session, request);
+    if (session.objectUrl) {
+      URL.revokeObjectURL(session.objectUrl);
+      session.objectUrl = undefined;
+    }
   }
 
-  private async closeActiveStream(accountId: string, transferId: string): Promise<void> {
-    const streamId = this.activeStreamId;
-    const preview = this.activePreview;
-    this.activeStreamId = undefined;
-    if (!streamId || !preview) return;
-    await this.files.previewPortForUse().close({
-      version: 1,
-      requestId: `preview-close-${streamId}`,
-      accountId,
-      transferId,
+  private async closeSessionStream(
+    session: PreviewSession,
+    request: ImagePreviewRequest,
+  ): Promise<void> {
+    const streamId = session.streamId;
+    const preview = session.preview;
+    session.streamId = undefined;
+    if (!this.previewPort || !streamId || !preview) return;
+    await this.previewPort.close({
+      ...request,
+      requestId: createOpaqueId('preview-close'),
       previewId: preview.previewId,
       streamId,
     });
   }
 
-  private async revokeActivePreview(accountId: string, transferId: string): Promise<void> {
-    const preview = this.activePreview;
-    if (!preview) return;
-    await this.files.previewPortForUse().revoke({
-      version: 1,
-      requestId: `preview-revoke-${preview.previewId}`,
-      accountId,
-      transferId,
+  private async revokeSession(session: PreviewSession, request: ImagePreviewRequest): Promise<void> {
+    const preview = session.preview;
+    session.preview = undefined;
+    if (!this.previewPort || !preview) return;
+    await this.previewPort.revoke({
+      ...request,
+      requestId: createOpaqueId('preview-revoke'),
       previewId: preview.previewId,
     });
-    this.activePreview = undefined;
   }
 
-  private setUnavailable(message: string): void {
-    this.previewState.set('unavailable');
-    this.previewMessage.set(message);
+  private expireSession(session: PreviewSession): void {
+    if (this.currentSession !== session) return;
+    this.currentSession = undefined;
+    this.clearView();
+    void this.cancelSession(session);
   }
 
-  private previewReason(code: string): string {
+  private clearView(): void {
+    this.enlarged.set(false);
+    this.previewUrl.set(null);
+    this.previewState.set('idle');
+    this.previewMessage.set(null);
+  }
+
+  private createPreviewRequest(transfer: FileTransfer): ImagePreviewRequest {
+    return {
+      version: 1,
+      requestId: createOpaqueId('preview-get'),
+      accountId: transfer.offer.accountId,
+      transferId: transfer.offer.transferId,
+    };
+  }
+
+  private setUnavailable(message: string, session: PreviewSession): void {
+    if (!this.destroyed && this.currentSession === session) {
+      this.previewState.set('unavailable');
+      this.previewMessage.set(message);
+    }
+  }
+
+  private previewReason(code: ImagePreviewFailureCode): string {
     if (code === 'MEDIA_TYPE_UNSUPPORTED') return 'Preview no disponible: solo PNG/JPEG estático.';
     if (code === 'MEDIA_SIZE_EXCEEDED') return 'Preview no disponible: imagen demasiado grande.';
     if (code === 'MEDIA_DIMENSIONS_INVALID') return 'Preview no disponible: dimensiones no permitidas.';
