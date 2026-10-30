@@ -11,6 +11,7 @@ import {
 } from '@angular/core';
 import {
   ChatImageRecord,
+  ChatFileHistoryRecord,
   FileTransfer,
   ImagePreviewFailureCode,
   ImagePreviewReady,
@@ -45,12 +46,15 @@ export class FileTransferCardComponent {
 
   readonly transfer = input.required<FileTransfer>();
   readonly media = input<ChatImageRecord>();
+  readonly history = input<ChatFileHistoryRecord>();
   readonly label = input.required<string>();
   readonly accepted = output<string>();
   readonly rejected = output<string>();
   readonly cancelled = output<string>();
   readonly opened = output<string>();
   readonly revealed = output<string>();
+  readonly historicalOpened = output<string>();
+  readonly historicalRevealed = output<string>();
   readonly actionBusy = input(false);
   protected readonly previewUrl = signal<string | null>(null);
   protected readonly previewState = signal<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
@@ -86,10 +90,13 @@ export class FileTransferCardComponent {
   }
 
   protected isImageTransfer(): boolean {
+    if (this.history()) return false;
     return Boolean(this.media() || this.transfer().offer.mimeType?.startsWith('image/'));
   }
 
   protected hasLocalActions(): boolean {
+    const history = this.history();
+    if (history) return history.availability === 'available';
     const actions = this.transfer().localActions;
     return (
       this.transfer().direction === 'incoming' &&
@@ -99,10 +106,14 @@ export class FileTransferCardComponent {
   }
 
   protected canOpenFile(): boolean {
+    const history = this.history();
+    if (history) return history.availability === 'available';
     return this.transfer().direction === 'incoming' && this.transfer().localActions?.open === true;
   }
 
   protected canRevealFolder(): boolean {
+    const history = this.history();
+    if (history) return history.availability === 'available';
     return (
       this.transfer().direction === 'incoming' &&
       this.transfer().localActions?.reveal === true

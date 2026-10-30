@@ -105,6 +105,10 @@ contextBridge.exposeInMainWorld(
     media: Object.freeze({
       list: (input) => invoke('media.list', input),
     }),
+    fileHistory: Object.freeze({
+      open: (input) => invoke('fileHistory.open', input),
+      reveal: (input) => invoke('fileHistory.reveal', input),
+    }),
     preferences: Object.freeze({
       get: (input) => invoke('preferences.get', input),
       update: (input) => invoke('preferences.update', input),

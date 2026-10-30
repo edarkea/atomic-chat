@@ -16,6 +16,7 @@ import {
   BroadcastMode,
   BroadcastRecipientResult,
   ChatImageRecord,
+  ChatFileHistoryRecord,
   Contact,
   FileTransfer,
   HistoryTimelineItem,
@@ -419,7 +420,28 @@ export class App {
           label: 'Imagen guardada',
           progressLabel: 'Imagen guardada',
         }));
-      return [...messages, ...files, ...historicalImages].sort(
+      const historicalFiles: ConversationTimelineItem[] = this.chat
+        .timelineItems()
+        .filter((item): item is Extract<HistoryTimelineItem, { kind: 'file' }> => item.kind === 'file')
+        .map((item) => item.file)
+        .filter(
+          (file) =>
+            file.accountId === this.chat.accountId() &&
+            this.bareJid(file.conversationId) === this.bareJid(this.selectedJid()) &&
+            !activeTransferIds.has(file.transferId),
+        )
+        .map((file) => ({
+          kind: 'file' as const,
+          id: `history:${file.fileId}`,
+          sortAt: file.createdAt,
+          transfer: this.fileHistoryAsTransfer(file),
+          history: file,
+          senderLabel: file.direction === 'outgoing' ? 'Tú' : file.senderJid,
+          outgoing: file.direction === 'outgoing',
+          label: this.fileHistoryLabel(file),
+          progressLabel: this.fileHistoryLabel(file),
+        }));
+      return [...messages, ...files, ...historicalImages, ...historicalFiles].sort(
         (left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id),
       );
     },
@@ -1219,6 +1241,32 @@ export class App {
       bytesTransferred: media.sizeBytes,
       updatedAt: media.createdAt,
     };
+  }
+  private fileHistoryAsTransfer(file: ChatFileHistoryRecord): FileTransfer {
+    return {
+      offer: {
+        transferId: file.transferId,
+        accountId: file.accountId,
+        conversationId: file.conversationId,
+        senderJid: file.senderJid,
+        name: file.originalName,
+        sizeBytes: file.sizeBytes,
+        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+        transport: 'ibb',
+        offeredAt: file.createdAt,
+      },
+      direction: file.direction,
+      state: 'completed',
+      bytesTransferred: file.sizeBytes,
+      updatedAt: file.createdAt,
+    };
+  }
+  private fileHistoryLabel(file: ChatFileHistoryRecord): string {
+    if (file.availability === 'available') return 'Archivo histórico disponible';
+    if (file.availability === 'missing') return 'El archivo fue movido o eliminado';
+    if (file.availability === 'changed') return 'El archivo original cambió';
+    if (file.availability === 'blocked') return 'Archivo histórico bloqueado';
+    return 'Disponibilidad del archivo no comprobada';
   }
   private isFileDrag(event: DragEvent): boolean {
     return event.dataTransfer?.types.includes('Files') ?? false;

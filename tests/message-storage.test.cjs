@@ -262,7 +262,7 @@ test('history paging traverses synthetic 1000 and 10000 message conversations wi
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('v3 message tables migrate through v8 and remain idempotent', () => {
+test('v3 message tables migrate through v9 and remain idempotent', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-v3-'));
   const dbPath = path.join(directory, 'data', 'atomic-chat.sqlite');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -276,7 +276,7 @@ test('v3 message tables migrate through v8 and remain idempotent', () => {
     INSERT INTO messages VALUES ('m2','two@example.invalid','c','old-two','x@example.invalid','{"kind":"text","text":"two"}','sent','2026-01-02');`);
   legacy.close();
   let store = new PersistenceStore(directory);
-  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 8);
+  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 9);
   assert.ok(
     store.database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'media_assets'")
@@ -325,7 +325,7 @@ test('v3 message tables migrate through v8 and remain idempotent', () => {
   );
   store.close();
   store = new PersistenceStore(directory);
-  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 8);
+  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 9);
   assert.ok(
     store.database
       .prepare('PRAGMA index_list(messages)')

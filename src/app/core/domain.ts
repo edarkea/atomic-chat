@@ -326,6 +326,27 @@ export interface ChatImageRecord {
   readonly createdAt: string;
   readonly availability: ChatMediaAvailability;
 }
+export type ChatFileAvailability = 'unchecked' | 'available' | 'missing' | 'changed' | 'blocked';
+export interface ChatFileHistoryRecord {
+  readonly fileId: string;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly transferId: string;
+  readonly direction: ChatMediaDirection;
+  readonly senderJid: string;
+  readonly originalName: string;
+  readonly sizeBytes: DecimalByteCount;
+  readonly mimeType?: string;
+  readonly createdAt: string;
+  readonly availability: ChatFileAvailability;
+}
+export interface FileHistoryRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly fileId: string;
+}
 export interface MediaListInput {
   readonly version: 1;
   readonly requestId: RequestId;
@@ -345,6 +366,12 @@ export type HistoryTimelineItem =
       readonly id: string;
       readonly sortAt: string;
       readonly media: ChatImageRecord;
+    }
+  | {
+      readonly kind: 'file';
+      readonly id: string;
+      readonly sortAt: string;
+      readonly file: ChatFileHistoryRecord;
     };
 export interface TimelinePageInput {
   readonly version: 1;

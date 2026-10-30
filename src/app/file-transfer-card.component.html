@@ -33,6 +33,11 @@
   @if (isTerminal() && !isImageTransfer()) {
     <p aria-live="polite">{{ label() }}</p>
   }
+  @if (history(); as historical) {
+    @if (historical.availability !== 'available') {
+      <p class="file-preview-status" role="status">{{ label() }}</p>
+    }
+  }
   @if (previewState() === 'loading') {
     <p class="file-preview-status" aria-live="polite">Preparando preview segura…</p>
   }
@@ -49,23 +54,44 @@
   }
   @if (hasLocalActions()) {
     <div class="file-actions" aria-label="Acciones del archivo">
-      @if (canOpenFile()) {
-        <button
-          type="button"
-          [disabled]="actionBusy()"
-          (click)="opened.emit(transfer().offer.transferId)"
-        >
-          Abrir archivo
-        </button>
-      }
-      @if (canRevealFolder()) {
-        <button
-          type="button"
-          [disabled]="actionBusy()"
-          (click)="revealed.emit(transfer().offer.transferId)"
-        >
-          Abrir carpeta
-        </button>
+      @if (history(); as historical) {
+        @if (canOpenFile()) {
+          <button
+            type="button"
+            [disabled]="actionBusy()"
+            (click)="historicalOpened.emit(historical.fileId)"
+          >
+            Abrir archivo
+          </button>
+        }
+        @if (canRevealFolder()) {
+          <button
+            type="button"
+            [disabled]="actionBusy()"
+            (click)="historicalRevealed.emit(historical.fileId)"
+          >
+            Abrir carpeta
+          </button>
+        }
+      } @else {
+        @if (canOpenFile()) {
+          <button
+            type="button"
+            [disabled]="actionBusy()"
+            (click)="opened.emit(transfer().offer.transferId)"
+          >
+            Abrir archivo
+          </button>
+        }
+        @if (canRevealFolder()) {
+          <button
+            type="button"
+            [disabled]="actionBusy()"
+            (click)="revealed.emit(transfer().offer.transferId)"
+          >
+            Abrir carpeta
+          </button>
+        }
       }
     </div>
   }

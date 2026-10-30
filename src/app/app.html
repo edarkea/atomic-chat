@@ -229,6 +229,8 @@
             (fileCancel)="files.cancel($event)"
             (fileOpen)="files.open($event)"
             (fileReveal)="files.reveal($event)"
+            (historicalOpened)="files.openHistory($event.fileId, $event.conversationId)"
+            (historicalRevealed)="files.revealHistory($event.fileId, $event.conversationId)"
             [fileActionPending]="fileActionPending"
             (loadOlder)="loadOlderMessages($event)"
             (loadNewer)="loadNewerMessages($event)"

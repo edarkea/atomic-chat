@@ -212,6 +212,35 @@ class PersistenceStore {
           ON media_assets(account_id, transfer_id);
       `);
       this.database.prepare('UPDATE schema_meta SET version = 8').run();
+      this.database.exec(`
+        CREATE TABLE IF NOT EXISTS file_assets (
+          file_id TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          conversation_id TEXT NOT NULL,
+          transfer_id TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
+          sender_jid TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          size_bytes TEXT NOT NULL,
+          mime_type TEXT,
+          local_path TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('completed')),
+          availability TEXT NOT NULL CHECK (availability IN ('unchecked', 'available', 'missing', 'changed', 'blocked')),
+          metadata_dev TEXT,
+          metadata_ino TEXT,
+          metadata_size TEXT NOT NULL,
+          metadata_mtime_ms TEXT NOT NULL,
+          metadata_birthtime_ms TEXT NOT NULL,
+          UNIQUE (account_id, transfer_id),
+          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_file_assets_account_conversation_created
+          ON file_assets(account_id, conversation_id, created_at, file_id);
+        CREATE INDEX IF NOT EXISTS idx_file_assets_account_transfer
+          ON file_assets(account_id, transfer_id);
+      `);
+      this.database.prepare('UPDATE schema_meta SET version = 9').run();
     });
     migrate();
   }
@@ -510,8 +539,95 @@ class PersistenceStore {
       .run(availability, accountId, mediaId);
   }
 
+  upsertFileAsset(record) {
+    if (
+      !record?.fileId ||
+      !record.accountId ||
+      !record.conversationId ||
+      !record.transferId ||
+      !record.localPath ||
+      !record.metadata
+    )
+      throw new Error('INVALID_INPUT');
+    this.database
+      .prepare(
+        `INSERT INTO file_assets(
+          file_id, account_id, conversation_id, transfer_id, direction, sender_jid,
+          original_name, size_bytes, mime_type, local_path, created_at, status,
+          availability, metadata_dev, metadata_ino, metadata_size,
+          metadata_mtime_ms, metadata_birthtime_ms
+        ) VALUES (
+          @fileId, @accountId, @conversationId, @transferId, @direction, @senderJid,
+          @originalName, @sizeBytes, @mimeType, @localPath, @createdAt, @status,
+          @availability, @metadataDev, @metadataIno, @metadataSize,
+          @metadataMtimeMs, @metadataBirthtimeMs
+        )
+        ON CONFLICT(account_id, transfer_id) DO UPDATE SET
+          file_id = excluded.file_id,
+          conversation_id = excluded.conversation_id,
+          direction = excluded.direction,
+          sender_jid = excluded.sender_jid,
+          original_name = excluded.original_name,
+          size_bytes = excluded.size_bytes,
+          mime_type = excluded.mime_type,
+          local_path = excluded.local_path,
+          created_at = excluded.created_at,
+          status = excluded.status,
+          availability = excluded.availability,
+          metadata_dev = excluded.metadata_dev,
+          metadata_ino = excluded.metadata_ino,
+          metadata_size = excluded.metadata_size,
+          metadata_mtime_ms = excluded.metadata_mtime_ms,
+          metadata_birthtime_ms = excluded.metadata_birthtime_ms`,
+      )
+      .run({
+        fileId: record.fileId,
+        accountId: record.accountId,
+        conversationId: record.conversationId,
+        transferId: record.transferId,
+        direction: record.direction,
+        senderJid: record.senderJid,
+        originalName: record.originalName,
+        sizeBytes: record.sizeBytes,
+        mimeType: record.mimeType || null,
+        localPath: record.localPath,
+        createdAt: record.createdAt,
+        status: 'completed',
+        availability: record.availability,
+        metadataDev: record.metadata.dev,
+        metadataIno: record.metadata.ino,
+        metadataSize: record.metadata.size,
+        metadataMtimeMs: record.metadata.mtimeMs,
+        metadataBirthtimeMs: record.metadata.birthtimeMs,
+      });
+    return this.getFileAsset(record.accountId, record.fileId);
+  }
+
+  getFileAsset(accountId, fileId) {
+    return this.database
+      .prepare(
+        `SELECT file_id AS fileId, account_id AS accountId, conversation_id AS conversationId,
+          transfer_id AS transferId, direction, sender_jid AS senderJid,
+          original_name AS originalName, size_bytes AS sizeBytes, mime_type AS mimeType,
+          local_path AS localPath, created_at AS createdAt, status, availability,
+          metadata_dev AS metadataDev, metadata_ino AS metadataIno,
+          metadata_size AS metadataSize, metadata_mtime_ms AS metadataMtimeMs,
+          metadata_birthtime_ms AS metadataBirthtimeMs
+         FROM file_assets WHERE account_id = ? AND file_id = ?`,
+      )
+      .get(accountId, fileId);
+  }
+
+  updateFileAssetAvailability(accountId, fileId, availability) {
+    if (!['unchecked', 'available', 'missing', 'changed', 'blocked'].includes(availability))
+      throw new Error('INVALID_INPUT');
+    this.database
+      .prepare('UPDATE file_assets SET availability = ? WHERE account_id = ? AND file_id = ?')
+      .run(availability, accountId, fileId);
+  }
+
   listTimelinePage(accountId, conversationId, limit, direction, cursor) {
-    const values = [accountId, conversationId, accountId, conversationId];
+    const values = [accountId, conversationId, accountId, conversationId, accountId, conversationId];
     let predicate = '';
     let order = 'ORDER BY sort_at DESC, id DESC';
     if (cursor) {
@@ -538,6 +654,11 @@ class PersistenceStore {
             conversation_id, NULL, sender_jid, NULL, NULL, NULL, transfer_id, media_id,
             direction, original_name, mime_type, size_bytes, width, height, availability
           FROM media_assets WHERE account_id = ? AND conversation_id = ?
+          UNION ALL
+          SELECT file_id AS id, created_at AS sort_at, 'file' AS kind, account_id,
+            conversation_id, NULL, sender_jid, NULL, NULL, NULL, transfer_id, NULL,
+            direction, original_name, mime_type, size_bytes, NULL, NULL, availability
+          FROM file_assets WHERE account_id = ? AND conversation_id = ?
         ) AS timeline WHERE 1 = 1${predicate} ${order} LIMIT ?`,
       )
       .all(...values, limit + 1);
@@ -558,6 +679,25 @@ class PersistenceStore {
             status: row.status,
             createdAt: row.sort_at,
             classification: row.classification,
+          },
+        };
+      if (row.kind === 'file')
+        return {
+          kind: 'file',
+          id: row.id,
+          sortAt: row.sort_at,
+          file: {
+            fileId: row.id,
+            accountId: row.account_id,
+            conversationId: row.conversation_id,
+            transferId: row.transfer_id,
+            direction: row.direction,
+            senderJid: row.sender_jid,
+            originalName: row.original_name,
+            sizeBytes: row.size_bytes,
+            ...(row.mime_type ? { mimeType: row.mime_type } : {}),
+            createdAt: row.sort_at,
+            availability: row.availability,
           },
         };
       return {
@@ -593,6 +733,8 @@ class PersistenceStore {
         SELECT account_id, conversation_id, created_at AS last_activity FROM messages
         UNION ALL
         SELECT account_id, conversation_id, created_at AS last_activity FROM media_assets
+        UNION ALL
+        SELECT account_id, conversation_id, created_at AS last_activity FROM file_assets
       ) WHERE account_id = ?
       GROUP BY account_id, conversation_id ORDER BY lastActivity DESC`,
       )

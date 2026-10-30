@@ -63,7 +63,7 @@ function registerHistoryHandlers({ ipcMain, assertSender, getRuntime, historySec
       return historyError(error, event, input);
     }
   });
-  ipcMain.handle('timeline.page', (event, input) => {
+  ipcMain.handle('timeline.page', async (event, input) => {
     assertSender(event);
     try {
       authorizeHistoryInput(event, input);
@@ -88,8 +88,12 @@ function registerHistoryHandlers({ ipcMain, assertSender, getRuntime, historySec
         input.direction,
         position,
       );
-      const first = result.items[0];
-      const last = result.items[result.items.length - 1];
+      const runtime = getRuntime();
+      const items = runtime.fileHistory
+        ? await runtime.fileHistory.refreshTimeline(result.items)
+        : result.items;
+      const first = items[0];
+      const last = items[items.length - 1];
       const nextCursor =
         first && last
           ? historySecurity.encodeCursor({
@@ -101,7 +105,7 @@ function registerHistoryHandlers({ ipcMain, assertSender, getRuntime, historySec
           : null;
       return {
         ok: true,
-        value: { ...result, nextCursor },
+        value: { ...result, items, nextCursor },
         version: 1,
         requestId: input.requestId,
       };

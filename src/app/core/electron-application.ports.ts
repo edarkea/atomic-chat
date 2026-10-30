@@ -11,6 +11,7 @@ import {
   FileDroppedSendInput,
   FileTransfer,
   ChatImageRecord,
+  FileHistoryRequest,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
@@ -41,6 +42,7 @@ import {
   FileTransferPort,
   HistoryPort,
   MediaPort,
+  FileHistoryPort,
   PreferencesPort,
   PreviewPort,
 } from './ports';
@@ -144,6 +146,19 @@ export class ElectronMediaPort implements MediaPort {
   list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>> {
     const api = getAtomicChatApi();
     return api ? api.media.list(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronFileHistoryPort implements FileHistoryPort {
+  open(input: FileHistoryRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.fileHistory.open(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  reveal(input: FileHistoryRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.fileHistory.reveal(input) : Promise.resolve(unavailable(input.requestId));
   }
 }
 

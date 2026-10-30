@@ -58,7 +58,10 @@
           (cancelled)="fileCancel.emit($event)"
           (opened)="fileOpen.emit($event)"
           (revealed)="fileReveal.emit($event)"
-          [actionBusy]="fileActionPending()(item.transfer.offer.transferId)"
+          (historicalOpened)="historicalOpened.emit({ fileId: $event, conversationId: item.history?.conversationId || item.transfer.offer.conversationId })"
+          (historicalRevealed)="historicalRevealed.emit({ fileId: $event, conversationId: item.history?.conversationId || item.transfer.offer.conversationId })"
+          [history]="item.history"
+          [actionBusy]="fileActionPending()(item.history?.fileId || item.transfer.offer.transferId)"
         />
       }
     }

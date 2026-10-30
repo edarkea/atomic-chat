@@ -1,7 +1,12 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
-import { ChatImageRecord, FileTransfer, TypedDomainEvent } from './domain';
-import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
+import { ChatImageRecord, FileHistoryRequest, FileTransfer, TypedDomainEvent } from './domain';
+import {
+  FILE_HISTORY_PORT,
+  FILE_TRANSFER_PORT,
+  FileHistoryPort,
+  FileTransferPort,
+} from './ports';
 
 const MAX_DROPPED_FILES = 8;
 
@@ -9,6 +14,7 @@ const MAX_DROPPED_FILES = 8;
 export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
+  private readonly historyPort = inject<FileHistoryPort>(FILE_HISTORY_PORT);
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
   private readonly liveMediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
@@ -68,6 +74,14 @@ export class FileFacade {
 
   async reveal(transferId: string): Promise<void> {
     await this.localAction('reveal', transferId);
+  }
+
+  async openHistory(fileId: string, conversationId: string): Promise<void> {
+    await this.historyAction('open', fileId, conversationId);
+  }
+
+  async revealHistory(fileId: string, conversationId: string): Promise<void> {
+    await this.historyAction('reveal', fileId, conversationId);
   }
 
   isLocalActionPending(transferId: string): boolean {
@@ -226,6 +240,35 @@ export class FileFacade {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);
         next.delete(transferId);
+        return next;
+      });
+    }
+  }
+
+  private async historyAction(
+    action: 'open' | 'reveal',
+    fileId: string,
+    conversationId: string,
+  ): Promise<void> {
+    if (!this.account || !fileId || !conversationId || this.pendingLocalActions().has(fileId)) return;
+    const accountId = this.account;
+    const input: FileHistoryRequest = {
+      version: 1,
+      requestId: createOpaqueId(`file-history-${action}`),
+      accountId,
+      conversationId,
+      fileId,
+    };
+    this.pendingLocalActions.update((pending) => new Set(pending).add(fileId));
+    try {
+      const result = await this.historyPort[action](input);
+      if (this.account !== accountId) return;
+      if (result.ok) this.error.set(null);
+      else this.error.set(result.error.message);
+    } finally {
+      this.pendingLocalActions.update((pending) => {
+        const next = new Set(pending);
+        next.delete(fileId);
         return next;
       });
     }

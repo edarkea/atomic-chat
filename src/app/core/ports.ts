@@ -15,6 +15,7 @@ import {
   FileDroppedSendInput,
   FileTransfer,
   ChatImageRecord,
+  FileHistoryRequest,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
@@ -109,6 +110,11 @@ export interface MediaPort {
   list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>>;
 }
 
+export interface FileHistoryPort {
+  open(input: FileHistoryRequest): Promise<Result<void>>;
+  reveal(input: FileHistoryRequest): Promise<Result<void>>;
+}
+
 export interface PreferencesPort {
   get(input: { accountId: string }): Promise<Result<Preferences>>;
   update(input: {
@@ -165,3 +171,4 @@ export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
 );
 export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewPort');
 export const MEDIA_PORT = new InjectionToken<MediaPort>('AtomicChat MediaPort');
+export const FILE_HISTORY_PORT = new InjectionToken<FileHistoryPort>('AtomicChat FileHistoryPort');

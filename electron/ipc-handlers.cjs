@@ -8,6 +8,7 @@ const { registerConnectionProfileHandlers } = require('./ipc-connection-profile-
 const { registerAttentionHandlers } = require('./ipc-attention-handlers.cjs');
 const { registerBroadcastHandlers } = require('./ipc-broadcast-handlers.cjs');
 const { registerPreviewHandlers } = require('./ipc-preview-handlers.cjs');
+const { registerFileHistoryHandlers } = require('./ipc-file-history-handlers.cjs');
 
 function registerIpcHandlers(options) {
   const helpers = createIpcHelpers(options);
@@ -17,6 +18,7 @@ function registerIpcHandlers(options) {
   registerMucHandlers(dependencies);
   registerFileHandlers(dependencies);
   registerPreviewHandlers(dependencies);
+  registerFileHistoryHandlers(dependencies);
   registerHistoryHandlers(dependencies);
   registerPreferenceHandlers(dependencies);
   registerConnectionProfileHandlers(dependencies);

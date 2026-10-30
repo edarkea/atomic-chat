@@ -6,6 +6,7 @@ import {
   ElectronBroadcastPort,
   ElectronCertificatePort,
   ElectronFileTransferPort,
+  ElectronFileHistoryPort,
   ElectronHistoryPort,
   ElectronMediaPort,
   ElectronPreferencesPort,
@@ -19,6 +20,7 @@ import {
   BROADCAST_PORT,
   CERTIFICATE_PORT,
   FILE_TRANSFER_PORT,
+  FILE_HISTORY_PORT,
   PREVIEW_PORT,
   MEDIA_PORT,
   HISTORY_PORT,
@@ -31,6 +33,7 @@ import {
   UnavailableBroadcastPort,
   UnavailableCertificatePort,
   UnavailableFileTransferPort,
+  UnavailableFileHistoryPort,
   UnavailableHistoryPort,
   UnavailableMediaPort,
   UnavailableMucPort,
@@ -48,11 +51,13 @@ export const corePortProviders: Provider[] = [
   ElectronPreferencesPort,
   ElectronCertificatePort,
   ElectronFileTransferPort,
+  ElectronFileHistoryPort,
   UnavailableAccountPort,
   UnavailableHistoryPort,
   UnavailablePreferencesPort,
   UnavailableCertificatePort,
   UnavailableFileTransferPort,
+  UnavailableFileHistoryPort,
   UnavailableMucPort,
   {
     provide: XMPP_PORT,
@@ -101,6 +106,14 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronFileTransferPort, unavailable: UnavailableFileTransferPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronFileTransferPort, UnavailableFileTransferPort],
+  },
+  {
+    provide: FILE_HISTORY_PORT,
+    useFactory: (
+      electron: ElectronFileHistoryPort,
+      unavailable: UnavailableFileHistoryPort,
+    ) => (hasAtomicChatApi() ? electron : unavailable),
+    deps: [ElectronFileHistoryPort, UnavailableFileHistoryPort],
   },
   {
     provide: PREVIEW_PORT,

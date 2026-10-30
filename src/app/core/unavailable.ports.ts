@@ -9,6 +9,7 @@ import {
   FileDroppedSendInput,
   FileTransfer,
   ChatImageRecord,
+  FileHistoryRequest,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
@@ -43,6 +44,7 @@ import {
   FileTransferPort,
   HistoryPort,
   MediaPort,
+  FileHistoryPort,
   MucPort,
   PreferencesPort,
   PreviewPort,
@@ -123,6 +125,17 @@ export class UnavailableHistoryPort implements HistoryPort {
 export class UnavailableMediaPort implements MediaPort {
   list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>> {
     return Promise.resolve({ ok: true, version: 1, requestId: input.requestId, value: [] });
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableFileHistoryPort implements FileHistoryPort {
+  open(input: FileHistoryRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+
+  reveal(input: FileHistoryRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
   }
 }
 

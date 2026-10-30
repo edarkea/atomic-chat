@@ -33,6 +33,7 @@ const { createMessageNotifications } = require('./message-notifications.cjs');
 const { createIncomingMessageProcessor } = require('./incoming-message-persistence.cjs');
 const { PreviewGrantRegistry } = require('./preview-grants.cjs');
 const { MediaStore } = require('./media-store.cjs');
+const { FileHistoryStore } = require('./file-history.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
   DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -94,6 +95,8 @@ const autoAcceptFileTransfers = () => {
     return false;
   }
 };
+const isStaticImageCandidate = (record) =>
+  record?.offer?.mimeType === 'image/png' || record?.offer?.mimeType === 'image/jpeg';
 const fileTransfers = new FileTransferCoordinator({
   selectDestination: selectFileDestination,
   getDefaultDirectory: currentDownloadDirectory,
@@ -102,7 +105,10 @@ const fileTransfers = new FileTransferCoordinator({
   onCompleted: async (record, direction) => {
     const localActions =
       direction === 'incoming' ? await localFileActions.register(record, direction) : false;
-    await runtime?.media.persistTransfer(record, direction);
+    const media = isStaticImageCandidate(record)
+      ? await runtime?.media.persistTransfer(record, direction)
+      : null;
+    if (!media) await runtime?.fileHistory.persistTransfer(record, direction);
     return localActions;
   },
   getTimeoutSeconds: currentTransferTimeout,
@@ -110,7 +116,10 @@ const fileTransfers = new FileTransferCoordinator({
 const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   resourceLimiter: fileResourceLimiter,
   onCompleted: async (record, direction) => {
-    await runtime?.media.persistTransfer(record, direction);
+    const media = isStaticImageCandidate(record)
+      ? await runtime?.media.persistTransfer(record, direction)
+      : null;
+    if (!media) await runtime?.fileHistory.persistTransfer(record, direction);
     return false;
   },
   getTimeoutSeconds: currentTransferTimeout,
@@ -191,9 +200,11 @@ function initializeRuntime() {
     SecretStore,
     XmppAdapter,
     MediaStore,
+    FileHistoryStore,
     nativeImage,
     fileTransfers,
     outgoingFileTransfers,
+    shell,
   });
   attachEventSources();
   createWindow();

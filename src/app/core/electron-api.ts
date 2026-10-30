@@ -14,6 +14,7 @@ import {
   FileDroppedSendInput,
   FileTransfer,
   ChatImageRecord,
+  FileHistoryRequest,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
@@ -136,6 +137,10 @@ export interface AtomicChatApi {
   };
   media: {
     list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>>;
+  };
+  fileHistory: {
+    open(input: FileHistoryRequest): Promise<Result<void>>;
+    reveal(input: FileHistoryRequest): Promise<Result<void>>;
   };
   preferences: {
     get(input: { accountId: string }): Promise<Result<Preferences>>;

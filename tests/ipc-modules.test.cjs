@@ -14,6 +14,8 @@ const {
 const { createEventRouter } = require('../electron/event-router.cjs');
 const { registerAttentionHandlers } = require('../electron/ipc-attention-handlers.cjs');
 const { registerBroadcastHandlers } = require('../electron/ipc-broadcast-handlers.cjs');
+const { registerFileHistoryHandlers } = require('../electron/ipc-file-history-handlers.cjs');
+const { registerPreviewHandlers } = require('../electron/ipc-preview-handlers.cjs');
 
 const channels = [
   'contract.version',
@@ -39,9 +41,18 @@ const channels = [
   'file.open',
   'file.reveal',
   'file.listActive',
+  'preview.get',
+  'preview.open',
+  'preview.read',
+  'preview.close',
+  'preview.revoke',
+  'fileHistory.open',
+  'fileHistory.reveal',
   'messages.list',
   'messages.page',
+  'timeline.page',
   'conversations.list',
+  'media.list',
   'preferences.get',
   'preferences.update',
   'preferences.selectDownloadDirectory',
@@ -130,6 +141,12 @@ function createHarness() {
       calls.push(['reveal', senderId, input.transferId]);
     },
   };
+  const fileHistory = {
+    open: async (accountId, conversationId, fileId) =>
+      calls.push(['history-open', accountId, conversationId, fileId]),
+    reveal: async (accountId, conversationId, fileId) =>
+      calls.push(['history-reveal', accountId, conversationId, fileId]),
+  };
 
   const options = {
     ipcMain: {
@@ -143,7 +160,7 @@ function createHarness() {
     },
     validateXmppTransport: () => ({ transport: 'starttls' }),
     appIsPackaged: false,
-    getRuntime: () => ({ persistence, secrets, xmpp }),
+    getRuntime: () => ({ persistence, secrets, xmpp, fileHistory }),
     fileTransfers: incoming,
     outgoingFileTransfers: outgoing,
     localFileActions,
@@ -198,10 +215,12 @@ test('each domain registrar owns only its assigned channels', () => {
     [registerBroadcastHandlers, ['broadcast.send']],
     [registerMucHandlers, channels.slice(11, 15)],
     [registerFileHandlers, channels.slice(15, 23)],
-    [registerHistoryHandlers, channels.slice(23, 26)],
-    [registerPreferenceHandlers, channels.slice(26, 30)],
-    [registerConnectionProfileHandlers, channels.slice(30, 34)],
-    [registerAttentionHandlers, channels.slice(34, 36)],
+    [registerPreviewHandlers, channels.slice(23, 28)],
+    [registerFileHistoryHandlers, channels.slice(28, 30)],
+    [registerHistoryHandlers, channels.slice(30, 35)],
+    [registerPreferenceHandlers, channels.slice(35, 39)],
+    [registerConnectionProfileHandlers, channels.slice(39, 43)],
+    [registerAttentionHandlers, channels.slice(43, 45)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();
@@ -436,6 +455,29 @@ test('local file actions keep account and renderer authorization without XMPP co
     ['open', 7, 'transfer-1'],
     ['reveal', 7, 'transfer-1'],
   ]);
+});
+
+test('historical file actions use opaque ids and preserve account/window authorization', async () => {
+  const harness = createHarness();
+  const input = {
+    version: 1,
+    requestId: 'history-file-1',
+    accountId: 'one@example.invalid',
+    conversationId: 'contact@example.invalid',
+    fileId: 'file_opaque',
+  };
+  const opened = await harness.handlers.get('fileHistory.open')(event(7), input);
+  const revealed = await harness.handlers.get('fileHistory.reveal')(event(7), input);
+  assert.equal(opened.ok, true);
+  assert.equal(revealed.ok, true);
+  assert.deepEqual(harness.calls.slice(-2), [
+    ['history-open', input.accountId, input.conversationId, input.fileId],
+    ['history-reveal', input.accountId, input.conversationId, input.fileId],
+  ]);
+  harness.setAuthorized(false);
+  const denied = await harness.handlers.get('fileHistory.open')(event(7), input);
+  assert.equal(denied.ok, false);
+  assert.equal(denied.error.code, 'UNAUTHORIZED');
 });
 
 test('preserves safe MUC diagnostics at the IPC boundary', async () => {

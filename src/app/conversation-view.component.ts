@@ -11,7 +11,13 @@ import {
   signal,
   ViewChild,
 } from '@angular/core';
-import { ChatImageRecord, Contact, FileTransfer, Message } from './core/domain';
+import {
+  ChatFileHistoryRecord,
+  ChatImageRecord,
+  Contact,
+  FileTransfer,
+  Message,
+} from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
@@ -31,6 +37,7 @@ export type ConversationTimelineItem =
       readonly sortAt: string;
       readonly transfer: FileTransfer;
       readonly media?: ChatImageRecord;
+      readonly history?: ChatFileHistoryRecord;
       readonly senderLabel: string;
       readonly outgoing: boolean;
       readonly label: string;
@@ -75,6 +82,8 @@ export class ConversationViewComponent {
   readonly fileCancel = output<string>();
   readonly fileOpen = output<string>();
   readonly fileReveal = output<string>();
+  readonly historicalOpened = output<{ fileId: string; conversationId: string }>();
+  readonly historicalRevealed = output<{ fileId: string; conversationId: string }>();
   readonly fileActionPending = input<(transferId: string) => boolean>(() => false);
   readonly loadOlder = output<OlderMessagesRequest>();
   readonly loadNewer = output<string>();
