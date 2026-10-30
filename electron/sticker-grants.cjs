@@ -76,7 +76,7 @@ class StickerGrantRegistry {
       const stats = await handle.stat();
       if (!stats.isFile() || Number(stats.size) !== grant.sizeBytes || (process.platform !== 'win32' && !sameIdentity(grant.identity, fileIdentity(stats))))
         throw grantError('STORAGE_FAILED', 'el asset cambió');
-      if (!(await this.matchesHash(handle, grant.hashValue))) throw grantError('STORAGE_FAILED', 'la integridad del asset no coincide');
+      if (!(await this.matchesHash(handle, grant.hashValue, grant.sizeBytes))) throw grantError('STORAGE_FAILED', 'la integridad del asset no coincide');
       await this.assertActive(grant);
       const streamId = crypto.randomUUID();
       grant.streams.set(streamId, { handle, offset: 0, sequence: 0, done: false, reading: undefined, closed: false, hash: crypto.createHash('sha256') });
@@ -194,19 +194,20 @@ class StickerGrantRegistry {
     if (grant.streams.get(streamId) !== stream || stream.closed) throw grantError('CONFLICT', 'el stream ya no está abierto');
   }
 
-  async matchesHash(handle, expectedHash) {
-    if (typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(expectedHash)) return false;
+  async matchesHash(handle, expectedHash, expectedSize) {
+    if (typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(expectedHash) || !Number.isInteger(expectedSize) || expectedSize < 0 || expectedSize > 2 * 1024 * 1024) return false;
     const digest = crypto.createHash('sha256');
     const buffer = Buffer.alloc(CHUNK_SIZE);
     let offset = 0;
-    while (offset < 2 * 1024 * 1024) {
-      const result = await handle.read(buffer, 0, buffer.length, offset);
-      if (!result.bytesRead) break;
+    while (offset < expectedSize) {
+      const requested = Math.min(buffer.length, expectedSize - offset);
+      const result = await handle.read(buffer, 0, requested, offset);
+      if (!Number.isInteger(result.bytesRead) || result.bytesRead <= 0 || result.bytesRead > requested) return false;
       digest.update(buffer.subarray(0, result.bytesRead));
       offset += result.bytesRead;
-      if (result.bytesRead < buffer.length) break;
     }
-    return digest.digest('hex') === expectedHash;
+    const stats = await handle.stat();
+    return Number(stats.size) === expectedSize && digest.digest('hex') === expectedHash;
   }
 
   assertEpochs(senderId, accountId, senderEpoch, accountEpoch) {

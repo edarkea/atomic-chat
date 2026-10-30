@@ -60,3 +60,27 @@ test('E8.2-GRANT-004 rejects a grant when account authorization is revoked durin
   resolveLstat({ isSymbolicLink: () => false, isFile: () => true, size: 1, dev: 1, ino: 1, mtimeMs: 1, birthtimeMs: 1 });
   await assert.rejects(() => request, { code: 'UNAUTHORIZED' });
 });
+
+test('E8.2-GRANT-005 accepts partial reads and rejects premature EOF', async () => {
+  const content = Buffer.from('sticker-content');
+  const hashValue = crypto.createHash('sha256').update(content).digest('hex');
+  const partialReader = {
+    async read(buffer, offset, length, position) {
+      const bytesRead = Math.min(3, length, content.length - position);
+      content.copy(buffer, offset, position, position + bytesRead);
+      return { bytesRead };
+    },
+    async stat() { return { size: content.length }; },
+  };
+  const registry = new StickerGrantRegistry();
+  assert.equal(await registry.matchesHash(partialReader, hashValue, content.length), true);
+  const prematureReader = {
+    async read(buffer, offset, length, position) {
+      if (position >= 3) return { bytesRead: 0 };
+      content.copy(buffer, offset, 0, 3);
+      return { bytesRead: 3 };
+    },
+    async stat() { return { size: 3 }; },
+  };
+  assert.equal(await registry.matchesHash(prematureReader, hashValue, content.length), false);
+});

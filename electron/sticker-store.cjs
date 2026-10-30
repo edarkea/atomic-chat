@@ -32,7 +32,7 @@ function sameMetadata(left, right) {
 }
 
 class StickerStore {
-  constructor(userDataPath, persistence, nativeImage) {
+  constructor(userDataPath, persistence, nativeImage, options = {}) {
     this.persistence = persistence;
     this.nativeImage = nativeImage;
     this.directory = path.join(userDataPath, 'sticker-assets');
@@ -40,6 +40,7 @@ class StickerStore {
     try { fs.chmodSync(this.directory, 0o700); } catch { /* Windows ACLs are inherited. */ }
     this.locks = new Map();
     this.activeGrantChecker = () => false;
+    this.removeFile = options.removeFile || ((filePath, removeOptions) => fsp.rm(filePath, removeOptions));
   }
 
   setActiveGrantChecker(checker) {
@@ -83,6 +84,7 @@ class StickerStore {
       };
       const usable = existing.availability === 'available' && await this.isManagedAssetValid(existing);
       if (usable) {
+        if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
         const reference = this.persistence.insertStickerReference({
           stickerId: sticker.stickerId,
           accountId,
@@ -99,6 +101,7 @@ class StickerStore {
       if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
       const published = await this.publishBytes(existing.assetId, inspected.data);
       try {
+        if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
         const recovered = this.persistence.recoverStickerAssetAndSticker(
           { accountId, assetId: existing.assetId, mimeType: inspected.image.mimeType, sizeBytes: String(inspected.data.length), width: inspected.image.width, height: inspected.image.height, storageKey: published.storageKey, updatedAt: now },
           { ...sticker, availability: 'available' },
@@ -108,6 +111,7 @@ class StickerStore {
         return { sticker: this.publicSticker(recovered.sticker), asset: this.publicAsset(recovered.asset), deduplicated: true };
       } catch (cause) {
         await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+        if (cause?.code === 'UNAUTHORIZED') throw cause;
         throw error(cause?.code === 'SQLITE_FULL' ? 'STORAGE_FAILED' : 'STORAGE_FAILED', 'no se pudo recuperar el asset');
       }
     }
@@ -245,19 +249,31 @@ class StickerStore {
   }
 
   async reconcile() {
-    for (const asset of this.persistence.listStickerAssets()) {
-      const filePath = path.join(this.directory, asset.storageKey);
-      try {
-        const stats = await fsp.lstat(filePath);
-        if (stats.isSymbolicLink() || !stats.isFile() || String(stats.size) !== String(asset.sizeBytes)) {
-          this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'invalid');
-          continue;
-        }
-        if (!(await this.isManagedAssetValid(asset)))
-          this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'invalid');
-      } catch { this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'missing'); }
-    }
+    const accounts = new Set(this.persistence.listStickerAssets().map((asset) => asset.accountId));
+    for (const accountId of accounts)
+      await this.withAccountLock(accountId, () => this.reconcileAccount(accountId));
     await this.cleanupOrphans();
+  }
+
+  async reconcileAccount(accountId) {
+    for (const snapshot of this.persistence.listStickerAssets(accountId)) {
+      const currentBeforeRead = this.persistence.getStickerAsset(accountId, snapshot.assetId);
+      if (!this.sameAssetSnapshot(snapshot, currentBeforeRead)) continue;
+      let availability = 'missing';
+      try {
+        const stats = await fsp.lstat(path.join(this.directory, snapshot.storageKey));
+        if (!stats.isSymbolicLink() && stats.isFile() && String(stats.size) === String(snapshot.sizeBytes))
+          availability = await this.isManagedAssetValid(snapshot) ? 'available' : 'invalid';
+        else availability = 'invalid';
+      } catch { availability = 'missing'; }
+      const currentAfterRead = this.persistence.getStickerAsset(accountId, snapshot.assetId);
+      if (this.sameAssetSnapshot(snapshot, currentAfterRead))
+        this.persistence.markStickerAssetAvailability(accountId, snapshot.assetId, availability);
+    }
+  }
+
+  sameAssetSnapshot(snapshot, current) {
+    return Boolean(current && current.accountId === snapshot.accountId && current.assetId === snapshot.assetId && current.storageKey === snapshot.storageKey && current.updatedAt === snapshot.updatedAt && current.availability === snapshot.availability);
   }
 
   async cleanupOrphans(now = Date.now()) {
@@ -270,7 +286,18 @@ class StickerStore {
       if (!candidate.orphanedAt || now - Date.parse(candidate.orphanedAt) < ORPHAN_RETENTION_MS) continue;
       const asset = this.persistence.getStickerAsset(accountId, candidate.assetId);
       if (!asset?.orphanedAt || this.persistence.hasStickerReferences(asset.assetId) || this.activeGrantChecker(accountId, asset.assetId)) continue;
-      await fsp.rm(path.join(this.directory, asset.storageKey), { force: true }).catch(() => undefined);
+      const filePath = path.join(this.directory, asset.storageKey);
+      try {
+        await this.removeFile(filePath, { force: true });
+      } catch (cause) {
+        if (cause?.code !== 'ENOENT') continue;
+      }
+      try {
+        await fsp.lstat(filePath);
+        continue;
+      } catch (cause) {
+        if (cause?.code !== 'ENOENT') continue;
+      }
       const current = this.persistence.getStickerAsset(accountId, asset.assetId);
       if (current?.orphanedAt && !this.persistence.hasStickerReferences(asset.assetId) && !this.activeGrantChecker(accountId, asset.assetId))
         this.persistence.deleteStickerAsset(accountId, asset.assetId);

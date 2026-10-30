@@ -9,11 +9,11 @@ const { StickerStore, MAX_STICKER_BYTES } = require('../electron/sticker-store.c
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const decoder = { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 1, height: 1 }) }) };
 
-async function fixture() {
+async function fixture(options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-chat-sticker-test-'));
   const persistence = new PersistenceStore(root);
   persistence.upsertAccount({ accountId: 'alice@example.test', host: 'example.test', port: 5222, tls: 1, credentialRef: null, createdAt: new Date().toISOString() });
-  return { root, persistence, store: new StickerStore(root, persistence, decoder) };
+  return { root, persistence, store: new StickerStore(root, persistence, decoder, options) };
 }
 
 test('E8.2-STORE-001 migrates v9 databases additively and imports PNG with public metadata only', async () => {
@@ -100,6 +100,89 @@ test('E8.2-STORE-006 serializes orphan cleanup and reimport per account', async 
   await deletion;
   const result = await reimport;
   assert.equal(result.asset.assetId, first.asset.assetId);
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});
+
+test('E8.2-STORE-007 revalidates authorization after dedupe validation', async () => {
+  const value = await fixture();
+  const source = path.join(value.root, 'source.png');
+  await fs.writeFile(source, png);
+  await value.store.importFile('alice@example.test', source);
+  let authorized = true;
+  value.store.isManagedAssetValid = async () => { authorized = false; return true; };
+  await assert.rejects(() => value.store.importFile('alice@example.test', source, () => authorized), { code: 'UNAUTHORIZED' });
+  assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM stickers').get().count, 1);
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});
+
+test('E8.2-STORE-008 removes unpublished recovery bytes when authorization is revoked', async () => {
+  const value = await fixture();
+  const source = path.join(value.root, 'source.png');
+  await fs.writeFile(source, png);
+  const first = await value.store.importFile('alice@example.test', source);
+  value.persistence.markStickerAssetAvailability('alice@example.test', first.asset.assetId, 'missing');
+  const originalPublish = value.store.publishBytes.bind(value.store);
+  let authorized = true;
+  value.store.publishBytes = async (...args) => {
+    const published = await originalPublish(...args);
+    authorized = false;
+    return published;
+  };
+  await assert.rejects(() => value.store.importFile('alice@example.test', source, () => authorized), { code: 'UNAUTHORIZED' });
+  assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM stickers').get().count, 1);
+  assert.equal(value.persistence.getStickerAsset('alice@example.test', first.asset.assetId).availability, 'missing');
+  const files = await fs.readdir(path.join(value.root, 'sticker-assets'));
+  assert.deepEqual(files.filter((file) => !file.startsWith('.tmp-')), [first.asset.assetId + '.bin']);
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});
+
+test('E8.2-STORE-009 keeps an orphan row when physical deletion fails and retries later', async () => {
+  let failRemoval = true;
+  const value = await fixture({ removeFile: async () => {
+    if (failRemoval) { const cause = new Error('locked'); cause.code = 'EACCES'; throw cause; }
+    return undefined;
+  } });
+  const source = path.join(value.root, 'source.png');
+  await fs.writeFile(source, png);
+  const first = await value.store.importFile('alice@example.test', source);
+  await value.store.delete('alice@example.test', first.sticker.stickerId);
+  value.persistence.database.prepare('UPDATE sticker_assets SET orphaned_at = ? WHERE asset_id = ?').run(new Date(Date.now() - (8 * 24 * 60 * 60 * 1000)).toISOString(), first.asset.assetId);
+  await value.store.cleanupOrphans();
+  assert.ok(value.persistence.getStickerAsset('alice@example.test', first.asset.assetId));
+  failRemoval = false;
+  value.store.removeFile = (filePath, options) => fs.rm(filePath, options);
+  await value.store.cleanupOrphans();
+  assert.equal(value.persistence.getStickerAsset('alice@example.test', first.asset.assetId), null);
+  value.persistence.close();
+  await fs.rm(value.root, { recursive: true, force: true });
+});
+
+test('E8.2-STORE-010 serializes reconciliation behind recovery', async () => {
+  const value = await fixture();
+  const source = path.join(value.root, 'source.png');
+  await fs.writeFile(source, png);
+  const first = await value.store.importFile('alice@example.test', source);
+  value.persistence.markStickerAssetAvailability('alice@example.test', first.asset.assetId, 'missing');
+  let releasePublication;
+  let publicationStarted;
+  const publicationReady = new Promise((resolve) => { publicationStarted = resolve; });
+  const publicationRelease = new Promise((resolve) => { releasePublication = resolve; });
+  const originalPublish = value.store.publishBytes.bind(value.store);
+  value.store.publishBytes = async (...args) => {
+    publicationStarted();
+    await publicationRelease;
+    return originalPublish(...args);
+  };
+  const recovery = value.store.importFile('alice@example.test', source);
+  await publicationReady;
+  const reconciliation = value.store.reconcile();
+  releasePublication();
+  await recovery;
+  await reconciliation;
+  assert.equal(value.persistence.getStickerAsset('alice@example.test', first.asset.assetId).availability, 'available');
   value.persistence.close();
   await fs.rm(value.root, { recursive: true, force: true });
 });
