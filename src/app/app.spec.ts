@@ -6,7 +6,7 @@ import { ChatFacade } from './core/chat.facade';
 import { CertificateTrustRequest, Message, RoomMessage, RoomRef, RoomState } from './core/domain';
 import { MucFacade } from './core/muc.facade';
 import { corePortProviders } from './core/port-providers';
-import { FILE_TRANSFER_PORT } from './core/ports';
+import { BROADCAST_PORT, FILE_TRANSFER_PORT } from './core/ports';
 import { UnavailableFileTransferPort } from './core/unavailable.ports';
 
 function fakeFacade() {
@@ -103,6 +103,7 @@ describe('App composer integration', () => {
   let fixture: ComponentFixture<App>;
   let facade: ReturnType<typeof fakeFacade>;
   let muc: ReturnType<typeof fakeMucFacade>;
+  let broadcastSend: ReturnType<typeof vi.fn>;
   const chatMessage = (text: string, clientMessageId: string) => ({
     id: clientMessageId,
     accountId: 'a@example.invalid',
@@ -144,10 +145,26 @@ describe('App composer integration', () => {
   beforeEach(async () => {
     facade = fakeFacade();
     muc = fakeMucFacade();
+    broadcastSend = vi.fn(async () => ({
+      ok: true as const,
+      version: 1 as const,
+      requestId: 'broadcast-test',
+      value: {
+        broadcastId: 'broadcast-test',
+        recipients: [
+          {
+            recipientJid: 'one@example.invalid',
+            clientMessageId: 'client-test',
+            status: 'submitted' as const,
+          },
+        ],
+      },
+    }));
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [
         ...corePortProviders,
+        { provide: BROADCAST_PORT, useValue: { send: broadcastSend } },
         { provide: FILE_TRANSFER_PORT, useClass: UnavailableFileTransferPort },
         { provide: ChatFacade, useValue: facade },
         { provide: MucFacade, useValue: muc },
@@ -231,6 +248,27 @@ describe('App composer integration', () => {
     expect(panel.querySelectorAll('.broadcast-contact')).toHaveLength(2);
     expect(panel.textContent).toContain('Equipo');
     expect(panel.textContent).toContain('Notificación de alerta');
+  });
+  it('closes the broadcast dialog after OK completes a successful send', async () => {
+    facade.contacts.set([
+      { jid: 'one@example.invalid', name: 'Uno', groups: [], source: 'roster' },
+    ]);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.broadcast-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const panel = fixture.nativeElement.querySelector('.broadcast-dialog') as HTMLElement;
+    const state = fixture.componentInstance as unknown as {
+      broadcastBody: { set(value: string): void };
+      broadcastSelectedJids: { set(value: ReadonlySet<string>): void };
+    };
+    state.broadcastBody.set('hola');
+    state.broadcastSelectedJids.set(new Set(['one@example.invalid']));
+    fixture.detectChanges();
+    (panel.querySelector('button.primary') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(broadcastSend).toHaveBeenCalledOnce();
+    expect(fixture.nativeElement.querySelector('.broadcast-dialog')).toBeNull();
   });
   it('separates room selection from joining', () => {
     muc.services.set([

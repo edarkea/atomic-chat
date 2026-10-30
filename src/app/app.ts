@@ -930,6 +930,11 @@ export class App {
       });
       if (run !== this.broadcastRun) return;
       this.broadcastResult.set(result.recipients);
+      if (result.recipients.every((item) => item.status === 'submitted')) {
+        this.broadcastBusy.set(false);
+        this.broadcastOpen.set(false);
+        queueMicrotask(() => this.sidebar?.focusBroadcastTrigger());
+      }
     } catch {
       if (run === this.broadcastRun)
         this.broadcastError.set('No fue posible completar la difusión.');
