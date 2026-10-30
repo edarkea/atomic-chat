@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { xml } = require('@xmpp/client');
 const {
   BROADCAST_NAMESPACE,
+  JIVE_PROPERTIES_NAMESPACE,
   createRosterMessaging,
 } = require('../electron/xmpp-roster-messaging.cjs');
 
@@ -39,33 +40,59 @@ test('adds the Atomic Chat broadcast marker without changing the chat stanza con
   assert.equal(stanza.getChild('broadcast', BROADCAST_NAMESPACE)?.name, 'broadcast');
 });
 
-test('does not mark private messages and classifies incoming stanzas explicitly', async () => {
+test('classifies Atomic, Spark and private stanzas without treating server headlines as broadcasts', () => {
   const sent = [];
   const { adapter, events } = createAdapter(sent);
   const messaging = createRosterMessaging(adapter);
-  await messaging.sendMessage('receiver@example.invalid', {
-    to: 'contact@example.invalid',
-    clientMessageId: 'client-direct-1',
-    body: { kind: 'text', text: 'privado' },
-  });
-  assert.equal(sent[0].getChild('broadcast', BROADCAST_NAMESPACE), undefined);
-  const privateStanza = xml(
-    'message',
-    { type: 'chat', from: 'contact@example.invalid/resource', id: 'direct-1' },
-    xml('body', {}, 'privado'),
+  const jiveProperties = xml(
+    'properties',
+    { xmlns: JIVE_PROPERTIES_NAMESPACE },
+    xml(
+      'property',
+      {},
+      xml('name', {}, 'broadcast'),
+      xml('value', { type: 'boolean' }, 'true'),
+    ),
   );
-  const broadcastStanza = xml(
-    'message',
-    { type: 'chat', from: 'contact@example.invalid/resource', id: 'broadcast-1' },
-    xml('body', {}, 'difusión'),
-    xml('broadcast', { xmlns: BROADCAST_NAMESPACE }),
-  );
-  messaging.handleMessage('receiver@example.invalid', privateStanza);
-  messaging.handleMessage('receiver@example.invalid', broadcastStanza);
+  const stanzas = [
+    xml(
+      'message',
+      { type: 'normal', from: 'contact@example.invalid/desktop', id: 'spark-normal' },
+      xml('body', {}, 'difusión normal'),
+    ),
+    xml(
+      'message',
+      { type: 'headline', from: 'contact@example.invalid/desktop', id: 'spark-headline' },
+      xml('body', {}, 'alerta'),
+    ),
+    xml(
+      'message',
+      { type: 'chat', from: 'contact@example.invalid/desktop', id: 'jive-broadcast' },
+      xml('body', {}, 'propiedad'),
+      jiveProperties,
+    ),
+    xml(
+      'message',
+      { type: 'chat', from: 'contact@example.invalid/desktop', id: 'atomic-broadcast' },
+      xml('body', {}, 'atómico'),
+      xml('broadcast', { xmlns: BROADCAST_NAMESPACE }),
+    ),
+    xml(
+      'message',
+      { type: 'chat', from: 'contact@example.invalid/desktop', id: 'direct' },
+      xml('body', {}, 'privado'),
+    ),
+    xml(
+      'message',
+      { type: 'headline', from: 'notify.example.invalid', id: 'server-headline' },
+      xml('body', {}, 'notificación del servidor'),
+    ),
+  ];
+  stanzas.forEach((stanza) => messaging.handleMessage('receiver@example.invalid', stanza));
   assert.deepEqual(
     events
       .filter((event) => event.type === 'message.received')
       .map((event) => event.payload.classification),
-    ['direct', 'broadcast'],
+    ['broadcast', 'broadcast', 'broadcast', 'broadcast', 'direct', 'direct'],
   );
 });

@@ -2,6 +2,39 @@ const crypto = require('node:crypto');
 const { xml } = require('@xmpp/client');
 
 const BROADCAST_NAMESPACE = 'urn:atomic-chat:message:broadcast:1';
+const JIVE_PROPERTIES_NAMESPACE = 'http://www.jivesoftware.com/xmlns/xmpp/properties';
+
+function isUserJid(jid) {
+  return /^[^@/\s]+@[^@/\s]+$/.test(jid);
+}
+
+function hasJiveBroadcastProperty(stanza) {
+  const properties = stanza.getChild('properties', JIVE_PROPERTIES_NAMESPACE);
+  return Boolean(
+    properties?.getChildren('property').some((property) => {
+      const value = property.getChild('value');
+      return (
+        property.getChildText('name') === 'broadcast' &&
+        value?.attrs.type === 'boolean' &&
+        value.getText().trim().toLowerCase() === 'true'
+      );
+    }),
+  );
+}
+
+/**
+ * Spark does not expose a broadcast semantic in the XMPP message type. For
+ * compatibility, normal/headline messages from a user-shaped bare JID are
+ * treated as broadcast. Server JIDs without a localpart remain direct.
+ * A service using a localpart-shaped JID can still be a false positive.
+ */
+function classifyIncomingMessage(stanza, senderJid) {
+  if (stanza.getChild('broadcast', BROADCAST_NAMESPACE)) return 'broadcast';
+  if (hasJiveBroadcastProperty(stanza)) return 'broadcast';
+  if (['normal', 'headline'].includes(stanza.attrs.type) && isUserJid(senderJid))
+    return 'broadcast';
+  return 'direct';
+}
 
 function createRosterMessaging(adapter) {
   const CHAT_STATES_NS = 'http://jabber.org/protocol/chatstates';
@@ -174,9 +207,7 @@ function createRosterMessaging(adapter) {
       const stanzaId = explicitId
         ? `received_${crypto.createHash('sha256').update(identity).digest('hex')}`
         : `received_${crypto.randomUUID()}`;
-      const classification = stanza.getChild('broadcast', BROADCAST_NAMESPACE)
-        ? 'broadcast'
-        : 'direct';
+      const classification = classifyIncomingMessage(stanza, senderJid);
       adapter.emit({
         type: 'message.received',
         payload: {
@@ -201,4 +232,9 @@ function createRosterMessaging(adapter) {
   };
 }
 
-module.exports = { BROADCAST_NAMESPACE, createRosterMessaging };
+module.exports = {
+  BROADCAST_NAMESPACE,
+  JIVE_PROPERTIES_NAMESPACE,
+  classifyIncomingMessage,
+  createRosterMessaging,
+};
