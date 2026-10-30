@@ -68,26 +68,28 @@
             aria-labelledby="preferences-title"
           >
             <h3>Apariencia</h3>
-            <label class="preference-field"
-              ><span>Tema</span
-              ><select
-                [ngModel]="theme.themeId()"
-                [disabled]="theme.saving()"
-                (ngModelChange)="selectTheme($event)"
+            <div class="appearance-controls">
+              <label class="preference-field"
+                ><span>Tema</span
+                ><select
+                  [ngModel]="theme.themeId()"
+                  [disabled]="theme.saving()"
+                  (ngModelChange)="selectTheme($event)"
+                >
+                  @for (option of themeOptions; track option.id) {
+                    <option [value]="option.id">{{ option.label }}</option>
+                  }
+                </select></label
               >
-                @for (option of themeOptions; track option.id) {
-                  <option [value]="option.id">{{ option.label }}</option>
-                }
-              </select></label
-            >
-            <button
-              #themeStudioTrigger
-              type="button"
-              class="secondary"
-              (click)="theme.openStudio()"
-            >
-              Abrir Theme Studio
-            </button>
+              <button
+                #themeStudioTrigger
+                type="button"
+                class="secondary"
+                (click)="theme.openStudio()"
+              >
+                Abrir Theme Studio
+              </button>
+            </div>
             @if (theme.persistenceError(); as error) {
               <p class="preference-error" role="alert">{{ error }}</p>
             }

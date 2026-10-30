@@ -134,6 +134,10 @@
   min-height: 38px;
   padding: 6px 8px;
 }
+.appearance-controls {
+  display: grid;
+  gap: 14px;
+}
 .preference-help {
   margin: 14px 0 0;
 }
