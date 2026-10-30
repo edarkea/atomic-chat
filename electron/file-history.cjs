@@ -120,18 +120,22 @@ class FileHistoryStore {
     return this.publicRecord({ ...record, availability });
   }
 
-  async open(accountId, conversationId, fileId) {
+  async open(accountId, conversationId, fileId, isAuthorized) {
     const record = await this.resolve(accountId, conversationId, fileId);
     this.assertSafeToOpen(record);
+    await this.revalidateBeforeAction(record);
+    this.assertAuthorized(isAuthorized);
     if (!this.shell || typeof this.shell.openPath !== 'function')
       throw fileError('UNSUPPORTED', 'abrir archivos no está disponible');
     const failure = await this.shell.openPath(record.localPath);
     if (failure) throw fileError('STORAGE_FAILED', 'no fue posible abrir el archivo');
   }
 
-  async reveal(accountId, conversationId, fileId) {
+  async reveal(accountId, conversationId, fileId, isAuthorized) {
     const record = await this.resolve(accountId, conversationId, fileId);
     this.assertSafeToOpen(record);
+    await this.revalidateBeforeAction(record);
+    this.assertAuthorized(isAuthorized);
     if (this.shell && typeof this.shell.showItemInFolder === 'function') {
       try {
         this.shell.showItemInFolder(record.localPath);
@@ -178,9 +182,29 @@ class FileHistoryStore {
     return { path: resolvedPath, metadata: metadata(stats) };
   }
 
+  async revalidateBeforeAction(record) {
+    try {
+      const current = await this.inspectPath(record.localPath);
+      if (!sameMetadata(this.metadataFromRecord(record), current.metadata))
+        throw fileError('STORAGE_FAILED', 'el archivo histórico cambió');
+    } catch (error) {
+      if (error?.code === 'FILE_TYPE_INVALID')
+        throw fileError('STORAGE_FAILED', 'el archivo histórico ya no es regular');
+      if (error?.code === 'FILE_UNAVAILABLE')
+        throw fileError('STORAGE_FAILED', 'el archivo histórico ya no está disponible');
+      throw error;
+    }
+  }
+
+  assertAuthorized(isAuthorized) {
+    if (typeof isAuthorized === 'function' && !isAuthorized())
+      throw fileError('UNAUTHORIZED', 'la ventana o la cuenta ya no están autorizadas');
+  }
+
   assertSafeToOpen(record) {
-    const extension = path.extname(record.localPath).toLowerCase();
-    if (DANGEROUS_EXTENSIONS.has(extension))
+    const extensions = [path.extname(record.localPath), path.extname(record.originalName)]
+      .map((extension) => extension.toLowerCase());
+    if (extensions.some((extension) => DANGEROUS_EXTENSIONS.has(extension)))
       throw fileError('UNSUPPORTED', 'por seguridad no se puede abrir este tipo de archivo');
   }
 

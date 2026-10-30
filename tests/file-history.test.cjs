@@ -26,7 +26,7 @@ function setup() {
   return { directory, persistence };
 }
 
-function completed(sourcePath, transferId, accountId = ACCOUNT) {
+function completed(sourcePath, transferId, accountId = ACCOUNT, name = 'document.pdf') {
   return {
     state: 'completed',
     sourcePath,
@@ -37,7 +37,7 @@ function completed(sourcePath, transferId, accountId = ACCOUNT) {
       accountId,
       conversationId: CONVERSATION,
       senderJid: accountId,
-      name: 'document.pdf',
+      name,
       sizeBytes: '7',
       mimeType: 'application/pdf',
       transport: 'ibb',
@@ -178,6 +178,78 @@ test('historical actions require the recorded conversation and current identity'
       store.open(ACCOUNT, 'other@example.invalid', saved.fileId),
       (error) => error.code === 'UNAUTHORIZED',
     );
+  });
+});
+
+test('revalidates the path and authorization immediately before a historical action', async () => {
+  await withSetup(async ({ directory, persistence }) => {
+    const source = path.join(directory, 'async.pdf');
+    await fsp.writeFile(source, 'payload');
+    const opened = [];
+    let releaseValidation;
+    const validation = new Promise((resolve) => { releaseValidation = resolve; });
+    let lstatCalls = 0;
+    const store = new FileHistoryStore(persistence, {
+      openPath: async (filePath) => { opened.push(filePath); return ''; },
+    }, {
+      lstat: async (filePath) => {
+        lstatCalls += 1;
+        if (lstatCalls === 2) await validation;
+        return fsp.lstat(filePath, { bigint: true });
+      },
+    });
+    const saved = await store.persistTransfer(completed(source, 'async-action-1'), 'outgoing');
+    let authorized = true;
+    const action = store.open(ACCOUNT, CONVERSATION, saved.fileId, () => authorized);
+    await new Promise((resolve) => setImmediate(resolve));
+    authorized = false;
+    releaseValidation();
+    await assert.rejects(action, (error) => error.code === 'UNAUTHORIZED');
+    assert.deepEqual(opened, []);
+  });
+});
+
+test('does not open a file replaced by a symlink between validation phases', async () => {
+  await withSetup(async ({ directory, persistence }) => {
+    const source = path.join(directory, 'safe.pdf');
+    await fsp.writeFile(source, 'payload');
+    const opened = [];
+    const store = new FileHistoryStore(persistence, {
+      openPath: async (filePath) => { opened.push(filePath); return ''; },
+    });
+    const saved = await store.persistTransfer(completed(source, 'race-1'), 'outgoing');
+    const originalLstat = store.lstat;
+    let calls = 0;
+    store.lstat = async (filePath) => {
+      calls += 1;
+      if (calls === 2) return { isSymbolicLink: () => true, isFile: () => false };
+      return originalLstat(filePath);
+    };
+    await assert.rejects(
+      store.open(ACCOUNT, CONVERSATION, saved.fileId),
+      (error) => error.code === 'STORAGE_FAILED',
+    );
+    assert.deepEqual(opened, []);
+  });
+});
+
+test('blocks executable extensions from the recorded name as well as the local path', async () => {
+  await withSetup(async ({ directory, persistence }) => {
+    const source = path.join(directory, 'downloaded-file');
+    await fsp.writeFile(source, 'payload');
+    const opened = [];
+    const store = new FileHistoryStore(persistence, {
+      openPath: async (filePath) => { opened.push(filePath); return ''; },
+    });
+    const saved = await store.persistTransfer(
+      completed(source, 'blocked-extension-1', ACCOUNT, 'payload.exe'),
+      'outgoing',
+    );
+    await assert.rejects(
+      store.open(ACCOUNT, CONVERSATION, saved.fileId),
+      (error) => error.code === 'UNSUPPORTED',
+    );
+    assert.deepEqual(opened, []);
   });
 });
 

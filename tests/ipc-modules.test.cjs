@@ -107,6 +107,7 @@ function createHarness() {
     resetPreferences: (...args) => calls.push(['resetPreferences', args]),
   };
   const secrets = { put: () => undefined, get: () => 'secret' };
+  let historyGate = null;
   const incoming = {
     get: () => ({
       offer: { accountId: 'one@example.invalid', transferId: 'transfer-1' },
@@ -142,10 +143,16 @@ function createHarness() {
     },
   };
   const fileHistory = {
-    open: async (accountId, conversationId, fileId) =>
-      calls.push(['history-open', accountId, conversationId, fileId]),
-    reveal: async (accountId, conversationId, fileId) =>
-      calls.push(['history-reveal', accountId, conversationId, fileId]),
+    open: async (accountId, conversationId, fileId, isAuthorized) => {
+      if (historyGate) await historyGate;
+      if (isAuthorized && !isAuthorized()) throw new Error('UNAUTHORIZED');
+      calls.push(['history-open', accountId, conversationId, fileId]);
+    },
+    reveal: async (accountId, conversationId, fileId, isAuthorized) => {
+      if (historyGate) await historyGate;
+      if (isAuthorized && !isAuthorized()) throw new Error('UNAUTHORIZED');
+      calls.push(['history-reveal', accountId, conversationId, fileId]);
+    },
   };
 
   const options = {
@@ -182,6 +189,9 @@ function createHarness() {
     },
     setOriginAuthorized(value) {
       senderAuthorized = value;
+    },
+    setHistoryGate(value) {
+      historyGate = value;
     },
   };
 }
@@ -478,6 +488,27 @@ test('historical file actions use opaque ids and preserve account/window authori
   const denied = await harness.handlers.get('fileHistory.open')(event(7), input);
   assert.equal(denied.ok, false);
   assert.equal(denied.error.code, 'UNAUTHORIZED');
+});
+
+test('historical IPC action is rejected when authorization expires while pending', async () => {
+  const harness = createHarness();
+  let release;
+  harness.setHistoryGate(new Promise((resolve) => { release = resolve; }));
+  const input = {
+    version: 1,
+    requestId: 'history-pending-1',
+    accountId: 'one@example.invalid',
+    conversationId: 'contact@example.invalid',
+    fileId: 'file_opaque',
+  };
+  const pending = harness.handlers.get('fileHistory.open')(event(7), input);
+  await new Promise((resolve) => setImmediate(resolve));
+  harness.setAuthorized(false);
+  release();
+  const result = await pending;
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'UNAUTHORIZED');
+  assert.equal(harness.calls.some(([name]) => name === 'history-open'), false);
 });
 
 test('preserves safe MUC diagnostics at the IPC boundary', async () => {

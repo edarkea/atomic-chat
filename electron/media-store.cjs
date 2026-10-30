@@ -62,6 +62,35 @@ class MediaStore {
     return tracked;
   }
 
+  async isStaticImageCandidate(sourcePath) {
+    if (typeof sourcePath !== 'string' || !sourcePath.trim()) return false;
+    let stats;
+    try {
+      stats = await fsp.lstat(sourcePath);
+      if (stats.isSymbolicLink() || !stats.isFile() || stats.size > MAX_PREVIEW_BYTES)
+        return false;
+      const resolvedPath = await fsp.realpath(sourcePath);
+      const handle = await fsp.open(resolvedPath, SAFE_READ_FLAGS);
+      try {
+        const openedStats = await handle.stat();
+        if (!sameMetadata(fileMetadata(stats), fileMetadata(openedStats))) return false;
+        const header = Buffer.alloc(8);
+        const { bytesRead } = await handle.read(header, 0, header.length, 0);
+        const pngSignature =
+          bytesRead >= 8 &&
+          header.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        const jpegSignature = bytesRead >= 2 && header[0] === 0xff && header[1] === 0xd8;
+        const finalStats = await handle.stat();
+        if (!sameMetadata(fileMetadata(openedStats), fileMetadata(finalStats))) return false;
+        return pngSignature || jpegSignature;
+      } finally {
+        await handle.close().catch(() => undefined);
+      }
+    } catch {
+      return false;
+    }
+  }
+
   async persistTransferLocked(record, direction) {
     const existing = this.persistence.getMediaByTransfer(
       record.offer.accountId,

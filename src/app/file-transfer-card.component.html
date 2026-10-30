@@ -12,7 +12,13 @@
     {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
   </p>
   @if (!isImageTransfer()) {
-    <p class="file-title"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg> {{ transfer().offer.name }}</p>
+    <div class="file-heading">
+      <svg class="ac-icon ac-icon--20 file-heading-icon" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg>
+      <div class="file-heading-copy">
+        <p class="file-title" [title]="transfer().offer.name">{{ transfer().offer.name }}</p>
+        <small class="file-meta">{{ transfer().offer.mimeType || 'Archivo' }} · {{ transfer().offer.sizeBytes }} bytes</small>
+      </div>
+    </div>
   }
   @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
     <p class="file-security">
@@ -47,7 +53,7 @@
     </button>
   }
   @if (isImageTransfer()) {
-    <small class="image-meta">{{ transfer().offer.name }} · {{ transfer().offer.sizeBytes }} bytes · {{ label() }}</small>
+    <small class="image-meta">{{ transfer().offer.mimeType || 'Imagen' }} · {{ transfer().offer.sizeBytes }} bytes</small>
   }
   @if (previewState() === 'unavailable') {
     <p class="file-preview-status" role="status">{{ previewMessage() }}</p>
@@ -57,40 +63,44 @@
       @if (history(); as historical) {
         @if (canOpenFile()) {
           <button
+            class="file-action-icon"
             type="button"
             [disabled]="actionBusy()"
+            aria-label="Abrir archivo"
+            title="Abrir archivo"
             (click)="historicalOpened.emit(historical.fileId)"
-          >
-            Abrir archivo
-          </button>
+          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg></button>
         }
         @if (canRevealFolder()) {
           <button
+            class="file-action-icon"
             type="button"
             [disabled]="actionBusy()"
+            aria-label="Abrir carpeta"
+            title="Abrir carpeta"
             (click)="historicalRevealed.emit(historical.fileId)"
-          >
-            Abrir carpeta
-          </button>
+          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-expand" /></svg></button>
         }
       } @else {
         @if (canOpenFile()) {
           <button
+            class="file-action-icon"
             type="button"
             [disabled]="actionBusy()"
+            aria-label="Abrir archivo"
+            title="Abrir archivo"
             (click)="opened.emit(transfer().offer.transferId)"
-          >
-            Abrir archivo
-          </button>
+          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg></button>
         }
         @if (canRevealFolder()) {
           <button
+            class="file-action-icon"
             type="button"
             [disabled]="actionBusy()"
+            aria-label="Abrir carpeta"
+            title="Abrir carpeta"
             (click)="revealed.emit(transfer().offer.transferId)"
-          >
-            Abrir carpeta
-          </button>
+          ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-expand" /></svg></button>
         }
       }
     </div>
@@ -98,7 +108,7 @@
 </article>
 @if (enlarged() && previewUrl(); as preview) {
   <div class="file-preview-overlay" role="dialog" aria-modal="true" aria-label="Imagen ampliada">
-    <button type="button" class="file-preview-close" (click)="closePreview()">Cerrar</button>
+    <button type="button" class="file-preview-close" aria-label="Cerrar imagen ampliada" title="Cerrar" (click)="closePreview()"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-close" /></svg></button>
     <img [src]="preview" [alt]="'Preview ampliada de ' + transfer().offer.name" />
   </div>
 }

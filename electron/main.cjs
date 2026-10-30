@@ -34,6 +34,7 @@ const { createIncomingMessageProcessor } = require('./incoming-message-persisten
 const { PreviewGrantRegistry } = require('./preview-grants.cjs');
 const { MediaStore } = require('./media-store.cjs');
 const { FileHistoryStore } = require('./file-history.cjs');
+const { persistCompletedTransfer } = require('./media-transfer-persistence.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
   DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -95,8 +96,6 @@ const autoAcceptFileTransfers = () => {
     return false;
   }
 };
-const isStaticImageCandidate = (record) =>
-  record?.offer?.mimeType === 'image/png' || record?.offer?.mimeType === 'image/jpeg';
 const fileTransfers = new FileTransferCoordinator({
   selectDestination: selectFileDestination,
   getDefaultDirectory: currentDownloadDirectory,
@@ -105,10 +104,12 @@ const fileTransfers = new FileTransferCoordinator({
   onCompleted: async (record, direction) => {
     const localActions =
       direction === 'incoming' ? await localFileActions.register(record, direction) : false;
-    const media = isStaticImageCandidate(record)
-      ? await runtime?.media.persistTransfer(record, direction)
-      : null;
-    if (!media) await runtime?.fileHistory.persistTransfer(record, direction);
+    await persistCompletedTransfer({
+      record,
+      direction,
+      media: runtime?.media,
+      fileHistory: runtime?.fileHistory,
+    });
     return localActions;
   },
   getTimeoutSeconds: currentTransferTimeout,
@@ -116,10 +117,12 @@ const fileTransfers = new FileTransferCoordinator({
 const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   resourceLimiter: fileResourceLimiter,
   onCompleted: async (record, direction) => {
-    const media = isStaticImageCandidate(record)
-      ? await runtime?.media.persistTransfer(record, direction)
-      : null;
-    if (!media) await runtime?.fileHistory.persistTransfer(record, direction);
+    await persistCompletedTransfer({
+      record,
+      direction,
+      media: runtime?.media,
+      fileHistory: runtime?.fileHistory,
+    });
     return false;
   },
   getTimeoutSeconds: currentTransferTimeout,

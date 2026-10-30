@@ -20,12 +20,31 @@
 .file-message small {
   margin: 0;
 }
-.file-title {
+.file-heading {
   align-items: center;
-  color: var(--atomic-text);
   display: flex;
   gap: var(--atomic-space-2);
+  min-width: 0;
+}
+.file-heading-icon {
+  color: var(--atomic-text-secondary);
+  flex: 0 0 auto;
+}
+.file-heading-copy {
+  min-width: 0;
+}
+.file-title {
+  color: var(--atomic-text);
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-meta {
+  color: var(--atomic-text-secondary);
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
 }
 .file-security {
   color: var(--atomic-text-secondary);
@@ -40,7 +59,7 @@
 .file-actions button,
 .file-message > button {
   background: var(--atomic-surface);
-  border: 1px solid var(--atomic-green);
+  border: 1px solid var(--atomic-border);
   border-radius: var(--atomic-radius-sm);
   color: var(--atomic-text);
   cursor: pointer;
@@ -49,9 +68,29 @@
   min-height: 34px;
   padding: 5px 8px;
 }
+.file-actions .file-action-icon {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 5px;
+}
 .file-actions button:hover,
 .file-message > button:hover {
   background: var(--atomic-surface-active);
+}
+.file-actions button:focus-visible,
+.file-message > button:focus-visible,
+.file-preview:focus-visible,
+.file-preview-close:focus-visible {
+  outline: 2px solid var(--atomic-green);
+  outline-offset: 2px;
+}
+.file-actions button:disabled,
+.file-message > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .file-preview {
   background: var(--atomic-surface);
@@ -91,12 +130,17 @@
   object-fit: contain;
 }
 .file-preview-close {
+  align-items: center;
   background: var(--atomic-surface);
-  border: 1px solid var(--atomic-green);
+  border: 1px solid var(--atomic-border);
   color: var(--atomic-text);
   cursor: pointer;
+  display: inline-flex;
   font: inherit;
-  padding: 8px 12px;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 36px;
+  padding: 8px;
   position: absolute;
   right: 20px;
   top: 20px;

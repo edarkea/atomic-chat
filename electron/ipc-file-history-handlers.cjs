@@ -57,11 +57,17 @@ function registerFileHistoryHandlers({
     ipcMain.handle(channel, async (event, input) => {
       try {
         const request = authorize(event, input);
+        const isAuthorized = () => {
+          assertSender(event);
+          return historySecurity.authorize(event.sender.id, request.accountId);
+        };
         await getRuntime().fileHistory[action](
           request.accountId,
           request.conversationId,
           request.fileId,
+          isAuthorized,
         );
+        if (!isAuthorized()) throw new Error('UNAUTHORIZED');
         return { ok: true, value: undefined, version: 1, requestId: request.requestId };
       } catch (error) {
         return errorResult(error, event, input);
