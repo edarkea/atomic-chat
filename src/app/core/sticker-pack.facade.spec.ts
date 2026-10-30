@@ -209,4 +209,116 @@ describe('StickerPackFacade', () => {
     expect(await pending).toBe(false);
     expect(facade.draft()).toBeUndefined();
   });
+
+  it('keeps the recovered list current across navigation and optimistic revisions', async () => {
+    const updateRevisions: number[] = [];
+    const updateDraft: StickerPackPort['updateDraft'] = vi.fn(async (input) => {
+      updateRevisions.push(input.revision);
+      return {
+        ok: true as const,
+        version: 1 as const,
+        requestId: input.requestId,
+        value: {
+          ...draft,
+          name: input.name,
+          description: input.description,
+          stickerIds: [...input.stickerIds],
+          revision: input.revision + 1,
+        },
+      };
+    });
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft, secondDraft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.openDraft(draft.draftId);
+    await facade.updateDraft('A revisión 2', 'descripción 2', ['s2']);
+    expect(facade.drafts().find((item) => item.draftId === draft.draftId)).toMatchObject({ name: 'A revisión 2', description: 'descripción 2', stickerIds: ['s2'], revision: 2 });
+
+    await facade.openDraft(secondDraft.draftId);
+    await facade.openDraft(draft.draftId);
+    expect(port.getDraft).not.toHaveBeenCalled();
+    expect(facade.draft()).toMatchObject({ draftId: draft.draftId, name: 'A revisión 2', description: 'descripción 2', stickerIds: ['s2'], revision: 2 });
+
+    await facade.updateDraft('A revisión 3', 'descripción 3', ['s3']);
+    expect(updateRevisions).toEqual([1, 2]);
+    expect(facade.drafts().find((item) => item.draftId === draft.draftId)).toMatchObject({ name: 'A revisión 3', description: 'descripción 3', stickerIds: ['s3'], revision: 3 });
+  });
+
+  it('does not replace a newer recovered draft with a stale get result', async () => {
+    let resolveGet!: (value: Result<StickerDraftDTO>) => void;
+    const newer: StickerDraftDTO = { ...draft, draftId: 'remote', name: 'Vigente', revision: 3 };
+    const stale: StickerDraftDTO = { ...newer, name: 'Antiguo', revision: 1 };
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft: vi.fn(),
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(() => new Promise<Result<StickerDraftDTO>>((resolve) => { resolveGet = resolve; })), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    const pending = facade.openDraft(newer.draftId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    facade.drafts.set([newer]);
+    resolveGet({ ok: true, version: 1, requestId: 'stale', value: stale });
+    expect(await pending).toBe(true);
+    expect(facade.draft()).toEqual(newer);
+    expect(facade.drafts()).toEqual([newer]);
+  });
+
+  it('does not publish unconfirmed metadata after a failed update', async () => {
+    const updateDraft: StickerPackPort['updateDraft'] = vi.fn(async (input) => ({
+      ok: false as const,
+      version: 1 as const,
+      requestId: input.requestId,
+      error: { code: 'STORAGE_FAILED' as const, retryable: true, requestId: input.requestId, message: 'fail' },
+    }));
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft, secondDraft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.openDraft(draft.draftId);
+    expect(await facade.updateDraft('No confirmado', 'sin guardar', ['s2'])).toBe(false);
+    await facade.openDraft(secondDraft.draftId);
+    await facade.openDraft(draft.draftId);
+    expect(facade.draft()).toEqual(draft);
+    expect(facade.drafts().find((item) => item.draftId === draft.draftId)).toEqual(draft);
+  });
+
+  it('discards a late update result after the account changes', async () => {
+    let resolveUpdate!: (value: Result<StickerDraftDTO>) => void;
+    const updateDraft: StickerPackPort['updateDraft'] = vi.fn((input) => new Promise<Result<StickerDraftDTO>>((resolve) => {
+      resolveUpdate = resolve;
+    }));
+    const bobDraft: StickerDraftDTO = { ...draft, draftId: 'bob-draft', accountId: 'bob', name: 'Bob' };
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: input.accountId === 'bob' ? [bobDraft] : [draft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.openDraft(draft.draftId);
+    const pending = facade.updateDraft('Alice tarde', 'no debe llegar', ['s2']);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    facade.reset();
+    await facade.load('bob');
+    resolveUpdate({ ok: true, version: 1, requestId: 'late', value: { ...draft, name: 'Alice tarde', revision: 2 } });
+    expect(await pending).toBe(false);
+    expect(facade.drafts()).toEqual([bobDraft]);
+    expect(facade.draft()).toBeUndefined();
+  });
 });

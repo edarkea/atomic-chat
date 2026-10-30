@@ -239,7 +239,7 @@ export class StickerPackFacade {
       if (!this.isCurrent(accountId, current)) return false;
       if (!result.ok) { this.fail(result.error.code); return false; }
       this.rememberDraft(result.value);
-      this.setCurrentDraft(result.value);
+      this.setCurrentDraft(this.drafts().find((item) => item.draftId === result.value.draftId) || result.value);
       this.state.set('ready');
       this.error.set(null);
       return true;
@@ -258,7 +258,7 @@ export class StickerPackFacade {
     const existing = this.drafts();
     const index = existing.findIndex((item) => item.draftId === value.draftId);
     if (index < 0) this.drafts.set([...existing, value]);
-    else this.drafts.set(existing.map((item, position) => position === index ? value : item));
+    else if (existing[index].revision <= value.revision) this.drafts.set(existing.map((item, position) => position === index ? value : item));
   }
   private setCurrentDraft(value: StickerDraftDTO): void {
     this.draft.set(value);
@@ -301,10 +301,12 @@ export class StickerPackFacade {
       });
       if (!this.isCurrent(accountId, currentGeneration)) return undefined;
       if (!result.ok) { this.fail(result.error.code); return undefined; }
-      this.draft.set(result.value);
+      this.rememberDraft(result.value);
+      const confirmed = this.drafts().find((item) => item.draftId === result.value.draftId) || result.value;
+      this.setCurrentDraft(confirmed);
       this.state.set('ready');
       this.error.set(null);
-      return result.value;
+      return confirmed;
     } catch {
       if (this.isCurrent(accountId, currentGeneration)) this.fail('STORAGE_FAILED');
       return undefined;
