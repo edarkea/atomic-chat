@@ -13,12 +13,16 @@ import { MucFacade } from './core/muc.facade';
 import { FileFacade } from './core/file.facade';
 import {
   CertificateTrustDecision,
+  BroadcastMode,
+  BroadcastRecipientResult,
   Contact,
   Message,
   Preferences,
   RoomState,
   XmppTransport,
 } from './core/domain';
+import { BroadcastFacade, bareBroadcastJid } from './core/broadcast.facade';
+import { createOpaqueId } from './core/ids';
 import { CertificateDialogComponent } from './certificate-dialog.component';
 import {
   ConversationTimelineItem,
@@ -44,6 +48,7 @@ import {
   PreferencesDialogModel,
   PreferencesSaveState,
 } from './preferences-dialog.component';
+import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -60,6 +65,7 @@ type ConversationSelection =
     MucViewComponent,
     NewMessageDialogComponent,
     PreferencesDialogComponent,
+    BroadcastDialogComponent,
     SidebarComponent,
   ],
   templateUrl: './app.html',
@@ -74,6 +80,7 @@ export class App {
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly theme = inject(ThemeService);
+  private readonly broadcast = inject(BroadcastFacade);
   protected readonly fileActionPending = (transferId: string): boolean =>
     this.files.isLocalActionPending(transferId);
   protected readonly draft = signal('');
@@ -99,6 +106,15 @@ export class App {
   protected readonly newMessageJoiningRoom = signal<string | null>(null);
   protected readonly newMessageLocalError = signal<string | null>(null);
   protected readonly preferencesOpen = signal(false);
+  protected readonly broadcastOpen = signal(false);
+  protected readonly broadcastBody = signal('');
+  protected readonly broadcastMode = signal<BroadcastMode>('normal');
+  protected readonly broadcastHideOffline = signal(false);
+  protected readonly broadcastSelectedJids = signal<ReadonlySet<string>>(new Set<string>());
+  protected readonly broadcastBusy = signal(false);
+  protected readonly broadcastError = signal<string | null>(null);
+  protected readonly broadcastResult = signal<ReadonlyArray<BroadcastRecipientResult> | null>(null);
+  private broadcastRun = 0;
   protected readonly preferencesSaveState = signal<PreferencesSaveState>('idle');
   protected readonly preferencesError = signal<string | null>(null);
   protected readonly downloadDirectorySelecting = signal(false);
@@ -165,6 +181,45 @@ export class App {
     downloadDirectorySelecting: this.downloadDirectorySelecting(),
     saveState: this.preferencesSaveState(),
     error: this.preferencesError(),
+  }));
+  protected readonly broadcastContacts = computed<ReadonlyArray<Contact>>(() => {
+    const accountJid = bareBroadcastJid(this.chat.accountId());
+    const contactsByJid = new Map<string, Contact>();
+    for (const contact of this.chat.contacts()) {
+      const jid = bareBroadcastJid(contact.jid);
+      if (!jid || jid === accountJid || contact.source === 'conversation') continue;
+      const previous = contactsByJid.get(jid);
+      if (!previous) {
+        contactsByJid.set(jid, { ...contact, jid, groups: [...contact.groups] });
+        continue;
+      }
+      contactsByJid.set(jid, {
+        ...previous,
+        name: previous.name || contact.name,
+        groups: [...new Set([...previous.groups, ...contact.groups])],
+        presence: previous.presence || contact.presence,
+      });
+    }
+    const contacts = [...contactsByJid.values()];
+    return contacts.sort((left, right) =>
+      (left.name || left.jid).localeCompare(right.name || right.jid),
+    );
+  });
+  protected readonly broadcastGroups = computed<ReadonlyArray<string>>(() =>
+    [...new Set(this.broadcastContacts().flatMap((contact) => contact.groups.map((group) => group.trim()).filter(Boolean)))].sort(
+      (left, right) => left.localeCompare(right),
+    ),
+  );
+  protected readonly broadcastDialogModel = computed<BroadcastDialogModel>(() => ({
+    contacts: this.broadcastContacts(),
+    groups: this.broadcastGroups(),
+    selectedJids: this.broadcastSelectedJids(),
+    body: this.broadcastBody(),
+    mode: this.broadcastMode(),
+    hideOffline: this.broadcastHideOffline(),
+    busy: this.broadcastBusy(),
+    error: this.broadcastError(),
+    result: this.broadcastResult(),
   }));
   protected readonly activeSelection = computed<ConversationSelection>(() => {
     const selection = this.conversationSelection();
@@ -718,6 +773,7 @@ export class App {
     }
   }
   protected async disconnect(): Promise<void> {
+    this.cancelBroadcastForAccount();
     this.resetConversationSelection();
     await this.chat.disconnect();
     await this.files.setAccount('');
@@ -788,6 +844,110 @@ export class App {
     } catch {
       this.chat.error.set('No fue posible enviar el mensaje.');
     }
+  }
+
+  protected openBroadcast(): void {
+    this.broadcastBody.set('');
+    this.broadcastMode.set('normal');
+    this.broadcastHideOffline.set(false);
+    this.broadcastSelectedJids.set(new Set<string>());
+    this.broadcastBusy.set(false);
+    this.broadcastError.set(null);
+    this.broadcastResult.set(null);
+    this.broadcastOpen.set(true);
+  }
+
+  protected closeBroadcast(): void {
+    if (this.broadcastBusy()) return;
+    this.broadcastOpen.set(false);
+    this.broadcastError.set(null);
+    queueMicrotask(() => this.sidebar?.focusBroadcastTrigger());
+  }
+
+  protected toggleBroadcastContact(jid: string): void {
+    const selected = new Set(this.broadcastSelectedJids());
+    if (selected.has(jid)) selected.delete(jid);
+    else selected.add(jid);
+    this.broadcastSelectedJids.set(selected);
+    this.broadcastError.set(null);
+  }
+
+  protected toggleBroadcastGroup(group: string): void {
+    const groupJids = this.broadcastContacts()
+      .filter((contact) => contact.groups.includes(group))
+      .map((contact) => bareBroadcastJid(contact.jid));
+    const selected = new Set(this.broadcastSelectedJids());
+    const allSelected = groupJids.length > 0 && groupJids.every((jid) => selected.has(jid));
+    groupJids.forEach((jid) => (allSelected ? selected.delete(jid) : selected.add(jid)));
+    this.broadcastSelectedJids.set(selected);
+    this.broadcastError.set(null);
+  }
+
+  protected toggleAllBroadcastContacts(): void {
+    const allJids = this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid));
+    const selected = this.broadcastSelectedJids();
+    const allSelected = allJids.length > 0 && allJids.every((jid) => selected.has(jid));
+    this.broadcastSelectedJids.set(
+      allSelected ? new Set<string>() : new Set(allJids),
+    );
+    this.broadcastError.set(null);
+  }
+
+  protected async submitBroadcast(): Promise<void> {
+    if (this.broadcastBusy()) return;
+    const body = this.broadcastBody().trim();
+    const currentJids = new Set(this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid)));
+    const recipientJids = [...this.broadcastSelectedJids()].filter((jid) => currentJids.has(jid));
+    if (!body) {
+      this.broadcastError.set('Escribe un mensaje antes de difundirlo.');
+      return;
+    }
+    if (!recipientJids.length) {
+      this.broadcastError.set('Selecciona al menos un destinatario válido.');
+      return;
+    }
+    if (!this.chat.isConnected() || !this.chat.accountId()) {
+      this.broadcastError.set('La cuenta no está conectada.');
+      return;
+    }
+    const run = ++this.broadcastRun;
+    this.broadcastBusy.set(true);
+    this.broadcastError.set(null);
+    this.broadcastResult.set(null);
+    try {
+      const result = await this.broadcast.send({
+        broadcastId: createOpaqueId('broadcast'),
+        accountId: this.chat.accountId(),
+        mode: this.broadcastMode(),
+        body,
+        recipientJids,
+      });
+      if (run !== this.broadcastRun) return;
+      this.broadcastResult.set(result.recipients);
+    } catch {
+      if (run === this.broadcastRun)
+        this.broadcastError.set('No fue posible completar la difusión.');
+    } finally {
+      if (run === this.broadcastRun) this.broadcastBusy.set(false);
+    }
+  }
+
+  protected retryFailedBroadcast(): void {
+    const failed = this.broadcastResult()
+      ?.filter((item) => item.status === 'failed')
+      .map((item) => item.recipientJid);
+    if (!failed?.length) return;
+    this.broadcastSelectedJids.set(new Set(failed));
+    this.broadcastResult.set(null);
+    this.broadcastError.set(null);
+    void this.submitBroadcast();
+  }
+
+  private cancelBroadcastForAccount(): void {
+    this.broadcastRun++;
+    this.broadcast.cancel(this.chat.accountId());
+    this.broadcastBusy.set(false);
+    this.broadcastOpen.set(false);
   }
   protected draftChanged(value: string): void {
     this.draft.set(value);

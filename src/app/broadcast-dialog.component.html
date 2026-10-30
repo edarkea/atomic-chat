@@ -1,0 +1,189 @@
+<div class="broadcast-backdrop" role="presentation">
+  <section
+    #dialog
+    class="broadcast-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="broadcast-title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="broadcast-header">
+      <div>
+        <span class="eyebrow">WORKSPACE / DIFUSIÓN</span>
+        <h2 id="broadcast-title">Difundir mensaje</h2>
+        <p>Envía el mismo mensaje en conversaciones individuales.</p>
+      </div>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Cerrar Difundir mensaje"
+        [disabled]="model().busy"
+        (click)="cancelled.emit()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-close" />
+        </svg>
+      </button>
+    </header>
+
+    <form class="broadcast-body" (submit)="$event.preventDefault(); submit.emit()">
+      <label class="broadcast-field" for="broadcast-message">
+        <span>Mensaje</span>
+        <textarea
+          id="broadcast-message"
+          name="broadcast-message"
+          rows="4"
+          placeholder="Escribe el mensaje…"
+          [ngModel]="model().body"
+          (ngModelChange)="bodyChange.emit($event)"
+        ></textarea>
+      </label>
+
+      <fieldset class="broadcast-modes">
+        <legend>Tipo</legend>
+        <label>
+          <input
+            type="radio"
+            name="broadcast-mode"
+            value="normal"
+            [checked]="model().mode === 'normal'"
+            (change)="modeChange.emit('normal')"
+          />
+          Mensaje normal
+        </label>
+        <label
+          class="option-disabled"
+          title="La ruta XMPP actual solo evidencia mensajes chat individuales."
+        >
+          <input type="radio" name="broadcast-mode" value="alert" disabled />
+          Notificación de alerta <small>No disponible: contrato XMPP no evidenciado</small>
+        </label>
+      </fieldset>
+
+      <section class="broadcast-section" aria-labelledby="broadcast-recipients-title">
+        <div class="broadcast-section-heading">
+          <div>
+            <h3 id="broadcast-recipients-title">Destinatarios</h3>
+            <small
+              >{{ model().selectedJids.size }} seleccionados ·
+              {{ model().contacts.length }} elegibles</small
+            >
+          </div>
+          <button type="button" class="secondary compact" (click)="toggleAll.emit()">
+            {{
+              model().selectedJids.size === model().contacts.length
+                ? 'Deseleccionar todos'
+                : 'Seleccionar todos'
+            }}
+          </button>
+        </div>
+        <label class="broadcast-filter">
+          <input
+            type="checkbox"
+            [checked]="model().hideOffline"
+            (change)="onHideOfflineChange($event)"
+          />
+          Ocultar usuarios desconectados
+        </label>
+
+        @if (model().groups.length) {
+          <div class="broadcast-groups" aria-label="Grupos de contactos">
+            @for (group of model().groups; track group) {
+              <button
+                type="button"
+                class="group-chip"
+                role="checkbox"
+                [class.selected]="groupSelected(group)"
+                [class.partial]="groupPartial(group)"
+                [attr.aria-checked]="groupPartial(group) ? 'mixed' : groupSelected(group) ? 'true' : 'false'"
+                (click)="toggleGroup.emit(group)"
+              >
+                {{ group }} <small>{{ groupContacts(group).length }}</small>
+              </button>
+            }
+          </div>
+        }
+
+        <div class="broadcast-contacts">
+          @for (contact of model().contacts; track jid(contact)) {
+            @if (!model().hideOffline || isOnline(contact)) {
+              <label class="broadcast-contact" [class.selected]="isSelected(contact)">
+                <input
+                  type="checkbox"
+                  [checked]="isSelected(contact)"
+                  (change)="toggleContact.emit(jid(contact))"
+                />
+                <span
+                  class="presence-dot"
+                  [class.online]="isOnline(contact)"
+                  aria-hidden="true"
+                ></span>
+                <span class="broadcast-contact-copy">
+                  <strong>{{ contactName(contact) }}</strong>
+                  <small>{{ jid(contact) }} · {{ presenceLabel(contact) }}</small>
+                </span>
+              </label>
+            }
+          } @empty {
+            <p class="dialog-empty">No hay contactos elegibles en el roster.</p>
+          }
+        </div>
+      </section>
+
+      @if (model().error) {
+        <p class="dialog-error" role="alert">{{ model().error }}</p>
+      }
+
+      @if (model().result; as result) {
+        <section
+          class="broadcast-result"
+          aria-live="polite"
+          aria-labelledby="broadcast-result-title"
+        >
+          <div class="broadcast-section-heading">
+            <div>
+              <h3 id="broadcast-result-title">Resultado</h3>
+              <small>{{ submittedCount() }} enviados · {{ failedCount() }} con problemas</small>
+            </div>
+            @if (retryableCount() > 0 && !model().busy) {
+              <button type="button" class="secondary compact" (click)="retryFailed.emit()">
+                Reintentar fallidos
+              </button>
+            }
+          </div>
+          <ul>
+            @for (item of result; track item.recipientJid) {
+              <li>
+                <span>{{ item.recipientJid }}</span>
+                <strong [class.result-failed]="item.status !== 'submitted'">{{
+                  statusLabel(item.status)
+                }}</strong>
+              </li>
+            }
+          </ul>
+          <small class="broadcast-note"
+            >“Enviado” significa aceptado por la ruta local/XMPP, no confirmado como
+            recibido.</small
+          >
+        </section>
+      }
+    </form>
+
+    <footer class="broadcast-footer">
+      <span>Los destinatarios reciben mensajes privados separados.</span>
+      <div>
+        <button
+          type="button"
+          class="secondary"
+          [disabled]="model().busy"
+          (click)="cancelled.emit()"
+        >
+          Cerrar
+        </button>
+        <button type="button" class="primary" [disabled]="model().busy" (click)="submit.emit()">
+          {{ model().busy ? 'Enviando…' : 'OK' }}
+        </button>
+      </div>
+    </footer>
+  </section>
+</div>

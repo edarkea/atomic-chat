@@ -38,6 +38,8 @@ export interface ConversationListModel {
 export class ConversationListComponent {
   @ViewChild('newMessageTrigger')
   private readonly newMessageTrigger?: ElementRef<HTMLButtonElement>;
+  @ViewChild('broadcastTrigger')
+  private readonly broadcastTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('preferencesTrigger')
   private readonly preferencesTrigger?: ElementRef<HTMLButtonElement>;
   readonly model = input.required<ConversationListModel>();
@@ -113,6 +115,10 @@ export class ConversationListComponent {
 
   focusNewMessageTrigger(): void {
     this.newMessageTrigger?.nativeElement.focus();
+  }
+
+  focusBroadcastTrigger(): void {
+    this.broadcastTrigger?.nativeElement.focus();
   }
 
   focusPreferencesTrigger(): void {

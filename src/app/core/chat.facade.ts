@@ -11,6 +11,7 @@ import {
   Contact,
   ConversationSummary,
   Message,
+  MessageSendInput,
   Presence,
   PresenceInput,
   Preferences,
@@ -553,7 +554,7 @@ export class ChatFacade {
     const recipient = conversationId.trim();
     if (!cleanText || !recipient || !this.accountId().trim()) return false;
     try {
-      const result = await this.xmpp.sendMessage({
+      const result = await this.sendMessageInput({
         version: 1,
         requestId: createOpaqueId('req'),
         accountId: this.accountId(),
@@ -572,6 +573,15 @@ export class ChatFacade {
       this.error.set('No fue posible enviar el mensaje.');
       return false;
     }
+  }
+
+  async sendMessageInput(input: MessageSendInput): Promise<Result<Message>> {
+    const result = await this.xmpp.sendMessage(input);
+    if (result.ok) {
+      await this.sendChatState(input.conversationId, 'active');
+      this.upsertMessage(result.value, input.conversationId);
+    }
+    return result;
   }
 
   async updateTypingState(conversationId: string, draft: string): Promise<void> {

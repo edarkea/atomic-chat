@@ -197,6 +197,41 @@ describe('App composer integration', () => {
     expect(panel.querySelector('input[placeholder="Ej. operador"]')).toBeTruthy();
     expect(panel.textContent).toContain('No hay salas descubiertas todavía.');
   });
+  it('opens the broadcast dialog with roster contacts instead of sample data', () => {
+    facade.contacts.set([
+      {
+        jid: 'one@example.invalid',
+        name: 'Uno',
+        groups: ['Equipo'],
+        source: 'roster',
+        presence: {
+          jid: 'one@example.invalid',
+          availability: 'available',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        jid: 'two@example.invalid',
+        name: 'Dos',
+        groups: ['Equipo'],
+        source: 'roster',
+        presence: {
+          jid: 'two@example.invalid',
+          availability: 'unavailable',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    ]);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.broadcast-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const panel = fixture.nativeElement.querySelector('.broadcast-dialog') as HTMLElement;
+    expect(panel.getAttribute('role')).toBe('dialog');
+    expect(panel.querySelector('textarea[name="broadcast-message"]')).toBeTruthy();
+    expect(panel.querySelectorAll('.broadcast-contact')).toHaveLength(2);
+    expect(panel.textContent).toContain('Equipo');
+    expect(panel.textContent).toContain('Notificación de alerta');
+  });
   it('separates room selection from joining', () => {
     muc.services.set([
       {

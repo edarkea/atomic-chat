@@ -44,6 +44,10 @@ export class SidebarComponent {
     this.conversationList?.focusNewMessageTrigger();
   }
 
+  focusBroadcastTrigger(): void {
+    this.conversationList?.focusBroadcastTrigger();
+  }
+
   focusPreferencesTrigger(): void {
     this.conversationList?.focusPreferencesTrigger();
   }

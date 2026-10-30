@@ -418,6 +418,25 @@ export interface MessageSendInput {
   clientMessageId: ClientMessageId;
   body: { kind: 'text'; text: string };
 }
+export type BroadcastMode = 'normal' | 'alert';
+export interface BroadcastRequest {
+  readonly broadcastId: RequestId;
+  readonly accountId: string;
+  readonly mode: BroadcastMode;
+  readonly body: string;
+  readonly recipientJids: readonly string[];
+}
+export type BroadcastRecipientStatus = 'queued' | 'submitted' | 'failed' | 'unknown';
+export interface BroadcastRecipientResult {
+  readonly recipientJid: string;
+  readonly clientMessageId: ClientMessageId;
+  readonly status: BroadcastRecipientStatus;
+  readonly errorCode?: AppErrorCode;
+}
+export interface BroadcastResult {
+  readonly broadcastId: RequestId;
+  readonly recipients: readonly BroadcastRecipientResult[];
+}
 export type ThemeId = 'atomic' | 'atomic-light' | 'custom';
 export type ThemeColorKey =
   | 'background'

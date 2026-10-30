@@ -1,0 +1,299 @@
+.broadcast-backdrop {
+  align-items: center;
+  background: #0009;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 40;
+}
+.broadcast-dialog {
+  background: var(--atomic-surface);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-md);
+  box-shadow: 0 18px 60px #000b;
+  color: var(--atomic-text);
+  display: flex;
+  flex-direction: column;
+  max-height: min(840px, calc(100vh - 48px));
+  max-width: 760px;
+  overflow: hidden;
+  width: 100%;
+}
+.broadcast-header,
+.broadcast-footer,
+.broadcast-section-heading {
+  align-items: center;
+  display: flex;
+  gap: var(--atomic-space-2);
+  justify-content: space-between;
+}
+.broadcast-header {
+  border-bottom: 1px solid var(--atomic-border-soft);
+  padding: 18px 20px;
+}
+.broadcast-header h2 {
+  font-size: 20px;
+  margin: 4px 0;
+}
+.broadcast-header p,
+.broadcast-section-heading small,
+.broadcast-footer,
+.dialog-empty,
+.broadcast-note {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  margin: 0;
+}
+.eyebrow {
+  color: var(--atomic-green);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 36px;
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--atomic-surface-hover);
+  color: var(--atomic-text);
+}
+.icon-button:disabled,
+.secondary:disabled,
+.primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.broadcast-body {
+  overflow: auto;
+  padding: 16px 20px;
+}
+.broadcast-field {
+  color: var(--atomic-text-secondary);
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+}
+.broadcast-field textarea {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  font: inherit;
+  min-height: 96px;
+  padding: 10px;
+  resize: vertical;
+}
+.broadcast-modes {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.broadcast-modes legend {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  margin-bottom: 6px;
+  width: 100%;
+}
+.broadcast-modes label,
+.broadcast-filter {
+  align-items: center;
+  color: var(--atomic-text);
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+}
+.option-disabled {
+  color: var(--atomic-text-muted) !important;
+  cursor: not-allowed;
+}
+.option-disabled small {
+  color: var(--atomic-text-muted);
+  font-size: 10px;
+}
+.broadcast-section {
+  border-top: 1px solid var(--atomic-border-soft);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+.broadcast-section-heading h3 {
+  color: var(--atomic-green-soft);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+.secondary,
+.primary {
+  border-radius: var(--atomic-radius-sm);
+  cursor: pointer;
+  font: inherit;
+  min-height: 36px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.secondary {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  color: var(--atomic-text);
+}
+.primary {
+  background: var(--atomic-green);
+  border: 1px solid var(--atomic-green);
+  color: #101510;
+  font-weight: 700;
+}
+.secondary:hover:not(:disabled) {
+  background: var(--atomic-surface-active);
+}
+.compact {
+  min-height: 32px;
+  padding: 4px 8px;
+}
+.broadcast-filter {
+  margin: 12px 0;
+}
+.broadcast-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.group-chip {
+  background: var(--atomic-surface-soft);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: 999px;
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 9px;
+}
+.group-chip.selected,
+.group-chip.partial {
+  border-color: var(--atomic-green);
+  color: var(--atomic-green-soft);
+}
+.group-chip small {
+  color: var(--atomic-text-muted);
+}
+.broadcast-contacts {
+  display: grid;
+  gap: 5px;
+}
+.broadcast-contact {
+  align-items: center;
+  background: var(--atomic-surface-soft);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  cursor: pointer;
+  display: flex;
+  gap: 9px;
+  min-height: 48px;
+  padding: 7px 10px;
+}
+.broadcast-contact.selected {
+  border-color: var(--atomic-green);
+  background: var(--atomic-surface-hover);
+}
+.presence-dot {
+  background: var(--atomic-text-muted);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  height: 8px;
+  width: 8px;
+}
+.presence-dot.online {
+  background: var(--atomic-green);
+}
+.broadcast-contact-copy {
+  min-width: 0;
+}
+.broadcast-contact-copy strong,
+.broadcast-contact-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.broadcast-contact-copy small {
+  color: var(--atomic-text-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.dialog-error {
+  color: var(--atomic-danger);
+  font-size: 13px;
+  margin: 14px 0 0;
+}
+.broadcast-result {
+  border-top: 1px solid var(--atomic-border-soft);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+.broadcast-result ul {
+  list-style: none;
+  margin: 10px 0;
+  max-height: 170px;
+  overflow: auto;
+  padding: 0;
+}
+.broadcast-result li {
+  align-items: center;
+  border-bottom: 1px solid var(--atomic-border-soft);
+  display: flex;
+  font-size: 12px;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 7px 0;
+}
+.broadcast-result li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.broadcast-result strong {
+  color: var(--atomic-green-soft);
+  white-space: nowrap;
+}
+.broadcast-result .result-failed {
+  color: var(--atomic-danger);
+}
+.broadcast-footer {
+  border-top: 1px solid var(--atomic-border-soft);
+  padding: 12px 20px;
+}
+.broadcast-footer > span {
+  flex: 1;
+}
+.broadcast-footer > div {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .broadcast-backdrop {
+    padding: 10px;
+  }
+  .broadcast-header,
+  .broadcast-body,
+  .broadcast-footer {
+    padding-inline: 14px;
+  }
+  .broadcast-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .broadcast-footer > div {
+    justify-content: flex-end;
+  }
+}

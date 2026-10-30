@@ -180,6 +180,7 @@
         (leaveRoom)="leaveRoom()"
         (searchChange)="search.set($event)"
         (selectContact)="selectContact($event)"
+        (broadcastToggle)="openBroadcast()"
         (newMessageToggle)="openNewMessageDialog()"
         (preferencesToggle)="openPreferences()"
         (refreshRoster)="chat.refreshRoster()"
@@ -257,6 +258,20 @@
     (selectDownloadDirectory)="selectDownloadDirectory()"
     (reset)="resetPreferences()"
     (cancelled)="closePreferences()"
+  />
+}
+@if (broadcastOpen()) {
+  <app-broadcast-dialog
+    [model]="broadcastDialogModel()"
+    (bodyChange)="broadcastBody.set($event)"
+    (modeChange)="broadcastMode.set($event)"
+    (hideOfflineChange)="broadcastHideOffline.set($event)"
+    (toggleContact)="toggleBroadcastContact($event)"
+    (toggleGroup)="toggleBroadcastGroup($event)"
+    (toggleAll)="toggleAllBroadcastContacts()"
+    (submit)="submitBroadcast()"
+    (retryFailed)="retryFailedBroadcast()"
+    (cancelled)="closeBroadcast()"
   />
 }
 @if (certificateRequest(); as request) {
