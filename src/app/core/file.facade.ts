@@ -1,7 +1,7 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
 import { ChatImageRecord, FileTransfer, TypedDomainEvent } from './domain';
-import { FILE_TRANSFER_PORT, MEDIA_PORT, FileTransferPort, MediaPort } from './ports';
+import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
 
 const MAX_DROPPED_FILES = 8;
 
@@ -9,16 +9,14 @@ const MAX_DROPPED_FILES = 8;
 export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
-  private readonly mediaPort = inject<MediaPort | null>(MEDIA_PORT, { optional: true });
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
-  private readonly mediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly liveMediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
   private droppedBatchInFlight = false;
   private droppedBatchGeneration = 0;
   readonly transfers = computed(() => this.items());
-  readonly media = computed(() => this.mediaItems());
+  readonly media = computed(() => this.liveMediaItems());
   readonly liveMedia = computed(() => this.liveMediaItems());
   readonly error = signal<string | null>(null);
   readonly activeCount = computed(
@@ -36,22 +34,15 @@ export class FileFacade {
     this.droppedBatchGeneration += 1;
     this.account = accountId;
     this.items.set([]);
-    this.mediaItems.set([]);
     this.liveMediaItems.set([]);
     this.pendingLocalActions.set(new Set());
     this.error.set(null);
     if (!accountId) return;
-    const activeResult = this.port.listActive({
+    const result = await this.port.listActive({
       version: 1,
       requestId: createOpaqueId('file-list'),
       accountId,
     });
-    const mediaResult = this.mediaPort?.list({
-      version: 1,
-      requestId: createOpaqueId('media-list'),
-      accountId,
-    });
-    const [result, storedMedia] = await Promise.all([activeResult, mediaResult]);
     if (this.account !== accountId) return;
     if (result.ok) {
       const active = new Map(result.value.map((item) => [item.offer.transferId, item]));
@@ -59,9 +50,6 @@ export class FileFacade {
         if (current.offer.accountId === accountId) active.set(current.offer.transferId, current);
       this.items.set([...active.values()]);
     } else this.error.set(result.error.message);
-    if (storedMedia?.ok) this.mediaItems.set(storedMedia.value);
-    else if (storedMedia && !storedMedia.ok && storedMedia.error.code !== 'UNSUPPORTED')
-      this.error.set(storedMedia.error.message);
   }
 
   async accept(transferId: string): Promise<void> {
@@ -160,7 +148,7 @@ export class FileFacade {
   }
 
   mediaForTransfer(accountId: string, transferId: string): ChatImageRecord | undefined {
-    return this.mediaItems().find(
+    return this.liveMediaItems().find(
       (record) => record.accountId === accountId && record.transferId === transferId,
     );
   }
@@ -263,11 +251,6 @@ export class FileFacade {
       const media = event.payload;
       if (media.accountId === this.account) {
         this.upsertMedia(media);
-        this.liveMediaItems.update((items) =>
-          items.some((item) => item.mediaId === media.mediaId)
-            ? items.map((item) => (item.mediaId === media.mediaId ? media : item))
-            : [...items, media],
-        );
       }
     }
   }
@@ -283,7 +266,7 @@ export class FileFacade {
   }
 
   private upsertMedia(media: ChatImageRecord): void {
-    this.mediaItems.update((items) =>
+    this.liveMediaItems.update((items) =>
       items.some((item) => item.mediaId === media.mediaId)
         ? items.map((item) => (item.mediaId === media.mediaId ? media : item))
         : [...items, media],

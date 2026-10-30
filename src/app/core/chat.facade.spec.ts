@@ -270,7 +270,7 @@ describe('ChatFacade roster reconciliation', () => {
         calls += 1;
         if (calls === 1) releaseFirst = resolve;
         else releaseSecond = resolve;
-      }) as any;
+      }) as unknown as Promise<unknown>;
     const facade = TestBed.inject(ChatFacade);
     const pending = facade.loadConversation('first@example.invalid');
     await Promise.resolve();
@@ -287,6 +287,60 @@ describe('ChatFacade roster reconciliation', () => {
     expect(facade.historyLoading()).toBe(true);
     releaseSecond(ok({ items: [], nextCursor: null, hasMore: false }));
     await second;
+    expect(facade.historyLoading()).toBe(false);
+  });
+
+  it('ignores a stale timeline response after changing conversations', async () => {
+    let releaseFirst!: (value: ReturnType<typeof ok>) => void;
+    let releaseSecond!: (value: ReturnType<typeof ok>) => void;
+    let calls = 0;
+    historyPort.timelinePage = () =>
+      new Promise((resolve) => {
+        calls += 1;
+        if (calls === 1) releaseFirst = resolve;
+        else releaseSecond = resolve;
+      }) as unknown as Promise<unknown>;
+    const facade = TestBed.inject(ChatFacade);
+    const first = facade.loadConversation('first@example.invalid');
+    await Promise.resolve();
+    const second = facade.loadConversation('second@example.invalid');
+    await Promise.resolve();
+    releaseFirst(
+      ok({
+        items: [
+          {
+            kind: 'text' as const,
+            id: 'first-history',
+            sortAt: '2026-01-01T00:00:00.000Z',
+            message: historyMessage('a@example.invalid', 'first@example.invalid', 1),
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      }),
+    );
+    await first;
+    expect(facade.timelineItems()).toEqual([]);
+    expect(facade.messages()).toEqual([]);
+    expect(facade.historyLoading()).toBe(true);
+
+    releaseSecond(
+      ok({
+        items: [
+          {
+            kind: 'text' as const,
+            id: 'second-history',
+            sortAt: '2026-01-02T00:00:00.000Z',
+            message: historyMessage('a@example.invalid', 'second@example.invalid', 2),
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      }),
+    );
+    await second;
+    expect(facade.timelineItems().map((item) => item.id)).toEqual(['second-history']);
+    expect(facade.messages().map((message) => message.id)).toEqual(['message-2']);
     expect(facade.historyLoading()).toBe(false);
   });
 

@@ -331,6 +331,7 @@ export interface MediaListInput {
   readonly requestId: RequestId;
   readonly accountId: string;
   readonly conversationId?: string;
+  readonly limit?: number;
 }
 export type HistoryTimelineItem =
   | {

@@ -485,6 +485,7 @@ export class ChatFacade {
             cursor: null,
           })
         : undefined;
+      if (!this.isHistoryContextCurrent(context)) return;
       if (timelineResult?.ok) {
         this.timelineMode = true;
         this.timelineSupported.set(true);

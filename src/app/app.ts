@@ -398,7 +398,7 @@ export class App {
       const timelineMedia = this.chat.timelineItems()
         .filter((item): item is Extract<HistoryTimelineItem, { kind: 'image' }> => item.kind === 'image')
         .map((item) => item.media);
-      const persistedImages = this.chat.timelineSupported() ? timelineMedia : this.files.media();
+      const persistedImages = this.chat.timelineSupported() ? timelineMedia : [];
       const liveMedia = this.files.liveMedia();
       const historicalImages: ConversationTimelineItem[] = [...persistedImages, ...liveMedia]
         .filter((media, index, all) => all.findIndex((candidate) => candidate.mediaId === media.mediaId) === index)

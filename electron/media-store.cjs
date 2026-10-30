@@ -39,6 +39,7 @@ class MediaStore {
       /* Windows ACLs are managed by the userData directory. */
     }
     this.listeners = new Set();
+    this.persistLocks = new Map();
   }
 
   onEvent(listener) {
@@ -46,15 +47,32 @@ class MediaStore {
     return () => this.listeners.delete(listener);
   }
 
-  async persistTransfer(record, direction) {
+  persistTransfer(record, direction) {
     if (record?.state !== 'completed' || !record.offer?.accountId || !record.offer.transferId)
-      return null;
+      return Promise.resolve(null);
+    const lockKey = `${record.offer.accountId}\0${record.offer.transferId}`;
+    const previous = this.persistLocks.get(lockKey) || Promise.resolve();
+    const operation = previous
+      .catch(() => undefined)
+      .then(() => this.persistTransferLocked(record, direction));
+    const tracked = operation.finally(() => {
+      if (this.persistLocks.get(lockKey) === tracked) this.persistLocks.delete(lockKey);
+    });
+    this.persistLocks.set(lockKey, tracked);
+    return tracked;
+  }
+
+  async persistTransferLocked(record, direction) {
     const existing = this.persistence.getMediaByTransfer(
       record.offer.accountId,
       record.offer.transferId,
     );
+    if (existing?.storageKey && (await this.storageFileExists(existing.storageKey))) {
+      if (existing.availability !== 'available')
+        this.persistence.updateMediaAvailability(existing.accountId, existing.mediaId, 'available');
+      return this.publicRecord({ ...existing, availability: 'available' });
+    }
     if (existing?.availability === 'available' && existing.storageKey) {
-      if (await this.storageFileExists(existing.storageKey)) return this.publicRecord(existing);
       this.persistence.updateMediaAvailability(existing.accountId, existing.mediaId, 'missing');
     }
     const sourcePath = direction === 'incoming' ? record.destination : record.sourcePath;
@@ -67,9 +85,11 @@ class MediaStore {
     }
     const mediaId = this.mediaId(record.offer.accountId, record.offer.transferId);
     const storageKey = `${mediaId}.bin`;
+    const targetPath = this.storagePath(storageKey);
+    if (await this.pathExists(targetPath)) return null;
     const temporaryDirectory = await fsp.mkdtemp(path.join(this.directory, '.tmp-'));
     const temporaryPath = path.join(temporaryDirectory, `${crypto.randomUUID()}.bin`);
-    const targetPath = this.storagePath(storageKey);
+    let publishedByOperation = false;
     try {
       await fsp.writeFile(temporaryPath, inspected.data, { flag: 'wx', mode: 0o600 });
       const temporaryHandle = await fsp.open(temporaryPath, 'r+');
@@ -79,6 +99,7 @@ class MediaStore {
         await temporaryHandle.close().catch(() => undefined);
       }
       await fsp.rename(temporaryPath, targetPath);
+      publishedByOperation = true;
       const publicRecord = {
         mediaId,
         transferId: record.offer.transferId,
@@ -95,21 +116,23 @@ class MediaStore {
         availability: 'available',
       };
       const saved = this.persistence.upsertMedia(publicRecord, storageKey);
-      const result = this.publicRecord(saved || publicRecord);
+      if (!saved) throw this.error('STORAGE_FAILED', 'no se confirmó el registro multimedia');
+      const result = this.publicRecord(saved);
       this.emit(result, record.ownerSenderId);
       return result;
     } catch {
-      await fsp.rm(targetPath, { force: true }).catch(() => undefined);
+      if (publishedByOperation)
+        await fsp.rm(targetPath, { force: true }).catch(() => undefined);
       return null;
     } finally {
       await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
-  list(accountId, conversationId) {
+  list(accountId, conversationId, limit = 100) {
     if (typeof this.persistence.listMedia !== 'function') return [];
     return this.persistence
-      .listMedia(accountId, conversationId)
+      .listMedia(accountId, conversationId, limit)
       .map((record) => this.publicRecord(record));
   }
 
@@ -195,6 +218,15 @@ class MediaStore {
     }
   }
 
+  async pathExists(filePath) {
+    try {
+      await fsp.lstat(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   storagePath(storageKey) {
     return path.join(this.directory, path.basename(storageKey));
   }
@@ -210,9 +242,15 @@ class MediaStore {
   }
 
   emit(record, targetSenderId) {
-    this.listeners.forEach((listener) =>
-      listener({ type: 'media.available', payload: record, targetSenderId }),
-    );
+    this.listeners.forEach((listener) => {
+      try {
+        Promise.resolve(listener({ type: 'media.available', payload: record, targetSenderId })).catch(
+          () => undefined,
+        );
+      } catch {
+        /* A notification failure must not undo the confirmed asset. */
+      }
+    });
   }
 
   error(code, message) {

@@ -132,9 +132,11 @@ function registerHistoryHandlers({ ipcMain, assertSender, getRuntime, historySec
         (typeof input.conversationId !== 'string' || !input.conversationId.trim())
       )
         throw new Error('INVALID_INPUT');
+      const limit = input.limit === undefined ? 50 : input.limit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('INVALID_INPUT');
       return {
         ok: true,
-        value: getRuntime().media.list(input.accountId, input.conversationId),
+        value: getRuntime().media.list(input.accountId, input.conversationId, limit),
         version: 1,
         requestId: requestId(event, input),
       };

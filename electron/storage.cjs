@@ -475,7 +475,7 @@ class PersistenceStore {
     return row || null;
   }
 
-  listMedia(accountId, conversationId) {
+  listMedia(accountId, conversationId, limit = 100) {
     const values = [accountId];
     const predicate = conversationId ? ' AND conversation_id = ?' : '';
     if (conversationId) values.push(conversationId);
@@ -486,9 +486,9 @@ class PersistenceStore {
           original_name AS originalName, mime_type AS mimeType, size_bytes AS sizeBytes,
           width, height, created_at AS createdAt, availability, storage_key AS storageKey
          FROM media_assets WHERE account_id = ?${predicate}
-         ORDER BY created_at ASC, media_id ASC`,
+         ORDER BY created_at ASC, media_id ASC LIMIT ?`,
       )
-      .all(...values);
+      .all(...values, limit);
   }
 
   listAllMedia() {
