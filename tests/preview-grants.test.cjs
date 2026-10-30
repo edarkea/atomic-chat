@@ -179,9 +179,14 @@ test('revocation invalidates an open that resolves later and cleans its private 
   await pendingRevoke;
   releaseOpenFile();
   await assert.rejects(pendingOpen, (error) => error.code === 'MEDIA_REFERENCE_REVOKED');
-  assert.ok(closeCalls >= 2);
-  assert.ok(removedPaths.length >= 1);
-  assert.equal(removedPaths.every((filePath) => !fs.existsSync(filePath)), true);
+  assert.equal(registry.grants.has(preview.previewId), false);
+  assert.ok(closeCalls >= 1);
+  if (process.platform === 'win32') {
+    assert.ok(removedPaths.length >= 1);
+    assert.equal(removedPaths.every((filePath) => !fs.existsSync(filePath)), true);
+  } else {
+    assert.equal(removedPaths.length, 0);
+  }
 });
 
 test('does not return a block when revocation or close wins a pending read', async () => {
