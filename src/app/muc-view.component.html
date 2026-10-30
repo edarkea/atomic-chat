@@ -74,6 +74,7 @@
     [placeholder]="'Escribir en la sala...'"
     [draft]="draft()"
     [disabled]="false"
+    [stickersAccountId]="roomState().accountId"
     (draftChange)="draftChange.emit($event)"
     (messageSubmitted)="send.emit()"
   />

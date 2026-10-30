@@ -23,6 +23,19 @@ import {
   PreviewOpenRequest,
   PreviewReadRequest,
   PreviewStreamRef,
+  StickerDeleteRequest,
+  StickerImportRequest,
+  StickerImportResult,
+  StickerLibrarySnapshot,
+  StickerListRequest,
+  StickerPreviewChunk,
+  StickerPreviewCloseRequest,
+  StickerPreviewGetRequest,
+  StickerPreviewGrant,
+  StickerPreviewOpenRequest,
+  StickerPreviewReadRequest,
+  StickerPreviewRevokeRequest,
+  StickerPreviewStreamRef,
   Result,
   TimelinePage,
   TimelinePageInput,
@@ -48,6 +61,8 @@ import {
   MucPort,
   PreferencesPort,
   PreviewPort,
+  StickerLibraryPort,
+  StickerPreviewPort,
 } from './ports';
 
 const unsupported = <T>(requestId: string): Result<T> => ({
@@ -245,6 +260,38 @@ export class UnavailablePreviewPort implements PreviewPort {
     return Promise.resolve(unsupported(input.requestId));
   }
   revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableStickerLibraryPort implements StickerLibraryPort {
+  import(input: StickerImportRequest): Promise<Result<StickerImportResult | null>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  list(input: StickerListRequest): Promise<Result<StickerLibrarySnapshot>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  delete(input: StickerDeleteRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableStickerPreviewPort implements StickerPreviewPort {
+  get(input: StickerPreviewGetRequest): Promise<Result<StickerPreviewGrant>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  open(input: StickerPreviewOpenRequest): Promise<Result<StickerPreviewStreamRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  read(input: StickerPreviewReadRequest): Promise<Result<StickerPreviewChunk>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  close(input: StickerPreviewCloseRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>> {
     return Promise.resolve(unsupported(input.requestId));
   }
 }

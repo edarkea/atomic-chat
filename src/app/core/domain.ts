@@ -309,6 +309,107 @@ export interface ImagePreviewRevokeRequest extends ImagePreviewRequest {
   readonly previewId: string;
 }
 
+export type StickerAssetAvailability = 'pending' | 'available' | 'missing' | 'invalid' | 'blocked';
+export interface StickerAssetRecord {
+  readonly assetId: string;
+  readonly accountId: string;
+  readonly kind: 'static-image';
+  readonly mimeType: StaticImageMimeType;
+  readonly hash: { readonly algorithm: 'sha-256'; readonly value: string };
+  readonly sizeBytes: DecimalByteCount;
+  readonly width: number;
+  readonly height: number;
+  readonly availability: StickerAssetAvailability;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+export interface StickerRecord {
+  readonly stickerId: string;
+  readonly accountId: string;
+  readonly assetId: string;
+  readonly name?: string;
+  readonly altText?: string;
+  readonly sortKey: string;
+  readonly availability: StickerAssetAvailability;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+export interface StickerLibrarySnapshot {
+  readonly accountId: string;
+  readonly collectionId: 'my-stickers';
+  readonly query: string;
+  readonly stickers: ReadonlyArray<StickerRecord>;
+}
+export interface StickerImportRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+}
+export interface StickerImportResult {
+  readonly sticker: StickerRecord;
+  readonly asset: StickerAssetRecord;
+  readonly deduplicated: boolean;
+}
+export interface StickerListRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly query?: string;
+  readonly limit?: number;
+}
+export interface StickerDeleteRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly stickerId: string;
+}
+export interface StickerPreviewGetRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly stickerId: string;
+}
+export interface StickerPreviewGrant {
+  readonly grantId: string;
+  readonly accountId: string;
+  readonly stickerId: string;
+  readonly assetId: string;
+  readonly expiresAt: string;
+  readonly mimeType: StaticImageMimeType;
+  readonly sizeBytes: DecimalByteCount;
+  readonly width: number;
+  readonly height: number;
+  readonly chunkSize: number;
+}
+export interface StickerPreviewOpenRequest extends StickerPreviewGetRequest {
+  readonly grantId: string;
+}
+export interface StickerPreviewStreamRef {
+  readonly grantId: string;
+  readonly streamId: string;
+  readonly accountId: string;
+  readonly assetId: string;
+  readonly expiresAt: string;
+  readonly chunkSize: number;
+}
+export interface StickerPreviewReadRequest extends StickerPreviewOpenRequest {
+  readonly streamId: string;
+  readonly sequence: number;
+}
+export interface StickerPreviewChunk {
+  readonly grantId: string;
+  readonly streamId: string;
+  readonly sequence: number;
+  readonly bytes: ArrayBuffer;
+  readonly done: boolean;
+}
+export interface StickerPreviewCloseRequest extends StickerPreviewOpenRequest {
+  readonly streamId: string;
+}
+export interface StickerPreviewRevokeRequest extends StickerPreviewGetRequest {
+  readonly grantId: string;
+}
+
 export type ChatMediaDirection = 'incoming' | 'outgoing';
 export type ChatMediaAvailability = 'available' | 'missing' | 'invalid';
 export interface ChatImageRecord {

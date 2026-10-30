@@ -1,0 +1,17 @@
+:host { display: inline-flex; position: relative; }
+.sticker-toggle, .close, .import, .delete { background: transparent; border: 0; color: var(--atomic-text-secondary); cursor: pointer; }
+.sticker-toggle { align-items: center; border-radius: 6px; display: inline-flex; font-size: 20px; height: 34px; justify-content: center; width: 34px; }
+.sticker-toggle:hover, .sticker-toggle:focus-visible { color: var(--atomic-green); outline: 2px solid var(--atomic-green); outline-offset: 2px; }
+.sticker-panel { background: var(--atomic-surface); border: 1px solid var(--atomic-separator); border-radius: 10px; bottom: 42px; box-shadow: 0 12px 32px rgb(0 0 0 / 35%); display: grid; gap: 10px; padding: 12px; position: absolute; right: 0; width: min(320px, calc(100vw - 24px)); z-index: 20; }
+header, .sticker-toolbar, .sticker-selection { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
+.close { font-size: 20px; }
+.sticker-toolbar input { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-separator); color: var(--atomic-text); min-width: 0; padding: 6px 8px; width: 100%; }
+.import { color: var(--atomic-green); font-size: 11px; white-space: nowrap; }
+.sticker-grid { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); max-height: 230px; overflow: auto; }
+.sticker-entry { position: relative; }
+.delete { background: var(--atomic-surface); border: 1px solid var(--atomic-separator); border-radius: 50%; font-size: 14px; height: 18px; line-height: 1; padding: 0; position: absolute; right: -4px; top: -4px; width: 18px; }
+.delete:hover, .delete:focus-visible { color: var(--atomic-red, #dc6b6b); }
+.sticker-status, .sticker-hint { color: var(--atomic-text-secondary); margin: 0; }
+.sticker-status--error { color: var(--atomic-red, #dc6b6b); }
+.sticker-selection { border-top: 1px solid var(--atomic-separator); justify-content: flex-start; padding-top: 8px; }
+.sticker-selection app-sticker-thumbnail { flex: 0 0 auto; }

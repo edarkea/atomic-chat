@@ -1,0 +1,33 @@
+<button class="sticker-toggle" type="button" aria-label="Stickers" title="Stickers" (click)="toggle()" [disabled]="disabled() || !accountId()" [attr.aria-expanded]="open()">
+  <span aria-hidden="true">✦</span>
+</button>
+@if (open()) {
+  <section class="sticker-panel" role="dialog" aria-label="Mis stickers">
+    <header>
+      <strong>Mis stickers</strong>
+      <button type="button" class="close" aria-label="Cerrar stickers" title="Cerrar" (click)="close()">×</button>
+    </header>
+    <div class="sticker-toolbar">
+      <input aria-label="Buscar stickers" placeholder="Buscar" [ngModel]="facade.query()" (ngModelChange)="facade.setQuery($event)" />
+      <button type="button" class="import" (click)="facade.importSticker()">Importar PNG/JPEG</button>
+    </div>
+    @if (facade.state() === 'loading') { <p class="sticker-status" role="status">Cargando…</p> }
+    @if (facade.error()) { <p class="sticker-status sticker-status--error" role="alert">{{ facade.error() }}</p> }
+    @if (facade.state() === 'ready' && !facade.stickers().length) { <p class="sticker-status">Aún no tienes stickers.</p> }
+    <div class="sticker-grid" aria-label="Stickers locales">
+      @for (sticker of facade.stickers(); track sticker.stickerId) {
+        <div class="sticker-entry">
+          <app-sticker-thumbnail [accountId]="accountId()" [sticker]="sticker" (activated)="facade.selectSticker(sticker)" />
+          <button type="button" class="delete" [attr.aria-label]="'Eliminar ' + (sticker.name || 'sticker')" title="Eliminar sticker" (click)="remove($event, sticker.stickerId)">×</button>
+        </div>
+      }
+    </div>
+    @if (facade.selectedSticker(); as selected) {
+      <div class="sticker-selection" aria-live="polite">
+        <app-sticker-thumbnail [accountId]="accountId()" [sticker]="selected" [large]="true" />
+        <span>{{ selected.name || selected.altText || 'Sticker seleccionado' }}</span>
+      </div>
+    }
+    <small class="sticker-hint">Los stickers se guardan localmente. Seleccionar no envía mensajes.</small>
+  </section>
+}

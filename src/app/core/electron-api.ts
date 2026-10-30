@@ -43,6 +43,19 @@ import {
   RoomState,
   XmppConnectionProfile,
   XmppTransport,
+  StickerDeleteRequest,
+  StickerImportRequest,
+  StickerImportResult,
+  StickerLibrarySnapshot,
+  StickerListRequest,
+  StickerPreviewChunk,
+  StickerPreviewCloseRequest,
+  StickerPreviewGetRequest,
+  StickerPreviewGrant,
+  StickerPreviewOpenRequest,
+  StickerPreviewReadRequest,
+  StickerPreviewRevokeRequest,
+  StickerPreviewStreamRef,
 } from './domain';
 
 export interface AtomicChatApi {
@@ -119,6 +132,18 @@ export interface AtomicChatApi {
     read(input: PreviewReadRequest): Promise<Result<PreviewChunk>>;
     close(input: PreviewCloseRequest): Promise<Result<void>>;
     revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>>;
+  };
+  stickers: {
+    import(input: StickerImportRequest): Promise<Result<StickerImportResult | null>>;
+    list(input: StickerListRequest): Promise<Result<StickerLibrarySnapshot>>;
+    delete(input: StickerDeleteRequest): Promise<Result<void>>;
+    preview: {
+      get(input: StickerPreviewGetRequest): Promise<Result<StickerPreviewGrant>>;
+      open(input: StickerPreviewOpenRequest): Promise<Result<StickerPreviewStreamRef>>;
+      read(input: StickerPreviewReadRequest): Promise<Result<StickerPreviewChunk>>;
+      close(input: StickerPreviewCloseRequest): Promise<Result<void>>;
+      revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>>;
+    };
   };
   history: {
     list(input: {

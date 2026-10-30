@@ -25,6 +25,19 @@ import {
   PreviewOpenRequest,
   PreviewReadRequest,
   PreviewStreamRef,
+  StickerDeleteRequest,
+  StickerImportRequest,
+  StickerImportResult,
+  StickerLibrarySnapshot,
+  StickerListRequest,
+  StickerPreviewChunk,
+  StickerPreviewCloseRequest,
+  StickerPreviewGetRequest,
+  StickerPreviewGrant,
+  StickerPreviewOpenRequest,
+  StickerPreviewReadRequest,
+  StickerPreviewRevokeRequest,
+  StickerPreviewStreamRef,
   Result,
   TypedDomainEvent,
   TimelinePage,
@@ -45,6 +58,8 @@ import {
   FileHistoryPort,
   PreferencesPort,
   PreviewPort,
+  StickerLibraryPort,
+  StickerPreviewPort,
 } from './ports';
 
 const unavailable = <T>(requestId: string): Result<T> => ({
@@ -288,5 +303,45 @@ export class ElectronPreviewPort implements PreviewPort {
   revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>> {
     const api = getAtomicChatApi();
     return api ? api.preview.revoke(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronStickerLibraryPort implements StickerLibraryPort {
+  import(input: StickerImportRequest): Promise<Result<StickerImportResult | null>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.import(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  list(input: StickerListRequest): Promise<Result<StickerLibrarySnapshot>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.list(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  delete(input: StickerDeleteRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.delete(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronStickerPreviewPort implements StickerPreviewPort {
+  get(input: StickerPreviewGetRequest): Promise<Result<StickerPreviewGrant>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.preview.get(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  open(input: StickerPreviewOpenRequest): Promise<Result<StickerPreviewStreamRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.preview.open(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  read(input: StickerPreviewReadRequest): Promise<Result<StickerPreviewChunk>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.preview.read(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  close(input: StickerPreviewCloseRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.preview.close(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.preview.revoke(input) : Promise.resolve(unavailable(input.requestId));
   }
 }

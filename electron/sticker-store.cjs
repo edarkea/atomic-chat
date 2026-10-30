@@ -1,0 +1,217 @@
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
+const { inspectStaticImage } = require('./preview-image.cjs');
+
+const MAX_STICKER_BYTES = 2 * 1024 * 1024;
+const MAX_STICKER_DIMENSION = 1024;
+const MAX_STICKERS_PER_ACCOUNT = 250;
+const MAX_STORAGE_BYTES_PER_ACCOUNT = 128 * 1024 * 1024;
+const ORPHAN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const SAFE_READ_FLAGS = process.platform === 'win32' ? 'r' : fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+
+function error(code, message) {
+  const cause = new Error(message);
+  cause.code = code;
+  return cause;
+}
+
+function metadata(stats) {
+  return {
+    dev: String(stats.dev),
+    ino: String(stats.ino),
+    size: String(stats.size),
+    mtimeMs: String(stats.mtimeMs),
+    birthtimeMs: String(stats.birthtimeMs),
+  };
+}
+
+function sameMetadata(left, right) {
+  return ['dev', 'ino', 'size', 'mtimeMs', 'birthtimeMs'].every((key) => left[key] === right[key]);
+}
+
+class StickerStore {
+  constructor(userDataPath, persistence, nativeImage) {
+    this.persistence = persistence;
+    this.nativeImage = nativeImage;
+    this.directory = path.join(userDataPath, 'sticker-assets');
+    fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    try { fs.chmodSync(this.directory, 0o700); } catch { /* Windows ACLs are inherited. */ }
+    this.locks = new Map();
+    this.activeGrantChecker = () => false;
+  }
+
+  setActiveGrantChecker(checker) {
+    this.activeGrantChecker = checker;
+  }
+
+  async importFile(accountId, sourcePath) {
+    if (typeof accountId !== 'string' || !accountId.trim() || typeof sourcePath !== 'string' || !sourcePath.trim())
+      throw error('INVALID_INPUT', 'la fuente de sticker no es válida');
+    const previous = this.locks.get(accountId) || Promise.resolve();
+    const operation = previous.catch(() => undefined).then(() => this.importLocked(accountId, sourcePath));
+    const tracked = operation.finally(() => { if (this.locks.get(accountId) === tracked) this.locks.delete(accountId); });
+    this.locks.set(accountId, tracked);
+    return tracked;
+  }
+
+  async importLocked(accountId, sourcePath) {
+    const inspected = await this.readAndInspect(sourcePath);
+    const hashValue = crypto.createHash('sha256').update(inspected.data).digest('hex');
+    const existing = this.persistence.getStickerAssetByHash(accountId, hashValue);
+    if (existing) {
+      const count = this.persistence.countStickers(accountId);
+      if (count >= MAX_STICKERS_PER_ACCOUNT) throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
+      this.persistence.clearStickerAssetOrphaned(accountId, existing.assetId);
+      const now = new Date().toISOString();
+      const sticker = this.persistence.insertSticker({
+        stickerId: `sticker_${crypto.randomUUID()}`,
+        accountId,
+        assetId: existing.assetId,
+        name: path.basename(sourcePath),
+        altText: path.basename(sourcePath),
+        sortKey: `${now}_${crypto.randomUUID()}`,
+        availability: existing.availability === 'available' ? 'available' : existing.availability,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { sticker: this.publicSticker(sticker), asset: this.publicAsset(existing), deduplicated: true };
+    }
+    if (this.persistence.countStickers(accountId) >= MAX_STICKERS_PER_ACCOUNT)
+      throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
+    const used = Number(this.persistence.sumStickerStorage(accountId));
+    if (used + inspected.data.length > MAX_STORAGE_BYTES_PER_ACCOUNT)
+      throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de almacenamiento de stickers');
+    const now = new Date().toISOString();
+    const assetId = `sticker_asset_${crypto.randomUUID()}`;
+    const storageKey = `${assetId}.bin`;
+    const targetPath = path.join(this.directory, storageKey);
+    const temporaryDirectory = await fsp.mkdtemp(path.join(this.directory, '.tmp-'));
+    const temporaryPath = path.join(temporaryDirectory, `${crypto.randomUUID()}.bin`);
+    let published = false;
+    try {
+      await fsp.writeFile(temporaryPath, inspected.data, { flag: 'wx', mode: 0o600 });
+      const handle = await fsp.open(temporaryPath, 'r+');
+      try { await handle.sync(); } finally { await handle.close().catch(() => undefined); }
+      await fsp.rename(temporaryPath, targetPath);
+      published = true;
+      const asset = {
+        assetId, accountId, hashValue, mimeType: inspected.image.mimeType,
+        sizeBytes: String(inspected.data.length), width: inspected.image.width, height: inspected.image.height,
+        storageKey, availability: 'available', createdAt: now, updatedAt: now,
+      };
+      const sticker = {
+        stickerId: `sticker_${crypto.randomUUID()}`, accountId, assetId, name: path.basename(sourcePath),
+        altText: path.basename(sourcePath), sortKey: `${now}_${crypto.randomUUID()}`,
+        availability: 'available', createdAt: now, updatedAt: now,
+      };
+      try {
+        const saved = this.persistence.createStickerAssetAndSticker(asset, sticker);
+        return { sticker: this.publicSticker(saved.sticker), asset: this.publicAsset(saved.asset), deduplicated: false };
+      } catch (cause) {
+        throw error(cause?.code === 'SQLITE_FULL' ? 'STORAGE_FAILED' : 'STORAGE_FAILED', 'no se pudo confirmar el sticker');
+      }
+    } catch (cause) {
+      if (published) await fsp.rm(targetPath, { force: true }).catch(() => undefined);
+      throw cause?.code ? cause : error('STORAGE_FAILED', 'no se pudo importar el sticker');
+    } finally {
+      await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  async readAndInspect(sourcePath) {
+    let initial;
+    try { initial = await fsp.lstat(sourcePath); } catch { throw error('STORAGE_FAILED', 'el archivo no está disponible'); }
+    if (initial.isSymbolicLink() || !initial.isFile()) throw error('STORAGE_FAILED', 'el archivo no es regular');
+    if (initial.size > MAX_STICKER_BYTES) throw error('MEDIA_SIZE_EXCEEDED', 'el sticker supera 2 MiB');
+    let resolved;
+    try { resolved = await fsp.realpath(sourcePath); } catch { throw error('STORAGE_FAILED', 'el archivo no está disponible'); }
+    const handle = await fsp.open(resolved, SAFE_READ_FLAGS).catch(() => { throw error('STORAGE_FAILED', 'no se pudo abrir el sticker'); });
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || !sameMetadata(metadata(initial), metadata(opened))) throw error('STORAGE_FAILED', 'el archivo cambió');
+      if (opened.size > MAX_STICKER_BYTES) throw error('MEDIA_SIZE_EXCEEDED', 'el sticker supera 2 MiB');
+      const data = await handle.readFile();
+      const final = await handle.stat();
+      if (!sameMetadata(metadata(opened), metadata(final)) || data.length !== Number(final.size)) throw error('STORAGE_FAILED', 'el archivo cambió durante la lectura');
+      const image = inspectStaticImage(data, this.nativeImage);
+      if (image.width > MAX_STICKER_DIMENSION || image.height > MAX_STICKER_DIMENSION)
+        throw error('MEDIA_DIMENSIONS_INVALID', 'las dimensiones del sticker no están permitidas');
+      return { data, image };
+    } finally { await handle.close().catch(() => undefined); }
+  }
+
+  list(accountId, query = '', limit = MAX_STICKERS_PER_ACCOUNT) {
+    const bounded = Math.max(1, Math.min(MAX_STICKERS_PER_ACCOUNT, Number(limit) || MAX_STICKERS_PER_ACCOUNT));
+    return this.persistence.listStickers(accountId, query, bounded).map((sticker) => ({
+      ...this.publicSticker(sticker),
+      availability: this.persistence.getStickerAsset(accountId, sticker.assetId)?.availability || 'missing',
+    }));
+  }
+
+  delete(accountId, stickerId) {
+    const sticker = this.persistence.deleteSticker(accountId, stickerId);
+    if (!sticker) return;
+    const asset = this.persistence.getStickerAsset(accountId, sticker.assetId);
+    if (asset?.orphanedAt && !this.activeGrantChecker(accountId, asset.assetId)) void this.cleanupOrphans();
+  }
+
+  resolveForPreview(accountId, stickerId) {
+    const sticker = this.persistence.getSticker(accountId, stickerId);
+    const asset = sticker && this.persistence.getStickerAsset(accountId, sticker.assetId);
+    if (!sticker || !asset || asset.availability !== 'available') throw error('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
+    return {
+      accountId, stickerId, assetId: asset.assetId, path: path.join(this.directory, asset.storageKey),
+      mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height,
+    };
+  }
+
+  async reconcile() {
+    for (const asset of this.persistence.listStickerAssets()) {
+      const filePath = path.join(this.directory, asset.storageKey);
+      try {
+        const stats = await fsp.lstat(filePath);
+        if (stats.isSymbolicLink() || !stats.isFile() || String(stats.size) !== String(asset.sizeBytes))
+          this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'invalid');
+      } catch { this.persistence.markStickerAssetAvailability(asset.accountId, asset.assetId, 'missing'); }
+    }
+    await this.cleanupOrphans();
+  }
+
+  async cleanupOrphans(now = Date.now()) {
+    for (const asset of this.persistence.listStickerAssets()) {
+      if (!asset.orphanedAt || now - Date.parse(asset.orphanedAt) < ORPHAN_RETENTION_MS) continue;
+      if (this.persistence.hasStickerReferences(asset.assetId)) continue;
+      if (this.activeGrantChecker(asset.accountId, asset.assetId)) continue;
+      await fsp.rm(path.join(this.directory, asset.storageKey), { force: true }).catch(() => undefined);
+      this.persistence.deleteStickerAsset(asset.accountId, asset.assetId);
+    }
+  }
+
+  publicAsset(asset) {
+    return {
+      assetId: asset.assetId, accountId: asset.accountId, kind: 'static-image', mimeType: asset.mimeType,
+      hash: { algorithm: 'sha-256', value: asset.hashValue }, sizeBytes: String(asset.sizeBytes),
+      width: asset.width, height: asset.height, availability: asset.availability,
+      createdAt: asset.createdAt, updatedAt: asset.updatedAt,
+    };
+  }
+
+  publicSticker(sticker) {
+    return {
+      stickerId: sticker.stickerId, accountId: sticker.accountId, assetId: sticker.assetId,
+      ...(sticker.name ? { name: sticker.name } : {}), ...(sticker.altText ? { altText: sticker.altText } : {}),
+      sortKey: sticker.sortKey, availability: sticker.availability, createdAt: sticker.createdAt, updatedAt: sticker.updatedAt,
+    };
+  }
+}
+
+module.exports = {
+  StickerStore,
+  MAX_STICKER_BYTES,
+  MAX_STICKER_DIMENSION,
+  MAX_STICKERS_PER_ACCOUNT,
+  MAX_STORAGE_BYTES_PER_ACCOUNT,
+  ORPHAN_RETENTION_MS,
+};

@@ -96,6 +96,18 @@ contextBridge.exposeInMainWorld(
       close: (input) => invoke('preview.close', input),
       revoke: (input) => invoke('preview.revoke', input),
     }),
+    stickers: Object.freeze({
+      import: (input) => invoke('stickers.import', input),
+      list: (input) => invoke('stickers.list', input),
+      delete: (input) => invoke('stickers.delete', input),
+      preview: Object.freeze({
+        get: (input) => invoke('stickers.preview.get', input),
+        open: (input) => invoke('stickers.preview.open', input),
+        read: (input) => invoke('stickers.preview.read', input),
+        close: (input) => invoke('stickers.preview.close', input),
+        revoke: (input) => invoke('stickers.preview.revoke', input),
+      }),
+    }),
     history: Object.freeze({
       list: (input) => invoke('messages.list', input),
       listPage: (input) => invoke('messages.page', input),

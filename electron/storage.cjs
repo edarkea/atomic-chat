@@ -241,6 +241,44 @@ class PersistenceStore {
           ON file_assets(account_id, transfer_id);
       `);
       this.database.prepare('UPDATE schema_meta SET version = 9').run();
+      this.database.exec(`
+        CREATE TABLE IF NOT EXISTS sticker_assets (
+          asset_id TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          hash_algorithm TEXT NOT NULL CHECK (hash_algorithm IN ('sha-256')),
+          hash_value TEXT NOT NULL,
+          mime_type TEXT NOT NULL CHECK (mime_type IN ('image/png', 'image/jpeg')),
+          size_bytes TEXT NOT NULL,
+          width INTEGER NOT NULL,
+          height INTEGER NOT NULL,
+          storage_key TEXT NOT NULL,
+          availability TEXT NOT NULL CHECK (availability IN ('pending', 'available', 'missing', 'invalid', 'blocked')),
+          orphaned_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (account_id, hash_algorithm, hash_value),
+          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS stickers (
+          sticker_id TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          pack_id TEXT,
+          name TEXT,
+          alt_text TEXT,
+          sort_key TEXT NOT NULL,
+          availability TEXT NOT NULL CHECK (availability IN ('pending', 'available', 'missing', 'invalid', 'blocked')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
+          FOREIGN KEY (asset_id) REFERENCES sticker_assets(asset_id) ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_sticker_assets_account ON sticker_assets(account_id, created_at, asset_id);
+        CREATE INDEX IF NOT EXISTS idx_sticker_assets_hash ON sticker_assets(account_id, hash_algorithm, hash_value);
+        CREATE INDEX IF NOT EXISTS idx_stickers_account ON stickers(account_id, sort_key, sticker_id);
+        CREATE INDEX IF NOT EXISTS idx_stickers_asset ON stickers(asset_id);
+      `);
+      this.database.prepare('UPDATE schema_meta SET version = 10').run();
     });
     migrate();
   }
@@ -624,6 +662,137 @@ class PersistenceStore {
     this.database
       .prepare('UPDATE file_assets SET availability = ? WHERE account_id = ? AND file_id = ?')
       .run(availability, accountId, fileId);
+  }
+
+  getStickerAssetByHash(accountId, hashValue) {
+    return this.database.prepare(
+      `SELECT asset_id AS assetId, account_id AS accountId, hash_algorithm AS hashAlgorithm,
+        hash_value AS hashValue, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
+        storage_key AS storageKey, availability, orphaned_at AS orphanedAt,
+        created_at AS createdAt, updated_at AS updatedAt
+       FROM sticker_assets WHERE account_id = ? AND hash_algorithm = 'sha-256' AND hash_value = ?`,
+    ).get(accountId, hashValue) || null;
+  }
+
+  getStickerAsset(accountId, assetId) {
+    return this.database.prepare(
+      `SELECT asset_id AS assetId, account_id AS accountId, hash_algorithm AS hashAlgorithm,
+        hash_value AS hashValue, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
+        storage_key AS storageKey, availability, orphaned_at AS orphanedAt,
+        created_at AS createdAt, updated_at AS updatedAt
+       FROM sticker_assets WHERE account_id = ? AND asset_id = ?`,
+    ).get(accountId, assetId) || null;
+  }
+
+  countStickers(accountId) {
+    return this.database.prepare('SELECT COUNT(*) AS count FROM stickers WHERE account_id = ?').get(accountId).count;
+  }
+
+  sumStickerStorage(accountId) {
+    return this.database.prepare(
+      `SELECT COALESCE(SUM(CAST(size_bytes AS INTEGER)), 0) AS total
+       FROM sticker_assets WHERE account_id = ?`,
+    ).get(accountId).total;
+  }
+
+  insertStickerAsset(record) {
+    this.database.prepare(
+      `INSERT INTO sticker_assets(
+        asset_id, account_id, hash_algorithm, hash_value, mime_type, size_bytes, width, height,
+        storage_key, availability, orphaned_at, created_at, updated_at
+      ) VALUES (@assetId, @accountId, 'sha-256', @hashValue, @mimeType, @sizeBytes, @width, @height,
+        @storageKey, @availability, NULL, @createdAt, @updatedAt)`,
+    ).run(record);
+    return this.getStickerAsset(record.accountId, record.assetId);
+  }
+
+  insertSticker(record) {
+    this.database.prepare(
+      `INSERT INTO stickers(
+        sticker_id, account_id, asset_id, pack_id, name, alt_text, sort_key, availability, created_at, updated_at
+      ) VALUES (@stickerId, @accountId, @assetId, NULL, @name, @altText, @sortKey, @availability, @createdAt, @updatedAt)`,
+    ).run({ ...record, name: record.name || null, altText: record.altText || null });
+    return this.getSticker(record.accountId, record.stickerId);
+  }
+
+  clearStickerAssetOrphaned(accountId, assetId) {
+    this.database.prepare('UPDATE sticker_assets SET orphaned_at = NULL, updated_at = ? WHERE account_id = ? AND asset_id = ?')
+      .run(new Date().toISOString(), accountId, assetId);
+  }
+
+  hasStickerReferences(assetId) {
+    return this.database.prepare('SELECT 1 FROM stickers WHERE asset_id = ? LIMIT 1').get(assetId) !== undefined;
+  }
+
+  createStickerAssetAndSticker(asset, sticker) {
+    const transaction = this.database.transaction(() => {
+      this.database.prepare(
+        `INSERT INTO sticker_assets(
+          asset_id, account_id, hash_algorithm, hash_value, mime_type, size_bytes, width, height,
+          storage_key, availability, orphaned_at, created_at, updated_at
+        ) VALUES (@assetId, @accountId, 'sha-256', @hashValue, @mimeType, @sizeBytes, @width, @height,
+          @storageKey, @availability, NULL, @createdAt, @updatedAt)`,
+      ).run(asset);
+      this.database.prepare(
+        `INSERT INTO stickers(
+          sticker_id, account_id, asset_id, pack_id, name, alt_text, sort_key, availability, created_at, updated_at
+        ) VALUES (@stickerId, @accountId, @assetId, NULL, @name, @altText, @sortKey, @availability, @createdAt, @updatedAt)`,
+      ).run({ ...sticker, name: sticker.name || null, altText: sticker.altText || null });
+    });
+    transaction();
+    return {
+      asset: this.getStickerAsset(asset.accountId, asset.assetId),
+      sticker: this.getSticker(sticker.accountId, sticker.stickerId),
+    };
+  }
+
+  getSticker(accountId, stickerId) {
+    return this.database.prepare(
+      `SELECT sticker_id AS stickerId, account_id AS accountId, asset_id AS assetId,
+        name, alt_text AS altText, sort_key AS sortKey, availability, created_at AS createdAt, updated_at AS updatedAt
+       FROM stickers WHERE account_id = ? AND sticker_id = ?`,
+    ).get(accountId, stickerId) || null;
+  }
+
+  listStickers(accountId, query = '', limit = 250) {
+    const normalized = `%${String(query).trim().replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
+    return this.database.prepare(
+      `SELECT sticker_id AS stickerId, account_id AS accountId, asset_id AS assetId,
+        name, alt_text AS altText, sort_key AS sortKey, availability, created_at AS createdAt, updated_at AS updatedAt
+       FROM stickers WHERE account_id = ? AND (COALESCE(name, '') LIKE ? ESCAPE '\\' OR COALESCE(alt_text, '') LIKE ? ESCAPE '\\')
+       ORDER BY sort_key ASC, sticker_id ASC LIMIT ?`,
+    ).all(accountId, normalized, normalized, limit);
+  }
+
+  deleteSticker(accountId, stickerId) {
+    const sticker = this.getSticker(accountId, stickerId);
+    if (!sticker) return null;
+    this.database.prepare('DELETE FROM stickers WHERE account_id = ? AND sticker_id = ?').run(accountId, stickerId);
+    const references = this.database.prepare('SELECT COUNT(*) AS count FROM stickers WHERE asset_id = ?').get(sticker.assetId).count;
+    if (references === 0) {
+      const now = new Date().toISOString();
+      this.database.prepare('UPDATE sticker_assets SET orphaned_at = ?, updated_at = ? WHERE account_id = ? AND asset_id = ?')
+        .run(now, now, accountId, sticker.assetId);
+    }
+    return sticker;
+  }
+
+  markStickerAssetAvailability(accountId, assetId, availability) {
+    if (!['pending', 'available', 'missing', 'invalid', 'blocked'].includes(availability)) throw new Error('INVALID_INPUT');
+    this.database.prepare('UPDATE sticker_assets SET availability = ?, updated_at = ? WHERE account_id = ? AND asset_id = ?')
+      .run(availability, new Date().toISOString(), accountId, assetId);
+  }
+
+  listStickerAssets(accountId) {
+    const query = accountId
+      ? 'SELECT asset_id AS assetId, account_id AS accountId, hash_algorithm AS hashAlgorithm, hash_value AS hashValue, mime_type AS mimeType, size_bytes AS sizeBytes, width, height, storage_key AS storageKey, availability, orphaned_at AS orphanedAt, created_at AS createdAt, updated_at AS updatedAt FROM sticker_assets WHERE account_id = ?'
+      : 'SELECT asset_id AS assetId, account_id AS accountId, hash_algorithm AS hashAlgorithm, hash_value AS hashValue, mime_type AS mimeType, size_bytes AS sizeBytes, width, height, storage_key AS storageKey, availability, orphaned_at AS orphanedAt, created_at AS createdAt, updated_at AS updatedAt FROM sticker_assets';
+    return accountId ? this.database.prepare(query).all(accountId) : this.database.prepare(query).all();
+  }
+
+  deleteStickerAsset(accountId, assetId) {
+    this.database.prepare('DELETE FROM sticker_assets WHERE account_id = ? AND asset_id = ? AND NOT EXISTS (SELECT 1 FROM stickers WHERE asset_id = ?)')
+      .run(accountId, assetId, assetId);
   }
 
   listTimelinePage(accountId, conversationId, limit, direction, cursor) {

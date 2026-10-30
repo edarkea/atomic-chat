@@ -79,6 +79,7 @@
     [disabled]="!selectedJid()"
     [showAttach]="true"
     [showEmoji]="true"
+    [stickersAccountId]="accountId()"
     (draftChange)="draftChange.emit($event)"
     (inputFocus)="typingFocus.emit()"
     (inputBlur)="typingBlur.emit()"

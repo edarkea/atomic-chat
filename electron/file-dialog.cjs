@@ -62,6 +62,15 @@ function createFileDialogs({ dialog, fsp }) {
     return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
   }
 
+  async function selectStickerSource() {
+    const result = await dialog.showOpenDialog({
+      title: 'Importar sticker',
+      properties: ['openFile'],
+      filters: [{ name: 'Imágenes estáticas', extensions: ['png', 'jpg', 'jpeg'] }],
+    });
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+  }
+
   async function selectDownloadDirectory() {
     const result = await dialog.showOpenDialog({
       title: 'Seleccionar carpeta de descargas',
@@ -85,6 +94,7 @@ function createFileDialogs({ dialog, fsp }) {
   return {
     selectFileDestination,
     selectFileSource,
+    selectStickerSource,
     selectDownloadDirectory,
     selectDefaultFileDestination,
   };

@@ -24,6 +24,19 @@ import {
   PreviewOpenRequest,
   PreviewReadRequest,
   PreviewStreamRef,
+  StickerDeleteRequest,
+  StickerImportRequest,
+  StickerImportResult,
+  StickerLibrarySnapshot,
+  StickerListRequest,
+  StickerPreviewChunk,
+  StickerPreviewCloseRequest,
+  StickerPreviewGetRequest,
+  StickerPreviewGrant,
+  StickerPreviewOpenRequest,
+  StickerPreviewReadRequest,
+  StickerPreviewRevokeRequest,
+  StickerPreviewStreamRef,
   HistoryPage,
   HistoryPageInput,
   MediaListInput,
@@ -158,6 +171,20 @@ export interface PreviewPort {
   revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>>;
 }
 
+export interface StickerLibraryPort {
+  import(input: StickerImportRequest): Promise<Result<StickerImportResult | null>>;
+  list(input: StickerListRequest): Promise<Result<StickerLibrarySnapshot>>;
+  delete(input: StickerDeleteRequest): Promise<Result<void>>;
+}
+
+export interface StickerPreviewPort {
+  get(input: StickerPreviewGetRequest): Promise<Result<StickerPreviewGrant>>;
+  open(input: StickerPreviewOpenRequest): Promise<Result<StickerPreviewStreamRef>>;
+  read(input: StickerPreviewReadRequest): Promise<Result<StickerPreviewChunk>>;
+  close(input: StickerPreviewCloseRequest): Promise<Result<void>>;
+  revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>>;
+}
+
 export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');
 export const MUC_PORT = new InjectionToken<MucPort>('AtomicChat MucPort');
 export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountPort');
@@ -172,3 +199,5 @@ export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
 export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewPort');
 export const MEDIA_PORT = new InjectionToken<MediaPort>('AtomicChat MediaPort');
 export const FILE_HISTORY_PORT = new InjectionToken<FileHistoryPort>('AtomicChat FileHistoryPort');
+export const STICKER_LIBRARY_PORT = new InjectionToken<StickerLibraryPort>('AtomicChat StickerLibraryPort');
+export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>('AtomicChat StickerPreviewPort');

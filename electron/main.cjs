@@ -34,6 +34,8 @@ const { createIncomingMessageProcessor } = require('./incoming-message-persisten
 const { PreviewGrantRegistry } = require('./preview-grants.cjs');
 const { MediaStore } = require('./media-store.cjs');
 const { FileHistoryStore } = require('./file-history.cjs');
+const { StickerStore } = require('./sticker-store.cjs');
+const { StickerGrantRegistry } = require('./sticker-grants.cjs');
 const { persistCompletedTransfer } = require('./media-transfer-persistence.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
@@ -58,6 +60,7 @@ const fileResourceLimiter = new TransferResourceLimiter();
 const {
   selectFileDestination,
   selectFileSource,
+  selectStickerSource,
   selectDownloadDirectory,
   selectDefaultFileDestination,
 } = createFileDialogs({ dialog, fsp });
@@ -68,6 +71,9 @@ const previewGrants = new PreviewGrantRegistry({
     input.mediaId
       ? runtime.media.resolveForPreview(senderId, input)
       : localFileActions.resolveForPreview(senderId, input),
+});
+const stickerGrants = new StickerGrantRegistry({
+  resolveSource: (accountId, stickerId) => runtime.stickers.resolveForPreview(accountId, stickerId),
 });
 let runtime;
 const currentTransferTimeout = () => {
@@ -164,6 +170,7 @@ function createWindow() {
       historySecurity.destroySender(senderId);
       localFileActions.clearSender(senderId);
       previewGrants.clearSender(senderId);
+      stickerGrants.clearSender(senderId);
     },
   });
   mainWindow.on('focus', applicationAttention.acknowledge);
@@ -205,11 +212,13 @@ function initializeRuntime() {
     XmppAdapter,
     MediaStore,
     FileHistoryStore,
+    StickerStore,
     nativeImage,
     fileTransfers,
     outgoingFileTransfers,
     shell,
   });
+  runtime.stickers.setActiveGrantChecker((accountId, assetId) => stickerGrants.hasActiveAsset(accountId, assetId));
   attachEventSources();
   createWindow();
 }
@@ -237,9 +246,11 @@ registerIpcHandlers({
   outgoingFileTransfers,
   localFileActions,
   previewGrants,
+  stickerGrants,
   shell,
   historySecurity,
   selectFileSource,
+  selectStickerSource,
   selectDownloadDirectory,
   defaultDownloadDirectory,
   applicationAttention,
