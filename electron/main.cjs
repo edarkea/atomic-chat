@@ -29,6 +29,7 @@ const { createRuntime } = require('./runtime.cjs');
 const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
+const { createIncomingMessageProcessor } = require('./incoming-message-persistence.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
   DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -139,6 +140,11 @@ function createWindow() {
 
 function attachEventSources() {
   const eventRouter = createEventRouter({ BrowserWindow, webContents });
+  const processIncomingMessage = createIncomingMessageProcessor({
+    persistence: runtime.persistence,
+    onPersistenceError: (error) =>
+      console.error('[PERSISTENCE] Could not save incoming message:', error?.message || 'STORAGE_FAILED'),
+  });
   fileTransfers.onEvent((event) => {
     eventRouter.forwardTransferEvent(event);
     if (event.type !== 'file.offerReceived' || !autoAcceptFileTransfers()) return;
@@ -150,25 +156,9 @@ function attachEventSources() {
   });
   outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
   runtime.xmpp.onEvent((event) => {
-    if (event.type === 'message.received') {
-      try {
-        const message = event.payload;
-        if (
-          message?.id &&
-          message?.conversationId &&
-          message?.clientMessageId &&
-          message?.senderJid &&
-          message?.body &&
-          message?.createdAt
-        )
-          runtime.persistence.saveMessage(message);
-        else console.warn('[PERSISTENCE] Incoming message missing required fields.');
-      } catch (error) {
-        console.error('[PERSISTENCE] Could not save incoming message:', error.message);
-      }
-    }
-    messageNotifications.handle(event);
-    eventRouter.forwardXmppEvent(event);
+    const processed = processIncomingMessage(event);
+    messageNotifications.handle(processed);
+    eventRouter.forwardXmppEvent(processed);
   });
 }
 

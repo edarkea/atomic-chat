@@ -2,6 +2,8 @@ import {
   CertificateTrustDecisionInput,
   AttentionClearRequest,
   AttentionRequest,
+  BroadcastSendInput,
+  BroadcastSendResult,
   ChatStateInput,
   ConnectInput,
   ConnectionState,
@@ -76,6 +78,7 @@ export interface AtomicChatApi {
     request(input: AttentionRequest): Promise<Result<void>>;
     clear(input: AttentionClearRequest): Promise<Result<void>>;
   };
+  broadcast: { send(input: BroadcastSendInput): Promise<Result<BroadcastSendResult>> };
   session: { getState(accountId: string): Promise<Result<ConnectionState>> };
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };

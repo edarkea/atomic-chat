@@ -3,6 +3,7 @@ import { hasAtomicChatApi } from './electron-api';
 import {
   ElectronAccountPort,
   ElectronAttentionPort,
+  ElectronBroadcastPort,
   ElectronCertificatePort,
   ElectronFileTransferPort,
   ElectronHistoryPort,
@@ -13,6 +14,7 @@ import { InMemoryXmppPort } from './in-memory-xmpp.port';
 import {
   ACCOUNT_PORT,
   ATTENTION_PORT,
+  BROADCAST_PORT,
   CERTIFICATE_PORT,
   FILE_TRANSFER_PORT,
   HISTORY_PORT,
@@ -22,6 +24,7 @@ import {
 } from './ports';
 import {
   UnavailableAccountPort,
+  UnavailableBroadcastPort,
   UnavailableCertificatePort,
   UnavailableFileTransferPort,
   UnavailableHistoryPort,
@@ -87,4 +90,10 @@ export const corePortProviders: Provider[] = [
     deps: [ElectronFileTransferPort, UnavailableFileTransferPort],
   },
   { provide: ATTENTION_PORT, useExisting: ElectronAttentionPort },
+  {
+    provide: BROADCAST_PORT,
+    useFactory: (electron: ElectronBroadcastPort, unavailable: UnavailableBroadcastPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronBroadcastPort, UnavailableBroadcastPort],
+  },
 ];

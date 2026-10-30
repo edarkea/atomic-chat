@@ -945,7 +945,6 @@ export class App {
 
   private cancelBroadcastForAccount(): void {
     this.broadcastRun++;
-    this.broadcast.cancel(this.chat.accountId());
     this.broadcastBusy.set(false);
     this.broadcastOpen.set(false);
   }

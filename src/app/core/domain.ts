@@ -28,6 +28,7 @@ export interface XmppConnectionProfile {
 export type ConnectionStatus =
   'idle' | 'connecting' | 'authenticating' | 'connected' | 'disconnecting' | 'failed';
 export type MessageStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed';
+export type MessagePersistenceStatus = 'persisted' | 'memory-only';
 export interface ConnectionState {
   accountId: string;
   status: ConnectionStatus;
@@ -62,6 +63,7 @@ export interface Message {
   status: MessageStatus;
   createdAt: string;
   errorCode?: AppError['code'];
+  persistenceStatus?: MessagePersistenceStatus;
 }
 export interface HistoryPageInput {
   version: 1;
@@ -426,7 +428,7 @@ export interface BroadcastRequest {
   readonly body: string;
   readonly recipientJids: readonly string[];
 }
-export type BroadcastRecipientStatus = 'queued' | 'submitted' | 'failed' | 'unknown';
+export type BroadcastRecipientStatus = 'submitted' | 'failed' | 'unknown';
 export interface BroadcastRecipientResult {
   readonly recipientJid: string;
   readonly clientMessageId: ClientMessageId;
@@ -437,6 +439,15 @@ export interface BroadcastResult {
   readonly broadcastId: RequestId;
   readonly recipients: readonly BroadcastRecipientResult[];
 }
+export interface BroadcastSendInput {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly broadcastId: RequestId;
+  readonly recipientJids: readonly string[];
+  readonly body: { readonly kind: 'text'; readonly text: string };
+}
+export type BroadcastSendResult = BroadcastResult;
 export type ThemeId = 'atomic' | 'atomic-light' | 'custom';
 export type ThemeColorKey =
   | 'background'

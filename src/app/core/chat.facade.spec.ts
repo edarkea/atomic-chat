@@ -290,6 +290,24 @@ describe('ChatFacade roster reconciliation', () => {
     expect(facade.historyLoading()).toBe(false);
   });
 
+  it('keeps an incoming message that arrives while history is loading', async () => {
+    let release!: (value: ReturnType<typeof ok>) => void;
+    historyPort.listPage = () =>
+      new Promise((resolve) => {
+        release = resolve as (value: ReturnType<typeof ok>) => void;
+      });
+    const facade = TestBed.inject(ChatFacade);
+    const pending = facade.loadConversation('sender@example.invalid');
+    await Promise.resolve();
+    emitEvent({
+      type: 'message.received',
+      payload: historyMessage('a@example.invalid', 'sender@example.invalid', 200),
+    });
+    release(ok({ items: [], nextCursor: null, hasMore: false }));
+    await pending;
+    expect(facade.messages().map((message) => message.clientMessageId)).toContain('client-200');
+  });
+
   it('requires a new secret when remember is explicitly disabled', async () => {
     const facade = TestBed.inject(ChatFacade);
     const profile = {

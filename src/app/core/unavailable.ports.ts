@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
 import {
   CertificateTrustDecisionInput,
+  BroadcastSendInput,
+  BroadcastSendResult,
   FileActiveInput,
   FileRequest,
   FileSendInput,
@@ -24,6 +26,7 @@ import {
 import {
   AccountConfig,
   AccountPort,
+  BroadcastPort,
   CertificatePort,
   FileTransferPort,
   HistoryPort,
@@ -142,6 +145,13 @@ export class UnavailablePreferencesPort implements PreferencesPort {
 
   selectDownloadDirectory(): Promise<Result<string | null>> {
     return Promise.resolve(unsupported('preferences-select-download-directory'));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableBroadcastPort implements BroadcastPort {
+  send(input: BroadcastSendInput): Promise<Result<BroadcastSendResult>> {
+    return Promise.resolve(unsupported(input.requestId));
   }
 }
 

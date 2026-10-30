@@ -13,6 +13,7 @@ const {
 } = require('../electron/ipc-connection-profile-handlers.cjs');
 const { createEventRouter } = require('../electron/event-router.cjs');
 const { registerAttentionHandlers } = require('../electron/ipc-attention-handlers.cjs');
+const { registerBroadcastHandlers } = require('../electron/ipc-broadcast-handlers.cjs');
 
 const channels = [
   'contract.version',
@@ -25,6 +26,7 @@ const channels = [
   'roster.list',
   'message.send',
   'chatState.send',
+  'broadcast.send',
   'muc.discover',
   'muc.join',
   'muc.leave',
@@ -178,13 +180,28 @@ test('registers every existing IPC channel exactly once', () => {
 test('each domain registrar owns only its assigned channels', () => {
   const harness = createHarness();
   const groups = [
-    [registerAccountHandlers, channels.slice(0, 10)],
-    [registerMucHandlers, channels.slice(10, 14)],
-    [registerFileHandlers, channels.slice(14, 22)],
-    [registerHistoryHandlers, channels.slice(22, 25)],
-    [registerPreferenceHandlers, channels.slice(25, 29)],
-    [registerConnectionProfileHandlers, channels.slice(29, 33)],
-    [registerAttentionHandlers, channels.slice(33, 35)],
+    [
+      registerAccountHandlers,
+      [
+        'contract.version',
+        'account.setSecret',
+        'account.connect',
+        'certificate.decide',
+        'account.disconnect',
+        'session.getState',
+        'presence.set',
+        'roster.list',
+        'message.send',
+        'chatState.send',
+      ],
+    ],
+    [registerBroadcastHandlers, ['broadcast.send']],
+    [registerMucHandlers, channels.slice(11, 15)],
+    [registerFileHandlers, channels.slice(15, 23)],
+    [registerHistoryHandlers, channels.slice(23, 26)],
+    [registerPreferenceHandlers, channels.slice(26, 30)],
+    [registerConnectionProfileHandlers, channels.slice(30, 34)],
+    [registerAttentionHandlers, channels.slice(34, 36)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();
@@ -196,6 +213,43 @@ test('each domain registrar owns only its assigned channels', () => {
     assert.deepEqual([...registered.keys()], expected);
   }
 });
+
+test('broadcast uses the transport without persisting sender copies', async () => {
+  const harness = createHarness();
+  const result = await harness.handlers.get('broadcast.send')(event(), {
+    version: 1,
+    requestId: 'broadcast-request',
+    accountId: 'one@example.invalid',
+    broadcastId: 'broadcast-1',
+    recipientJids: ['two@example.invalid', 'two@example.invalid', 'three@example.invalid'],
+    body: { kind: 'text', text: 'hola' },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.recipients.map((item) => item.recipientJid), [
+    'two@example.invalid',
+    'three@example.invalid',
+  ]);
+  assert.ok(result.value.recipients.every((item) => item.status === 'submitted'));
+  assert.equal(callsWith(harness.calls, 'saveMessage').length, 0);
+});
+
+test('private message.send keeps its existing sender persistence', async () => {
+  const harness = createHarness();
+  const result = await harness.handlers.get('message.send')(event(), {
+    version: 1,
+    requestId: 'private-request',
+    accountId: 'one@example.invalid',
+    conversationId: 'two@example.invalid',
+    clientMessageId: 'private-message-1',
+    body: { kind: 'text', text: 'privado' },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(callsWith(harness.calls, 'saveMessage').length, 1);
+});
+
+function callsWith(calls, name) {
+  return calls.filter(([call]) => call === name);
+}
 
 test('rejects unauthorized senders before returning a successful response', () => {
   const harness = createHarness();

@@ -1,4 +1,9 @@
 <article class="message" [class.outgoing]="outgoing()" [class.incoming]="!outgoing()">
   <p class="message-sender">{{ sender() }}</p>
   <p>{{ body() }}</p>
+  @if (persistenceStatus() === 'memory-only') {
+    <small class="message-persistence-warning"
+      >Mensaje no guardado; solo disponible en esta sesión.</small
+    >
+  }
 </article>

@@ -3,6 +3,8 @@ import {
   CertificateTrustDecisionInput,
   AttentionClearRequest,
   AttentionRequest,
+  BroadcastSendInput,
+  BroadcastSendResult,
   ChatStateInput,
   ConnectInput,
   ConnectionState,
@@ -109,6 +111,10 @@ export interface AttentionPort {
   clear(input: AttentionClearRequest): Promise<Result<void>>;
 }
 
+export interface BroadcastPort {
+  send(input: BroadcastSendInput): Promise<Result<BroadcastSendResult>>;
+}
+
 export interface FileTransferPort {
   send(input: FileSendInput): Promise<Result<FileTransfer | null>>;
   sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>>;
@@ -128,6 +134,7 @@ export const HISTORY_PORT = new InjectionToken<HistoryPort>('AtomicChat HistoryP
 export const PREFERENCES_PORT = new InjectionToken<PreferencesPort>('AtomicChat PreferencesPort');
 export const CERTIFICATE_PORT = new InjectionToken<CertificatePort>('AtomicChat CertificatePort');
 export const ATTENTION_PORT = new InjectionToken<AttentionPort>('AtomicChat AttentionPort');
+export const BROADCAST_PORT = new InjectionToken<BroadcastPort>('AtomicChat BroadcastPort');
 export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
   'AtomicChat FileTransferPort',
 );

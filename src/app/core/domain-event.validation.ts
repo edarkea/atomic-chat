@@ -60,6 +60,7 @@ interface EventRecord {
   participant?: unknown;
   participants?: unknown;
   pem?: unknown;
+  persistenceStatus?: unknown;
   port?: unknown;
   publicKeyAlgorithm?: unknown;
   publicKeyBits?: unknown;
@@ -239,7 +240,8 @@ function isMessage(value: unknown): value is Message {
     isString(value.body.text) &&
     isOneOf(value.status, ['draft', 'queued', 'sending', 'sent', 'failed']) &&
     isString(value.createdAt) &&
-    isOptionalOneOf(value.errorCode, appErrorCodes)
+    isOptionalOneOf(value.errorCode, appErrorCodes) &&
+    isOptionalOneOf(value.persistenceStatus, ['persisted', 'memory-only'])
   );
 }
 

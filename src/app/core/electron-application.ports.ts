@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import {
   AttentionClearRequest,
   AttentionRequest,
+  BroadcastSendInput,
+  BroadcastSendResult,
   CertificateTrustDecisionInput,
   FileActiveInput,
   FileRequest,
@@ -22,6 +24,7 @@ import {
   AccountConfig,
   AccountPort,
   AttentionPort,
+  BroadcastPort,
   CertificatePort,
   FileTransferPort,
   HistoryPort,
@@ -163,6 +166,14 @@ export class ElectronAttentionPort implements AttentionPort {
   clear(input: AttentionClearRequest): Promise<Result<void>> {
     const api = getAtomicChatApi();
     return api ? api.attention.clear(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronBroadcastPort implements BroadcastPort {
+  send(input: BroadcastSendInput): Promise<Result<BroadcastSendResult>> {
+    const api = getAtomicChatApi();
+    return api ? api.broadcast.send(input) : Promise.resolve(unavailable(input.requestId));
   }
 }
 

@@ -45,6 +45,7 @@
           [sender]="item.senderLabel"
           [body]="item.message.body.text"
           [outgoing]="item.outgoing"
+          [persistenceStatus]="item.message.persistenceStatus"
         />
       } @else {
         <app-file-transfer-card

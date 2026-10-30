@@ -113,7 +113,6 @@ export class BroadcastDialogComponent {
 
   protected statusLabel(status: BroadcastRecipientResult['status']): string {
     return {
-      queued: 'En cola',
       submitted: 'Enviado',
       failed: 'Falló',
       unknown: 'Resultado incierto',

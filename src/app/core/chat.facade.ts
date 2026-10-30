@@ -20,6 +20,7 @@ import {
 } from './domain';
 import { UnreadStore } from './unread.store';
 import { ActiveConversationStore } from './active-conversation.store';
+import { ConversationVisibilityStore } from './conversation-visibility.store';
 import { WindowFocusStore } from './window-focus.store';
 import {
   ACCOUNT_PORT,
@@ -53,6 +54,7 @@ export class ChatFacade {
   private readonly xmpp = inject<XmppPort>(XMPP_PORT);
   private readonly unread = inject(UnreadStore);
   private readonly activeConversation = inject(ActiveConversationStore);
+  private readonly conversationVisibility = inject(ConversationVisibilityStore);
   private readonly windowFocus = inject(WindowFocusStore);
   private readonly attention = inject<AttentionPort | null>(ATTENTION_PORT, { optional: true });
   readonly accountId = signal(this.account.getConfig()?.accountId || '');
@@ -141,6 +143,7 @@ export class ChatFacade {
           this.upsertMessage(message, message.conversationId || message.senderJid);
           if (event.type === 'message.received' && !this.isOwnMessage(message)) {
             const conversationId = message.conversationId || message.senderJid;
+            this.conversationVisibility.reveal(message.accountId, 'direct', conversationId);
             const incoming = this.unread.recordIncoming(
               message.accountId,
               'direct',
@@ -149,6 +152,7 @@ export class ChatFacade {
               this.activeConversation.isVisible(message.accountId, 'direct', conversationId),
               this.windowFocus.isFocused(),
             );
+            this.updateConversationUnread(message.accountId, conversationId);
             if (incoming.attentionRequested)
               void this.requestAttention(message.accountId, conversationId);
           }
@@ -395,6 +399,7 @@ export class ChatFacade {
       const roster = await this.xmpp.listRoster(requestedAccount);
       if (roster.ok && this.isCurrent(generation, requestedAccount)) this.mergeRoster(roster.value);
       if (this.isCurrent(generation, requestedAccount)) {
+        await this.loadStoredConversations(requestedAccount, generation);
         await this.loadPreferences(generation, requestedAccount);
       }
       return true;
@@ -470,7 +475,21 @@ export class ChatFacade {
         this.olderCursor = result.value.nextCursor;
         this.hasOlderMessages.set(result.value.hasMore);
         this.hasNewerMessages.set(false);
-        this.messages.set(result.value.items.slice(-200));
+        const historyItems = result.value.items;
+        const liveItems = this.messages().filter(
+          (item) =>
+            this.bareConversation(item.conversationId) === context.conversationId &&
+            !historyItems.some(
+              (historyItem) =>
+                historyItem.id === item.id ||
+                historyItem.clientMessageId === item.clientMessageId,
+            ),
+        );
+        this.messages.set(
+          [...historyItems, ...liveItems]
+            .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+            .slice(-200),
+        );
         this.unread.markReadIfEligible(
           accountId,
           'direct',
@@ -633,17 +652,20 @@ export class ChatFacade {
         accountId,
       });
       if (!this.isCurrent(generation, accountId) || !result.ok) return;
-      this.conversationSummaries.set(
-        result.value.map((conversation) => ({
-          id: `${accountId}|direct|${conversation.jid}`,
-          accountId,
-          kind: 'direct' as const,
-          jid: this.bareConversation(conversation.jid),
-          title: this.contactTitle(conversation.jid),
-          unreadCount: this.unreadCount(accountId, 'direct', conversation.jid),
-          lastMessageAt: Date.parse(conversation.lastActivity) || undefined,
-        })),
+      const persistedSummaries = result.value.map((conversation) => ({
+        id: `${accountId}|direct|${conversation.jid}`,
+        accountId,
+        kind: 'direct' as const,
+        jid: this.bareConversation(conversation.jid),
+        title: this.contactTitle(conversation.jid),
+        unreadCount: this.unreadCount(accountId, 'direct', conversation.jid),
+        lastMessageAt: Date.parse(conversation.lastActivity) || undefined,
+      }));
+      const persistedIds = new Set(persistedSummaries.map((summary) => summary.id));
+      const liveOnly = this.conversationSummaries().filter(
+        (summary) => summary.accountId !== accountId || !persistedIds.has(summary.id),
       );
+      this.conversationSummaries.set([...persistedSummaries, ...liveOnly]);
       for (const conversation of result.value)
         this.addConversation(accountId, conversation.jid, Date.parse(conversation.lastActivity));
     } catch {
@@ -790,6 +812,17 @@ export class ChatFacade {
         ? items.map((item) => (item.id === existing.id ? next : item))
         : [...items, next];
     });
+  }
+
+  private updateConversationUnread(accountId: string, jid: string): void {
+    const bare = this.bareConversation(jid);
+    this.conversationSummaries.update((items) =>
+      items.map((item) =>
+        item.accountId === accountId && item.kind === 'direct' && item.jid === bare
+          ? { ...item, unreadCount: this.unreadCount(accountId, 'direct', bare) }
+          : item,
+      ),
+    );
   }
 
   private mergeRoster(roster: Contact[]): void {
