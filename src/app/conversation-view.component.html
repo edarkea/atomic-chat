@@ -51,6 +51,7 @@
       } @else {
         <app-file-transfer-card
           [transfer]="item.transfer"
+          [media]="item.media"
           [label]="item.label"
           (accepted)="accept.emit($event)"
           (rejected)="reject.emit($event)"

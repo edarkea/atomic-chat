@@ -60,6 +60,10 @@
   max-width: 100%;
   padding: 4px;
 }
+.image-meta {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+}
 .file-preview img {
   display: block;
   height: auto;

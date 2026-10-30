@@ -29,11 +29,15 @@ function createRuntime({
   PersistenceStore,
   SecretStore,
   XmppAdapter,
+  MediaStore,
+  nativeImage,
   fileTransfers,
   outgoingFileTransfers,
   environment = process.env,
 }) {
   const persistence = new PersistenceStore(app.getPath('userData'));
+  const media = new MediaStore(app.getPath('userData'), persistence, nativeImage);
+  void media.reconcile();
   const secrets = new SecretStore(safeStorage, app.getPath('userData'));
   const xmpp = new XmppAdapter(
     app.isPackaged,
@@ -42,7 +46,7 @@ function createRuntime({
     fileTransfers,
     outgoingFileTransfers,
   );
-  return { persistence, secrets, xmpp };
+  return { persistence, media, secrets, xmpp };
 }
 
 module.exports = { createRuntime, loadMucPolicies };

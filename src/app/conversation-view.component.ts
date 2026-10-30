@@ -11,7 +11,7 @@ import {
   signal,
   ViewChild,
 } from '@angular/core';
-import { Contact, FileTransfer, Message } from './core/domain';
+import { ChatImageRecord, Contact, FileTransfer, Message } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
@@ -30,6 +30,7 @@ export type ConversationTimelineItem =
       readonly id: string;
       readonly sortAt: string;
       readonly transfer: FileTransfer;
+      readonly media?: ChatImageRecord;
       readonly senderLabel: string;
       readonly outgoing: boolean;
       readonly label: string;

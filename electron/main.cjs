@@ -32,6 +32,7 @@ const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
 const { createIncomingMessageProcessor } = require('./incoming-message-persistence.cjs');
 const { PreviewGrantRegistry } = require('./preview-grants.cjs');
+const { MediaStore } = require('./media-store.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
   DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -61,7 +62,10 @@ const {
 const localFileActions = new FileLocalActionRegistry({ shell });
 const previewGrants = new PreviewGrantRegistry({
   nativeImage,
-  resolveSource: (senderId, input) => localFileActions.resolveForPreview(senderId, input),
+  resolveSource: (senderId, input) =>
+    input.mediaId
+      ? runtime.media.resolveForPreview(senderId, input)
+      : localFileActions.resolveForPreview(senderId, input),
 });
 let runtime;
 const currentTransferTimeout = () => {
@@ -95,12 +99,20 @@ const fileTransfers = new FileTransferCoordinator({
   getDefaultDirectory: currentDownloadDirectory,
   selectDefaultDestination: selectDefaultFileDestination,
   resourceLimiter: fileResourceLimiter,
-  onCompleted: (record, direction) => localFileActions.register(record, direction),
+  onCompleted: async (record, direction) => {
+    const localActions =
+      direction === 'incoming' ? await localFileActions.register(record, direction) : false;
+    await runtime?.media.persistTransfer(record, direction);
+    return localActions;
+  },
   getTimeoutSeconds: currentTransferTimeout,
 });
 const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   resourceLimiter: fileResourceLimiter,
-  onCompleted: (record, direction) => localFileActions.register(record, direction),
+  onCompleted: async (record, direction) => {
+    await runtime?.media.persistTransfer(record, direction);
+    return false;
+  },
   getTimeoutSeconds: currentTransferTimeout,
 });
 
@@ -152,6 +164,7 @@ function attachEventSources() {
     onPersistenceError: (error) =>
       console.error('[PERSISTENCE] Could not save incoming message:', error?.message || 'STORAGE_FAILED'),
   });
+  runtime.media.onEvent((event) => eventRouter.forwardTransferEvent(event));
   fileTransfers.onEvent((event) => {
     eventRouter.forwardTransferEvent(event);
     if (event.type !== 'file.offerReceived' || !autoAcceptFileTransfers()) return;
@@ -177,6 +190,8 @@ function initializeRuntime() {
     PersistenceStore,
     SecretStore,
     XmppAdapter,
+    MediaStore,
+    nativeImage,
     fileTransfers,
     outgoingFileTransfers,
   });

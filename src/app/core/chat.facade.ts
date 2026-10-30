@@ -10,6 +10,7 @@ import {
   ConnectionState,
   Contact,
   ConversationSummary,
+  HistoryTimelineItem,
   Message,
   MessageSendInput,
   Presence,
@@ -67,6 +68,8 @@ export class ChatFacade {
   readonly contacts = signal<Contact[]>([]);
   readonly conversationSummaries = signal<ReadonlyArray<ConversationSummary>>([]);
   readonly messages = signal<Message[]>([]);
+  readonly timelineItems = signal<ReadonlyArray<HistoryTimelineItem>>([]);
+  readonly timelineSupported = signal(false);
   readonly historyLoading = signal(false);
   readonly hasOlderMessages = signal(false);
   readonly hasNewerMessages = signal(false);
@@ -97,6 +100,8 @@ export class ChatFacade {
   private olderCursor: string | null = null;
   private newerCursor: string | null = null;
   private historyPages: Array<{ cursor: string }> = [];
+  private timelinePages: Array<{ cursor: string }> = [];
+  private timelineMode = false;
   private historyContext: HistoryContext | null = null;
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly typingStates = new Map<string, ChatState>();
@@ -304,9 +309,13 @@ export class ChatFacade {
     this.accountId.set(requestedAccount);
     this.resetRemotePresence(requestedAccount);
     this.messages.set([]);
+    this.timelineItems.set([]);
+    this.timelineSupported.set(false);
     this.olderCursor = null;
     this.newerCursor = null;
     this.historyPages = [];
+    this.timelinePages = [];
+    this.timelineMode = false;
     this.historyContext = null;
     this.hasOlderMessages.set(false);
     this.hasNewerMessages.set(false);
@@ -458,17 +467,71 @@ export class ChatFacade {
     this.olderCursor = null;
     this.newerCursor = null;
     this.historyPages = [];
+    this.timelinePages = [];
+    this.timelineMode = false;
+    this.timelineItems.set([]);
+    this.timelineSupported.set(false);
     this.messages.set([]);
     try {
+      const timelinePage = this.history.timelinePage;
+      const timelineResult = timelinePage
+        ? await timelinePage.call(this.history, {
+            version: 1,
+            requestId,
+            accountId,
+            conversationId: context.conversationId,
+            limit: 50,
+            direction: 'older',
+            cursor: null,
+          })
+        : undefined;
+      if (timelineResult?.ok) {
+        this.timelineMode = true;
+        this.timelineSupported.set(true);
+        this.timelineItems.set(timelineResult.value.items);
+        if (timelineResult.value.nextCursor) this.timelinePages = [{ cursor: timelineResult.value.nextCursor }];
+        this.olderCursor = timelineResult.value.nextCursor;
+        this.hasOlderMessages.set(timelineResult.value.hasMore);
+        this.hasNewerMessages.set(false);
+        const historyMessages = timelineResult.value.items
+          .filter((item): item is Extract<HistoryTimelineItem, { kind: 'text' }> => item.kind === 'text')
+          .map((item) => item.message);
+        const liveMessages = this.messages().filter(
+          (message) =>
+            this.bareConversation(message.conversationId) === context.conversationId &&
+            !historyMessages.some(
+              (historyMessage) =>
+                historyMessage.id === message.id ||
+                historyMessage.clientMessageId === message.clientMessageId,
+            ),
+        );
+        this.messages.set(
+          [...historyMessages, ...liveMessages]
+            .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+            .slice(-200),
+        );
+        this.unread.markReadIfEligible(
+          accountId,
+          'direct',
+          context.conversationId,
+          this.activeConversation.isVisible(accountId, 'direct', context.conversationId),
+          this.windowFocus.isFocused(),
+        );
+        return;
+      }
+      if (timelineResult && timelineResult.error.code !== 'UNSUPPORTED') {
+        this.error.set(timelineResult.error.message);
+        return;
+      }
       const result = await this.history.listPage({
-        version: 1,
-        requestId,
-        accountId,
-        conversationId: context.conversationId,
-        limit: 50,
-        direction: 'older',
-        cursor: null,
-      });
+          version: 1,
+          requestId,
+          accountId,
+          conversationId: context.conversationId,
+          limit: 50,
+          direction: 'older',
+          cursor: null,
+        });
       if (!this.isHistoryContextCurrent(context)) return;
       if (result.ok) {
         if (result.value.nextCursor) this.historyPages = [{ cursor: result.value.nextCursor }];
@@ -686,6 +749,10 @@ export class ChatFacade {
     const requestId = createOpaqueId('history');
     this.historyLoading.set(true);
     try {
+      if (this.timelineMode && this.history.timelinePage) {
+        await this.loadTimelinePage(context, accountId, conversationId, direction);
+        return;
+      }
       const result = await this.history.listPage({
         version: 1,
         requestId,
@@ -741,6 +808,77 @@ export class ChatFacade {
     } finally {
       if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false);
     }
+  }
+
+  private async loadTimelinePage(
+    context: HistoryContext,
+    accountId: string,
+    conversationId: string,
+    direction: 'older' | 'newer',
+  ): Promise<void> {
+    const cursor = direction === 'older' ? this.olderCursor : this.newerCursor;
+    if (!cursor) return;
+    const result = await this.history.timelinePage!({
+      version: 1,
+      requestId: createOpaqueId('timeline'),
+      accountId,
+      conversationId: context.conversationId,
+      limit: 50,
+      direction,
+      cursor,
+    });
+    if (!this.isHistoryContextCurrent(context)) return;
+    if (!result.ok) {
+      this.error.set(result.error.message);
+      return;
+    }
+    const previous = this.timelineItems();
+    const merged = [...previous, ...result.value.items]
+      .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
+      .sort((left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id));
+    const progressed = merged.length > previous.length;
+    if (!progressed || !result.value.nextCursor) {
+      if (direction === 'older') this.hasOlderMessages.set(false);
+      else this.hasNewerMessages.set(false);
+      return;
+    }
+    const page = { cursor: result.value.nextCursor };
+    if (direction === 'older') {
+      this.timelinePages.unshift(page);
+      if (this.timelinePages.length > 4) this.timelinePages.pop();
+      this.olderCursor = this.timelinePages[0]?.cursor || null;
+      this.newerCursor =
+        this.timelinePages.length === 4 ? this.timelinePages[this.timelinePages.length - 1]?.cursor || null : null;
+      this.hasOlderMessages.set(result.value.hasMore);
+      this.hasNewerMessages.set(this.timelinePages.length === 4);
+      this.timelineItems.set(merged.slice(0, 200));
+    } else {
+      this.timelinePages.push(page);
+      if (this.timelinePages.length > 4) this.timelinePages.shift();
+      this.olderCursor =
+        this.timelinePages.length === 4 ? this.timelinePages[0]?.cursor || null : this.olderCursor;
+      this.newerCursor = this.timelinePages[this.timelinePages.length - 1]?.cursor || null;
+      this.hasNewerMessages.set(result.value.hasMore);
+      this.hasOlderMessages.set(this.timelinePages.length === 4 || this.hasOlderMessages());
+      this.timelineItems.set(merged.slice(-200));
+    }
+    const timelineMessages = this.timelineItems()
+      .filter((item): item is Extract<HistoryTimelineItem, { kind: 'text' }> => item.kind === 'text')
+      .map((item) => item.message);
+    const liveMessages = this.messages().filter(
+      (message) =>
+        this.bareConversation(message.conversationId) === context.conversationId &&
+        !timelineMessages.some(
+          (timelineMessage) =>
+            timelineMessage.id === message.id ||
+            timelineMessage.clientMessageId === message.clientMessageId,
+        ),
+    );
+    this.messages.set(
+      [...timelineMessages, ...liveMessages]
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .slice(-200),
+    );
   }
 
   private isCurrent(generation: number, accountId: string): boolean {

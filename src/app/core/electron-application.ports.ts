@@ -10,11 +10,13 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ChatImageRecord,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
+  MediaListInput,
   Message,
   Preferences,
   PreviewChunk,
@@ -24,6 +26,8 @@ import {
   PreviewStreamRef,
   Result,
   TypedDomainEvent,
+  TimelinePage,
+  TimelinePageInput,
   XmppConnectionProfile,
 } from './domain';
 import { subscribeToDomainEvents } from './domain-event.validation';
@@ -36,6 +40,7 @@ import {
   CertificatePort,
   FileTransferPort,
   HistoryPort,
+  MediaPort,
   PreferencesPort,
   PreviewPort,
 } from './ports';
@@ -119,6 +124,11 @@ export class ElectronHistoryPort implements HistoryPort {
     return api ? api.history.listPage(input) : Promise.resolve(unavailable(input.requestId));
   }
 
+  timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>> {
+    const api = getAtomicChatApi();
+    return api ? api.history.timelinePage(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
   conversations(input: {
     version: 1;
     requestId: string;
@@ -126,6 +136,14 @@ export class ElectronHistoryPort implements HistoryPort {
   }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>>> {
     const api = getAtomicChatApi();
     return api ? api.history.conversations(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronMediaPort implements MediaPort {
+  list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>> {
+    const api = getAtomicChatApi();
+    return api ? api.media.list(input) : Promise.resolve(unavailable(input.requestId));
   }
 }
 

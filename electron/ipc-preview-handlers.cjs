@@ -15,6 +15,14 @@ function registerPreviewHandlers({ ipcMain, assertSender, historySecurity, previ
       throw new Error('INVALID_INPUT');
     if (requirePreview && (typeof input.previewId !== 'string' || !input.previewId.trim()))
       throw new Error('INVALID_INPUT');
+    if (
+      input.mediaId !== undefined &&
+      (typeof input.mediaId !== 'string' ||
+        !input.mediaId.trim() ||
+        typeof input.conversationId !== 'string' ||
+        !input.conversationId.trim())
+    )
+      throw new Error('INVALID_INPUT');
     if (!historySecurity.authorize(event.sender.id, input.accountId)) throw new Error('UNAUTHORIZED');
   }
 

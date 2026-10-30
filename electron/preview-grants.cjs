@@ -58,7 +58,7 @@ class PreviewGrantRegistry {
     const senderEpoch = this.currentEpoch(this.senderEpochs, senderId);
     const accountEpoch = this.currentEpoch(this.accountEpochs, input.accountId);
     const requestKey = `${senderId}:${input.requestId}`;
-    const fingerprint = `${input.accountId}:${input.transferId}`;
+    const fingerprint = `${input.accountId}:${input.transferId}:${input.mediaId || ''}:${input.conversationId || ''}`;
     const previous = this.requests.get(requestKey);
     if (previous) {
       if (previous.fingerprint !== fingerprint) throw previewError('CONFLICT', 'requestId reutilizado');
@@ -105,6 +105,8 @@ class PreviewGrantRegistry {
         senderId,
         accountId: input.accountId,
         transferId: input.transferId,
+        mediaId: input.mediaId || source.mediaId,
+        conversationId: input.conversationId || source.conversationId,
         path: source.path,
         resolvedPath,
         metadata: fileMetadata(stats),
@@ -127,6 +129,8 @@ class PreviewGrantRegistry {
         width: image.width,
         height: image.height,
         expiresAt: new Date(grant.expiresAtMs).toISOString(),
+        ...(grant.mediaId ? { mediaId: grant.mediaId } : {}),
+        ...(grant.conversationId ? { conversationId: grant.conversationId } : {}),
       };
       this.rememberRequest(requestKey, fingerprint, value);
       return value;
@@ -269,7 +273,13 @@ class PreviewGrantRegistry {
       if (this.isRevokedOwner(senderId, input)) return;
       throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
     }
-    if (grant.senderId !== senderId || grant.accountId !== input.accountId || grant.transferId !== input.transferId)
+    if (
+      grant.senderId !== senderId ||
+      grant.accountId !== input.accountId ||
+      grant.transferId !== input.transferId ||
+      (grant.mediaId && grant.mediaId !== input.mediaId) ||
+      (grant.conversationId && grant.conversationId !== input.conversationId)
+    )
       throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
     const stream = grant.streams.get(input.streamId);
     if (!stream) return;
@@ -286,13 +296,21 @@ class PreviewGrantRegistry {
       if (
         revoked.senderId === senderId &&
         revoked.accountId === input.accountId &&
-        revoked.transferId === input.transferId
+        revoked.transferId === input.transferId &&
+        (!revoked.mediaId || revoked.mediaId === input.mediaId) &&
+        (!revoked.conversationId || revoked.conversationId === input.conversationId)
       )
         return;
       throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
     }
     if (!grant) throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
-    if (grant.senderId !== senderId || grant.accountId !== input.accountId || grant.transferId !== input.transferId)
+    if (
+      grant.senderId !== senderId ||
+      grant.accountId !== input.accountId ||
+      grant.transferId !== input.transferId ||
+      (grant.mediaId && grant.mediaId !== input.mediaId) ||
+      (grant.conversationId && grant.conversationId !== input.conversationId)
+    )
       throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
     await this.revokeGrant(grant);
   }
@@ -317,6 +335,8 @@ class PreviewGrantRegistry {
       senderId: grant.senderId,
       accountId: grant.accountId,
       transferId: grant.transferId,
+      mediaId: grant.mediaId,
+      conversationId: grant.conversationId,
       expiresAtMs: Date.now() + TTL_MS,
     });
     this.grants.delete(grant.previewId);
@@ -362,7 +382,9 @@ class PreviewGrantRegistry {
       revoked &&
         revoked.senderId === senderId &&
         revoked.accountId === input.accountId &&
-        revoked.transferId === input.transferId,
+        revoked.transferId === input.transferId &&
+        (!revoked.mediaId || revoked.mediaId === input.mediaId) &&
+        (!revoked.conversationId || revoked.conversationId === input.conversationId),
     );
   }
 
@@ -385,7 +407,14 @@ class PreviewGrantRegistry {
   authorizeGrant(senderId, input, allowExpired = false) {
     this.prune();
     const grant = this.grants.get(input.previewId);
-    if (!grant || grant.senderId !== senderId || grant.accountId !== input.accountId || grant.transferId !== input.transferId)
+    if (
+      !grant ||
+      grant.senderId !== senderId ||
+      grant.accountId !== input.accountId ||
+      grant.transferId !== input.transferId ||
+      (grant.mediaId && grant.mediaId !== input.mediaId) ||
+      (grant.conversationId && grant.conversationId !== input.conversationId)
+    )
       throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
     if (!allowExpired && Date.now() >= grant.expiresAtMs) throw previewError('MEDIA_REFERENCE_REVOKED', 'la referencia expiró');
     return grant;

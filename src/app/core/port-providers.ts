@@ -7,6 +7,7 @@ import {
   ElectronCertificatePort,
   ElectronFileTransferPort,
   ElectronHistoryPort,
+  ElectronMediaPort,
   ElectronPreferencesPort,
   ElectronPreviewPort,
 } from './electron-application.ports';
@@ -19,6 +20,7 @@ import {
   CERTIFICATE_PORT,
   FILE_TRANSFER_PORT,
   PREVIEW_PORT,
+  MEDIA_PORT,
   HISTORY_PORT,
   MUC_PORT,
   PREFERENCES_PORT,
@@ -30,6 +32,7 @@ import {
   UnavailableCertificatePort,
   UnavailableFileTransferPort,
   UnavailableHistoryPort,
+  UnavailableMediaPort,
   UnavailableMucPort,
   UnavailablePreferencesPort,
   UnavailablePreviewPort,
@@ -41,6 +44,7 @@ export const corePortProviders: Provider[] = [
   ElectronAccountPort,
   ElectronAttentionPort,
   ElectronHistoryPort,
+  ElectronMediaPort,
   ElectronPreferencesPort,
   ElectronCertificatePort,
   ElectronFileTransferPort,
@@ -73,6 +77,12 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronHistoryPort, unavailable: UnavailableHistoryPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronHistoryPort, UnavailableHistoryPort],
+  },
+  {
+    provide: MEDIA_PORT,
+    useFactory: (electron: ElectronMediaPort, unavailable: UnavailableMediaPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronMediaPort, UnavailableMediaPort],
   },
   {
     provide: PREFERENCES_PORT,

@@ -4,6 +4,7 @@ import {
   ConnectionState,
   AppErrorCode,
   CertificateVerificationErrorCode,
+  ChatImageRecord,
   ChatStateEvent,
   DomainEventPayloadMap,
   DomainEventType,
@@ -54,6 +55,7 @@ interface EventRecord {
   mimeType?: unknown;
   mode?: unknown;
   name?: unknown;
+  originalName?: unknown;
   nickname?: unknown;
   occupantJid?: unknown;
   offer?: unknown;
@@ -82,6 +84,9 @@ interface EventRecord {
   signatureAlgorithm?: unknown;
   since?: unknown;
   sizeBytes?: unknown;
+  mediaId?: unknown;
+  width?: unknown;
+  height?: unknown;
   text?: unknown;
   nick?: unknown;
   source?: unknown;
@@ -158,6 +163,13 @@ const appErrorCodes: readonly AppErrorCode[] = [
   'MUC_POLICY_MISMATCH',
   'MUC_DISCOVERY_STALE',
   'MUC_SERVER_REJECTED',
+  'RESOURCE_CONSTRAINT',
+  'MEDIA_PREVIEW_UNAVAILABLE',
+  'MEDIA_TYPE_UNSUPPORTED',
+  'MEDIA_SIZE_EXCEEDED',
+  'MEDIA_DIMENSIONS_INVALID',
+  'MEDIA_DECODE_FAILED',
+  'MEDIA_REFERENCE_REVOKED',
 ];
 const certificateVerificationErrorCodes: readonly CertificateVerificationErrorCode[] = [
   'CERTIFICATE_EXPIRED',
@@ -183,6 +195,7 @@ const domainEventTypes: readonly DomainEventType[] = [
   'muc.notice',
   'file.offerReceived',
   'file.stateChanged',
+  'media.available',
 ];
 
 function isDomainEventType(value: unknown): value is DomainEventType {
@@ -410,6 +423,25 @@ function isFileTransfer(value: unknown): value is FileTransfer {
   );
 }
 
+function isChatImageRecord(value: unknown): value is ChatImageRecord {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value.mediaId) &&
+    isString(value.transferId) &&
+    isString(value.accountId) &&
+    isString(value.conversationId) &&
+    isOneOf(value.direction, ['incoming', 'outgoing']) &&
+    isString(value.senderJid) &&
+    isString(value.originalName) &&
+    isOneOf(value.mimeType, ['image/png', 'image/jpeg']) &&
+    isString(value.sizeBytes) &&
+    isPositiveInteger(value.width) &&
+    isPositiveInteger(value.height) &&
+    isString(value.createdAt) &&
+    isOneOf(value.availability, ['available', 'missing', 'invalid'])
+  );
+}
+
 function isMucNotice(value: unknown): value is MucNotice {
   if (!isRecord(value)) return false;
   const codes: readonly MucNoticeCode[] = ['IDENTITY_VISIBLE', 'PUBLIC_LOGGING', 'SERVER_NICKNAME'];
@@ -499,6 +531,10 @@ export function validateDomainEvent(value: unknown): TypedDomainEvent | undefine
       return isFileOffer(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
     case 'file.stateChanged':
       return isFileTransfer(value.payload)
+        ? typedEvent(value, value.type, value.payload)
+        : undefined;
+    case 'media.available':
+      return isChatImageRecord(value.payload)
         ? typedEvent(value, value.type, value.payload)
         : undefined;
   }

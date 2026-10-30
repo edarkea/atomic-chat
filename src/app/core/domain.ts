@@ -262,6 +262,8 @@ export interface ImagePreviewReady {
   readonly width: number;
   readonly height: number;
   readonly expiresAt: string;
+  readonly mediaId?: string;
+  readonly conversationId?: string;
 }
 export interface ImagePreviewUnavailable {
   readonly state: Exclude<ImagePreviewState, 'ready'>;
@@ -275,6 +277,8 @@ export interface ImagePreviewRequest {
   readonly requestId: RequestId;
   readonly accountId: string;
   readonly transferId: string;
+  readonly conversationId?: string;
+  readonly mediaId?: string;
 }
 export interface PreviewOpenRequest extends ImagePreviewRequest {
   readonly previewId: string;
@@ -303,6 +307,57 @@ export interface PreviewCloseRequest extends ImagePreviewRequest {
 }
 export interface ImagePreviewRevokeRequest extends ImagePreviewRequest {
   readonly previewId: string;
+}
+
+export type ChatMediaDirection = 'incoming' | 'outgoing';
+export type ChatMediaAvailability = 'available' | 'missing' | 'invalid';
+export interface ChatImageRecord {
+  readonly mediaId: string;
+  readonly transferId: string;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly direction: ChatMediaDirection;
+  readonly senderJid: string;
+  readonly originalName: string;
+  readonly mimeType: StaticImageMimeType;
+  readonly sizeBytes: DecimalByteCount;
+  readonly width: number;
+  readonly height: number;
+  readonly createdAt: string;
+  readonly availability: ChatMediaAvailability;
+}
+export interface MediaListInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId?: string;
+}
+export type HistoryTimelineItem =
+  | {
+      readonly kind: 'text';
+      readonly id: string;
+      readonly sortAt: string;
+      readonly message: Message;
+    }
+  | {
+      readonly kind: 'image';
+      readonly id: string;
+      readonly sortAt: string;
+      readonly media: ChatImageRecord;
+    };
+export interface TimelinePageInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly limit: number;
+  readonly direction: 'older' | 'newer';
+  readonly cursor?: string | null;
+}
+export interface TimelinePage {
+  readonly items: ReadonlyArray<HistoryTimelineItem>;
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
 }
 export type Result<T> =
   | { ok: true; value: T; version: ContractVersion; requestId: RequestId }
@@ -403,6 +458,7 @@ export interface DomainEventPayloadMap {
   'muc.notice': MucNotice;
   'file.offerReceived': FileOffer;
   'file.stateChanged': FileTransfer;
+  'media.available': ChatImageRecord;
 }
 export type DomainEventType = keyof DomainEventPayloadMap;
 export interface DomainEvent<T> {

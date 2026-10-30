@@ -11,8 +11,9 @@
   <p class="message-sender">
     {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
   </p>
-  <p class="file-title"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg> {{ transfer().offer.name }}</p>
-  <small>{{ transfer().offer.sizeBytes }} bytes · {{ label() }}</small>
+  @if (!isImageTransfer()) {
+    <p class="file-title"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-file" /></svg> {{ transfer().offer.name }}</p>
+  }
   @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
     <p class="file-security">
       Sin cifrado de extremo a extremo. Solo archivos ficticios de laboratorio.
@@ -29,7 +30,7 @@
     </p>
     <button type="button" (click)="cancelled.emit(transfer().offer.transferId)">Cancelar</button>
   }
-  @if (isTerminal()) {
+  @if (isTerminal() && !isImageTransfer()) {
     <p aria-live="polite">{{ label() }}</p>
   }
   @if (previewState() === 'loading') {
@@ -39,6 +40,9 @@
     <button class="file-preview" type="button" (click)="openPreview()" aria-label="Ampliar imagen recibida">
       <img [src]="preview" [alt]="'Preview de ' + transfer().offer.name" />
     </button>
+  }
+  @if (isImageTransfer()) {
+    <small class="image-meta">{{ transfer().offer.name }} · {{ transfer().offer.sizeBytes }} bytes · {{ label() }}</small>
   }
   @if (previewState() === 'unavailable') {
     <p class="file-preview-status" role="status">{{ previewMessage() }}</p>

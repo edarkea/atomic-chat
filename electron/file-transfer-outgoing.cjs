@@ -194,6 +194,11 @@ class OutgoingFileTransferCoordinator {
       record.localActions = undefined;
       this.clearProgressTimer(record);
       record.updatedAt = new Date().toISOString();
+      try {
+        await this.onCompleted?.(record, 'outgoing');
+      } catch {
+        /* Media persistence must not change the real transfer outcome. */
+      }
       this.emit(record);
       return transferView(record);
     } catch (cause) {

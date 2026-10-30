@@ -14,6 +14,7 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ChatImageRecord,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
@@ -24,6 +25,7 @@ import {
   PreviewStreamRef,
   HistoryPage,
   HistoryPageInput,
+  MediaListInput,
   Message,
   MessageSendInput,
   MucDiscoverInput,
@@ -38,6 +40,8 @@ import {
   RoomSendReceipt,
   RoomState,
   TypedDomainEvent,
+  TimelinePage,
+  TimelinePageInput,
   XmppConnectionProfile,
 } from './domain';
 
@@ -93,11 +97,16 @@ export interface HistoryPort {
     conversationId: string;
   }): Promise<Result<Message[]>>;
   listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>;
+  timelinePage?(input: TimelinePageInput): Promise<Result<TimelinePage>>;
   conversations(input: {
     version: 1;
     requestId: string;
     accountId: string;
   }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>>>;
+}
+
+export interface MediaPort {
+  list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>>;
 }
 
 export interface PreferencesPort {
@@ -155,3 +164,4 @@ export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
   'AtomicChat FileTransferPort',
 );
 export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewPort');
+export const MEDIA_PORT = new InjectionToken<MediaPort>('AtomicChat MediaPort');

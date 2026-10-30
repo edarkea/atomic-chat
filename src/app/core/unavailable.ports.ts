@@ -8,11 +8,13 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ChatImageRecord,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
+  MediaListInput,
   Message,
   Preferences,
   PreviewChunk,
@@ -21,6 +23,8 @@ import {
   PreviewReadRequest,
   PreviewStreamRef,
   Result,
+  TimelinePage,
+  TimelinePageInput,
   RoomRef,
   RoomState,
   RoomSendReceipt,
@@ -38,6 +42,7 @@ import {
   CertificatePort,
   FileTransferPort,
   HistoryPort,
+  MediaPort,
   MucPort,
   PreferencesPort,
   PreviewPort,
@@ -102,12 +107,22 @@ export class UnavailableHistoryPort implements HistoryPort {
   listPage(input: HistoryPageInput): Promise<Result<HistoryPage>> {
     return Promise.resolve(unsupported(input.requestId));
   }
+  timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
   conversations(input: {
     version: 1;
     requestId: string;
     accountId: string;
   }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>>> {
     return Promise.resolve(unsupported(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableMediaPort implements MediaPort {
+  list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>> {
+    return Promise.resolve({ ok: true, version: 1, requestId: input.requestId, value: [] });
   }
 }
 

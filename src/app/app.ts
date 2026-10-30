@@ -15,7 +15,10 @@ import {
   CertificateTrustDecision,
   BroadcastMode,
   BroadcastRecipientResult,
+  ChatImageRecord,
   Contact,
+  FileTransfer,
+  HistoryTimelineItem,
   Message,
   Preferences,
   RoomState,
@@ -375,19 +378,48 @@ export class App {
         senderLabel: this.directSenderLabel(message),
         outgoing: this.isOutgoing(message),
       }));
-      const files: ConversationTimelineItem[] = this.files
+      const files = this.files
         .forConversation(this.chat.accountId(), this.selectedJid())
         .map((transfer) => ({
-          kind: 'file',
+          kind: 'file' as const,
           id: `file:${transfer.offer.transferId}`,
           sortAt: transfer.offer.offeredAt,
           transfer,
+          media: this.files.mediaForTransfer(
+            this.chat.accountId(),
+            transfer.offer.transferId,
+          ),
           senderLabel: transfer.direction === 'outgoing' ? 'Tú' : transfer.offer.senderJid,
           outgoing: transfer.direction === 'outgoing',
           label: this.files.label(transfer.state, transfer.endReason, transfer.direction),
           progressLabel: this.files.label(transfer.state, transfer.endReason, transfer.direction),
         }));
-      return [...messages, ...files].sort(
+      const activeTransferIds = new Set(files.map((item) => item.transfer.offer.transferId));
+      const timelineMedia = this.chat.timelineItems()
+        .filter((item): item is Extract<HistoryTimelineItem, { kind: 'image' }> => item.kind === 'image')
+        .map((item) => item.media);
+      const persistedImages = this.chat.timelineSupported() ? timelineMedia : this.files.media();
+      const liveMedia = this.files.liveMedia();
+      const historicalImages: ConversationTimelineItem[] = [...persistedImages, ...liveMedia]
+        .filter((media, index, all) => all.findIndex((candidate) => candidate.mediaId === media.mediaId) === index)
+        .filter(
+          (media) =>
+            media.accountId === this.chat.accountId() &&
+            this.bareJid(media.conversationId) === this.bareJid(this.selectedJid()) &&
+            !activeTransferIds.has(media.transferId),
+        )
+        .map((media) => ({
+          kind: 'file' as const,
+          id: `media:${media.mediaId}`,
+          sortAt: media.createdAt,
+          transfer: this.mediaAsTransfer(media),
+          media,
+          senderLabel: media.direction === 'outgoing' ? 'Tú' : media.senderJid,
+          outgoing: media.direction === 'outgoing',
+          label: 'Imagen guardada',
+          progressLabel: 'Imagen guardada',
+        }));
+      return [...messages, ...files, ...historicalImages].sort(
         (left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id),
       );
     },
@@ -1167,6 +1199,26 @@ export class App {
   }
   private bareJid(jid: string): string {
     return jid.split('/')[0].toLowerCase();
+  }
+
+  private mediaAsTransfer(media: ChatImageRecord): FileTransfer {
+    return {
+      offer: {
+        transferId: media.transferId,
+        accountId: media.accountId,
+        conversationId: media.conversationId,
+        senderJid: media.senderJid,
+        name: media.originalName,
+        sizeBytes: media.sizeBytes,
+        mimeType: media.mimeType,
+        transport: 'ibb',
+        offeredAt: media.createdAt,
+      },
+      direction: media.direction,
+      state: 'completed',
+      bytesTransferred: media.sizeBytes,
+      updatedAt: media.createdAt,
+    };
   }
   private isFileDrag(event: DragEvent): boolean {
     return event.dataTransfer?.types.includes('Files') ?? false;

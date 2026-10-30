@@ -187,6 +187,31 @@ class PersistenceStore {
           "ALTER TABLE messages ADD COLUMN classification TEXT NOT NULL DEFAULT 'direct'",
         );
       this.database.prepare('UPDATE schema_meta SET version = 7').run();
+      this.database.exec(`
+        CREATE TABLE IF NOT EXISTS media_assets (
+          media_id TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          transfer_id TEXT NOT NULL,
+          conversation_id TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
+          sender_jid TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          mime_type TEXT NOT NULL CHECK (mime_type IN ('image/png', 'image/jpeg')),
+          size_bytes TEXT NOT NULL,
+          width INTEGER NOT NULL,
+          height INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          availability TEXT NOT NULL CHECK (availability IN ('available', 'missing', 'invalid')),
+          storage_key TEXT,
+          UNIQUE (account_id, transfer_id),
+          FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_media_account_conversation_created
+          ON media_assets(account_id, conversation_id, created_at, media_id);
+        CREATE INDEX IF NOT EXISTS idx_media_account_transfer
+          ON media_assets(account_id, transfer_id);
+      `);
+      this.database.prepare('UPDATE schema_meta SET version = 8').run();
     });
     migrate();
   }
@@ -394,11 +419,181 @@ class PersistenceStore {
     return { items: page, hasMore };
   }
 
+  upsertMedia(record, storageKey = null) {
+    if (!record?.accountId || !record?.mediaId || !record?.transferId)
+      throw new Error('INVALID_INPUT');
+    this.database
+      .prepare(
+        `INSERT INTO media_assets(
+          media_id, account_id, transfer_id, conversation_id, direction, sender_jid,
+          original_name, mime_type, size_bytes, width, height, created_at, availability, storage_key
+        ) VALUES (
+          @mediaId, @accountId, @transferId, @conversationId, @direction, @senderJid,
+          @originalName, @mimeType, @sizeBytes, @width, @height, @createdAt, @availability, @storageKey
+        )
+        ON CONFLICT(account_id, transfer_id) DO UPDATE SET
+          media_id = excluded.media_id,
+          conversation_id = excluded.conversation_id,
+          direction = excluded.direction,
+          sender_jid = excluded.sender_jid,
+          original_name = excluded.original_name,
+          mime_type = excluded.mime_type,
+          size_bytes = excluded.size_bytes,
+          width = excluded.width,
+          height = excluded.height,
+          created_at = excluded.created_at,
+          availability = excluded.availability,
+          storage_key = excluded.storage_key`,
+      )
+      .run({ ...record, storageKey });
+    return this.getMedia(record.accountId, record.mediaId);
+  }
+
+  getMedia(accountId, mediaId) {
+    const row = this.database
+      .prepare(
+        `SELECT media_id AS mediaId, account_id AS accountId, transfer_id AS transferId,
+          conversation_id AS conversationId, direction, sender_jid AS senderJid,
+          original_name AS originalName, mime_type AS mimeType, size_bytes AS sizeBytes,
+          width, height, created_at AS createdAt, availability, storage_key AS storageKey
+         FROM media_assets WHERE account_id = ? AND media_id = ?`,
+      )
+      .get(accountId, mediaId);
+    return row || null;
+  }
+
+  getMediaByTransfer(accountId, transferId) {
+    const row = this.database
+      .prepare(
+        `SELECT media_id AS mediaId, account_id AS accountId, transfer_id AS transferId,
+          conversation_id AS conversationId, direction, sender_jid AS senderJid,
+          original_name AS originalName, mime_type AS mimeType, size_bytes AS sizeBytes,
+          width, height, created_at AS createdAt, availability, storage_key AS storageKey
+         FROM media_assets WHERE account_id = ? AND transfer_id = ?`,
+      )
+      .get(accountId, transferId);
+    return row || null;
+  }
+
+  listMedia(accountId, conversationId) {
+    const values = [accountId];
+    const predicate = conversationId ? ' AND conversation_id = ?' : '';
+    if (conversationId) values.push(conversationId);
+    return this.database
+      .prepare(
+        `SELECT media_id AS mediaId, account_id AS accountId, transfer_id AS transferId,
+          conversation_id AS conversationId, direction, sender_jid AS senderJid,
+          original_name AS originalName, mime_type AS mimeType, size_bytes AS sizeBytes,
+          width, height, created_at AS createdAt, availability, storage_key AS storageKey
+         FROM media_assets WHERE account_id = ?${predicate}
+         ORDER BY created_at ASC, media_id ASC`,
+      )
+      .all(...values);
+  }
+
+  listAllMedia() {
+    return this.database
+      .prepare(
+        `SELECT media_id AS mediaId, account_id AS accountId, transfer_id AS transferId,
+          conversation_id AS conversationId, direction, sender_jid AS senderJid,
+          original_name AS originalName, mime_type AS mimeType, size_bytes AS sizeBytes,
+          width, height, created_at AS createdAt, availability, storage_key AS storageKey
+         FROM media_assets`,
+      )
+      .all();
+  }
+
+  updateMediaAvailability(accountId, mediaId, availability) {
+    if (!['available', 'missing', 'invalid'].includes(availability)) throw new Error('INVALID_INPUT');
+    this.database
+      .prepare('UPDATE media_assets SET availability = ? WHERE account_id = ? AND media_id = ?')
+      .run(availability, accountId, mediaId);
+  }
+
+  listTimelinePage(accountId, conversationId, limit, direction, cursor) {
+    const values = [accountId, conversationId, accountId, conversationId];
+    let predicate = '';
+    let order = 'ORDER BY sort_at DESC, id DESC';
+    if (cursor) {
+      if (direction === 'older') {
+        predicate = ' AND (sort_at < ? OR (sort_at = ? AND id < ?))';
+        values.push(cursor.createdAt, cursor.createdAt, cursor.id);
+      } else {
+        predicate = ' AND (sort_at > ? OR (sort_at = ? AND id > ?))';
+        values.push(cursor.createdAt, cursor.createdAt, cursor.id);
+        order = 'ORDER BY sort_at ASC, id ASC';
+      }
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM (
+          SELECT id, created_at AS sort_at, 'text' AS kind, account_id AS account_id,
+            conversation_id AS conversation_id, client_message_id, sender_jid, body, status,
+            classification, NULL AS transfer_id, NULL AS media_id, NULL AS direction,
+            NULL AS original_name, NULL AS mime_type, NULL AS size_bytes, NULL AS width,
+            NULL AS height, NULL AS availability
+          FROM messages WHERE account_id = ? AND conversation_id = ?
+          UNION ALL
+          SELECT media_id AS id, created_at AS sort_at, 'image' AS kind, account_id,
+            conversation_id, NULL, sender_jid, NULL, NULL, NULL, transfer_id, media_id,
+            direction, original_name, mime_type, size_bytes, width, height, availability
+          FROM media_assets WHERE account_id = ? AND conversation_id = ?
+        ) AS timeline WHERE 1 = 1${predicate} ${order} LIMIT ?`,
+      )
+      .all(...values, limit + 1);
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).map((row) => {
+      if (row.kind === 'text')
+        return {
+          kind: 'text',
+          id: row.id,
+          sortAt: row.sort_at,
+          message: {
+            id: row.id,
+            accountId: row.account_id,
+            conversationId: row.conversation_id,
+            clientMessageId: row.client_message_id,
+            senderJid: row.sender_jid,
+            body: JSON.parse(row.body),
+            status: row.status,
+            createdAt: row.sort_at,
+            classification: row.classification,
+          },
+        };
+      return {
+        kind: 'image',
+        id: row.media_id,
+        sortAt: row.sort_at,
+        media: {
+          mediaId: row.media_id,
+          transferId: row.transfer_id,
+          accountId: row.account_id,
+          conversationId: row.conversation_id,
+          direction: row.direction,
+          senderJid: row.sender_jid,
+          originalName: row.original_name,
+          mimeType: row.mime_type,
+          sizeBytes: row.size_bytes,
+          width: row.width,
+          height: row.height,
+          createdAt: row.sort_at,
+          availability: row.availability,
+        },
+      };
+    });
+    if (direction === 'older') page.reverse();
+    return { items: page, hasMore };
+  }
+
   listConversations(accountId) {
     return this.database
       .prepare(
         `SELECT account_id AS accountId, conversation_id AS jid,
-      MAX(created_at) AS lastActivity FROM messages WHERE account_id = ?
+      MAX(last_activity) AS lastActivity FROM (
+        SELECT account_id, conversation_id, created_at AS last_activity FROM messages
+        UNION ALL
+        SELECT account_id, conversation_id, created_at AS last_activity FROM media_assets
+      ) WHERE account_id = ?
       GROUP BY account_id, conversation_id ORDER BY lastActivity DESC`,
       )
       .all(accountId);

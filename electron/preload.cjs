@@ -99,7 +99,11 @@ contextBridge.exposeInMainWorld(
     history: Object.freeze({
       list: (input) => invoke('messages.list', input),
       listPage: (input) => invoke('messages.page', input),
+      timelinePage: (input) => invoke('timeline.page', input),
       conversations: (input) => invoke('conversations.list', input),
+    }),
+    media: Object.freeze({
+      list: (input) => invoke('media.list', input),
     }),
     preferences: Object.freeze({
       get: (input) => invoke('preferences.get', input),

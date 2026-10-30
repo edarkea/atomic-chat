@@ -13,11 +13,15 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ChatImageRecord,
   ImagePreviewRequest,
   ImagePreviewRef,
   ImagePreviewRevokeRequest,
+  MediaListInput,
   HistoryPage,
   HistoryPageInput,
+  TimelinePage,
+  TimelinePageInput,
   Message,
   MessageSendInput,
   MucDiscoverInput,
@@ -123,11 +127,15 @@ export interface AtomicChatApi {
       conversationId: string;
     }): Promise<Result<Message[]>>;
     listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>;
+    timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>>;
     conversations(input: {
       version: 1;
       requestId: string;
       accountId: string;
     }): Promise<Result<Array<{ accountId: string; jid: string; lastActivity: string }>>>;
+  };
+  media: {
+    list(input: MediaListInput): Promise<Result<ReadonlyArray<ChatImageRecord>>>;
   };
   preferences: {
     get(input: { accountId: string }): Promise<Result<Preferences>>;

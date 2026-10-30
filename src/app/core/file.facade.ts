@@ -1,7 +1,7 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
-import { FileTransfer, TypedDomainEvent } from './domain';
-import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
+import { ChatImageRecord, FileTransfer, TypedDomainEvent } from './domain';
+import { FILE_TRANSFER_PORT, MEDIA_PORT, FileTransferPort, MediaPort } from './ports';
 
 const MAX_DROPPED_FILES = 8;
 
@@ -9,12 +9,17 @@ const MAX_DROPPED_FILES = 8;
 export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
+  private readonly mediaPort = inject<MediaPort | null>(MEDIA_PORT, { optional: true });
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
+  private readonly mediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
+  private readonly liveMediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
   private droppedBatchInFlight = false;
   private droppedBatchGeneration = 0;
   readonly transfers = computed(() => this.items());
+  readonly media = computed(() => this.mediaItems());
+  readonly liveMedia = computed(() => this.liveMediaItems());
   readonly error = signal<string | null>(null);
   readonly activeCount = computed(
     () =>
@@ -31,14 +36,22 @@ export class FileFacade {
     this.droppedBatchGeneration += 1;
     this.account = accountId;
     this.items.set([]);
+    this.mediaItems.set([]);
+    this.liveMediaItems.set([]);
     this.pendingLocalActions.set(new Set());
     this.error.set(null);
     if (!accountId) return;
-    const result = await this.port.listActive({
+    const activeResult = this.port.listActive({
       version: 1,
       requestId: createOpaqueId('file-list'),
       accountId,
     });
+    const mediaResult = this.mediaPort?.list({
+      version: 1,
+      requestId: createOpaqueId('media-list'),
+      accountId,
+    });
+    const [result, storedMedia] = await Promise.all([activeResult, mediaResult]);
     if (this.account !== accountId) return;
     if (result.ok) {
       const active = new Map(result.value.map((item) => [item.offer.transferId, item]));
@@ -46,6 +59,9 @@ export class FileFacade {
         if (current.offer.accountId === accountId) active.set(current.offer.transferId, current);
       this.items.set([...active.values()]);
     } else this.error.set(result.error.message);
+    if (storedMedia?.ok) this.mediaItems.set(storedMedia.value);
+    else if (storedMedia && !storedMedia.ok && storedMedia.error.code !== 'UNSUPPORTED')
+      this.error.set(storedMedia.error.message);
   }
 
   async accept(transferId: string): Promise<void> {
@@ -143,6 +159,12 @@ export class FileFacade {
     );
   }
 
+  mediaForTransfer(accountId: string, transferId: string): ChatImageRecord | undefined {
+    return this.mediaItems().find(
+      (record) => record.accountId === accountId && record.transferId === transferId,
+    );
+  }
+
   label(
     state: FileTransfer['state'],
     reason?: FileTransfer['endReason'],
@@ -237,6 +259,17 @@ export class FileFacade {
       const transfer = event.payload;
       if (transfer.offer.accountId === this.account) this.upsert(transfer);
     }
+    if (event.type === 'media.available') {
+      const media = event.payload;
+      if (media.accountId === this.account) {
+        this.upsertMedia(media);
+        this.liveMediaItems.update((items) =>
+          items.some((item) => item.mediaId === media.mediaId)
+            ? items.map((item) => (item.mediaId === media.mediaId ? media : item))
+            : [...items, media],
+        );
+      }
+    }
   }
 
   private upsert(transfer: FileTransfer): void {
@@ -246,6 +279,14 @@ export class FileFacade {
             item.offer.transferId === transfer.offer.transferId ? transfer : item,
           )
         : [...items, transfer],
+    );
+  }
+
+  private upsertMedia(media: ChatImageRecord): void {
+    this.mediaItems.update((items) =>
+      items.some((item) => item.mediaId === media.mediaId)
+        ? items.map((item) => (item.mediaId === media.mediaId ? media : item))
+        : [...items, media],
     );
   }
 
