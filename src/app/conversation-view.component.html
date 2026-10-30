@@ -45,7 +45,6 @@
           [sender]="item.senderLabel"
           [body]="item.message.body.text"
           [outgoing]="item.outgoing"
-          [metadata]="item.outgoing ? item.message.status : 'recibido'"
         />
       } @else {
         <app-file-transfer-card

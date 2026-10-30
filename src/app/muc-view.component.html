@@ -63,7 +63,6 @@
         [sender]="senderLabel(message)"
         [body]="message.body.text"
         [outgoing]="isOutgoing(message)"
-        [metadata]="message.source === 'live' ? 'recibido' : 'histórico'"
       />
     }
     @if (!messages().length) {

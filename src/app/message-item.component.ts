@@ -10,5 +10,4 @@ export class MessageItemComponent {
   readonly sender = input.required<string>();
   readonly body = input.required<string>();
   readonly outgoing = input.required<boolean>();
-  readonly metadata = input.required<string>();
 }
