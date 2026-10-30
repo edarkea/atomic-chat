@@ -168,7 +168,7 @@ describe('App composer integration', () => {
     const symbols = root.querySelectorAll<SVGSymbolElement>('svg.ac-icon-sprite symbol[id^="ac-"]');
     const ids = new Set(Array.from(symbols, (symbol) => symbol.id));
 
-    expect(symbols).toHaveLength(22);
+    expect(symbols).toHaveLength(23);
     expect(ids.size).toBe(symbols.length);
 
     const uses = root.querySelectorAll<SVGUseElement>('svg.ac-icon use');
