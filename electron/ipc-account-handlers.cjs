@@ -6,6 +6,7 @@ function registerAccountHandlers({
   assertSender,
   getRuntime,
   historySecurity,
+  previewGrants,
   helpers,
   validateXmppTransport,
 }) {
@@ -167,6 +168,7 @@ function registerAccountHandlers({
   ipcMain.handle('account.disconnect', async (event, accountId) => {
     assertSender(event);
     await getRuntime().xmpp.disconnect(accountId);
+    previewGrants?.clearAccount(accountId);
     return { ok: true, value: undefined, version: 1, requestId: requestId(event) };
   });
   ipcMain.handle('session.getState', (event, accountId) => {

@@ -150,6 +150,13 @@ class FileLocalActionRegistry {
     return reference;
   }
 
+  async resolveForPreview(senderId, input) {
+    const reference = await this.resolve(senderId, input);
+    if (reference.direction !== 'incoming')
+      throw transferError('UNAUTHORIZED', 'solo se pueden previsualizar archivos recibidos');
+    return reference;
+  }
+
   async inspect(filePath) {
     let stats;
     try {

@@ -8,10 +8,18 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ImagePreviewRequest,
+  ImagePreviewRef,
+  ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
   Message,
   Preferences,
+  PreviewChunk,
+  PreviewCloseRequest,
+  PreviewOpenRequest,
+  PreviewReadRequest,
+  PreviewStreamRef,
   Result,
   RoomRef,
   RoomState,
@@ -32,6 +40,7 @@ import {
   HistoryPort,
   MucPort,
   PreferencesPort,
+  PreviewPort,
 } from './ports';
 
 const unsupported = <T>(requestId: string): Result<T> => ({
@@ -190,6 +199,25 @@ export class UnavailableFileTransferPort implements FileTransferPort {
   }
   subscribe(_listener: (event: TypedDomainEvent) => void): () => void {
     return () => undefined;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailablePreviewPort implements PreviewPort {
+  get(input: ImagePreviewRequest): Promise<Result<ImagePreviewRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  open(input: PreviewOpenRequest): Promise<Result<PreviewStreamRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  read(input: PreviewReadRequest): Promise<Result<PreviewChunk>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  close(input: PreviewCloseRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
   }
 }
 

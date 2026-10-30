@@ -1,7 +1,8 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
-import { FileTransfer, TypedDomainEvent } from './domain';
-import { FILE_TRANSFER_PORT, FileTransferPort } from './ports';
+import { FileTransfer, ImagePreviewRequest, TypedDomainEvent } from './domain';
+import { FILE_TRANSFER_PORT, FileTransferPort, PREVIEW_PORT, PreviewPort } from './ports';
+import { UnavailablePreviewPort } from './unavailable.ports';
 
 const MAX_DROPPED_FILES = 8;
 
@@ -9,6 +10,8 @@ const MAX_DROPPED_FILES = 8;
 export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
+  private readonly previewPort =
+    inject<PreviewPort | null>(PREVIEW_PORT, { optional: true }) ?? inject(UnavailablePreviewPort);
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
@@ -64,6 +67,25 @@ export class FileFacade {
 
   async reveal(transferId: string): Promise<void> {
     await this.localAction('reveal', transferId);
+  }
+
+  previewPortForUse(): PreviewPort {
+    return this.previewPort;
+  }
+
+  previewRequest(transferId: string): ImagePreviewRequest | undefined {
+    const item = this.items().find(
+      (candidate) =>
+        candidate.offer.transferId === transferId && candidate.offer.accountId === this.account,
+    );
+    return item && item.direction === 'incoming' && item.state === 'completed'
+      ? {
+          version: 1,
+          requestId: createOpaqueId('preview-get'),
+          accountId: this.account,
+          transferId,
+        }
+      : undefined;
   }
 
   isLocalActionPending(transferId: string): boolean {

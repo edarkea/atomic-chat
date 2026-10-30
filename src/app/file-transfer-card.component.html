@@ -32,6 +32,17 @@
   @if (isTerminal()) {
     <p aria-live="polite">{{ label() }}</p>
   }
+  @if (previewState() === 'loading') {
+    <p class="file-preview-status" aria-live="polite">Preparando preview segura…</p>
+  }
+  @if (previewState() === 'ready' && previewUrl(); as preview) {
+    <button class="file-preview" type="button" (click)="openPreview()" aria-label="Ampliar imagen recibida">
+      <img [src]="preview" [alt]="'Preview de ' + transfer().offer.name" />
+    </button>
+  }
+  @if (previewState() === 'unavailable') {
+    <p class="file-preview-status" role="status">{{ previewMessage() }}</p>
+  }
   @if (hasLocalActions()) {
     <div class="file-actions" aria-label="Acciones del archivo">
       @if (canOpenFile()) {
@@ -55,3 +66,9 @@
     </div>
   }
 </article>
+@if (enlarged() && previewUrl(); as preview) {
+  <div class="file-preview-overlay" role="dialog" aria-modal="true" aria-label="Imagen ampliada">
+    <button type="button" class="file-preview-close" (click)="closePreview()">Cerrar</button>
+    <img [src]="preview" [alt]="'Preview ampliada de ' + transfer().offer.name" />
+  </div>
+}

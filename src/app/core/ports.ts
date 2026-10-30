@@ -14,6 +14,14 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ImagePreviewRequest,
+  ImagePreviewRef,
+  ImagePreviewRevokeRequest,
+  PreviewChunk,
+  PreviewCloseRequest,
+  PreviewOpenRequest,
+  PreviewReadRequest,
+  PreviewStreamRef,
   HistoryPage,
   HistoryPageInput,
   Message,
@@ -127,6 +135,14 @@ export interface FileTransferPort {
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 
+export interface PreviewPort {
+  get(input: ImagePreviewRequest): Promise<Result<ImagePreviewRef>>;
+  open(input: PreviewOpenRequest): Promise<Result<PreviewStreamRef>>;
+  read(input: PreviewReadRequest): Promise<Result<PreviewChunk>>;
+  close(input: PreviewCloseRequest): Promise<Result<void>>;
+  revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>>;
+}
+
 export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');
 export const MUC_PORT = new InjectionToken<MucPort>('AtomicChat MucPort');
 export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountPort');
@@ -138,3 +154,4 @@ export const BROADCAST_PORT = new InjectionToken<BroadcastPort>('AtomicChat Broa
 export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
   'AtomicChat FileTransferPort',
 );
+export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewPort');

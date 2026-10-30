@@ -8,6 +8,7 @@ import {
   ElectronFileTransferPort,
   ElectronHistoryPort,
   ElectronPreferencesPort,
+  ElectronPreviewPort,
 } from './electron-application.ports';
 import { ElectronXmppPort } from './electron-xmpp.port';
 import { InMemoryXmppPort } from './in-memory-xmpp.port';
@@ -17,6 +18,7 @@ import {
   BROADCAST_PORT,
   CERTIFICATE_PORT,
   FILE_TRANSFER_PORT,
+  PREVIEW_PORT,
   HISTORY_PORT,
   MUC_PORT,
   PREFERENCES_PORT,
@@ -30,6 +32,7 @@ import {
   UnavailableHistoryPort,
   UnavailableMucPort,
   UnavailablePreferencesPort,
+  UnavailablePreviewPort,
 } from './unavailable.ports';
 
 export const corePortProviders: Provider[] = [
@@ -88,6 +91,12 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronFileTransferPort, unavailable: UnavailableFileTransferPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronFileTransferPort, UnavailableFileTransferPort],
+  },
+  {
+    provide: PREVIEW_PORT,
+    useFactory: (electron: ElectronPreviewPort, unavailable: UnavailablePreviewPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronPreviewPort, UnavailablePreviewPort],
   },
   { provide: ATTENTION_PORT, useExisting: ElectronAttentionPort },
   {

@@ -89,6 +89,13 @@ contextBridge.exposeInMainWorld(
       reveal: (input) => invoke('file.reveal', input),
       listActive: (input) => invoke('file.listActive', input),
     }),
+    preview: Object.freeze({
+      get: (input) => invoke('preview.get', input),
+      open: (input) => invoke('preview.open', input),
+      read: (input) => invoke('preview.read', input),
+      close: (input) => invoke('preview.close', input),
+      revoke: (input) => invoke('preview.revoke', input),
+    }),
     history: Object.freeze({
       list: (input) => invoke('messages.list', input),
       listPage: (input) => invoke('messages.page', input),

@@ -10,10 +10,18 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ImagePreviewRequest,
+  ImagePreviewRef,
+  ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
   Message,
   Preferences,
+  PreviewChunk,
+  PreviewCloseRequest,
+  PreviewOpenRequest,
+  PreviewReadRequest,
+  PreviewStreamRef,
   Result,
   TypedDomainEvent,
   XmppConnectionProfile,
@@ -29,6 +37,7 @@ import {
   FileTransferPort,
   HistoryPort,
   PreferencesPort,
+  PreviewPort,
 } from './ports';
 
 const unavailable = <T>(requestId: string): Result<T> => ({
@@ -222,5 +231,29 @@ export class ElectronFileTransferPort implements FileTransferPort {
   subscribe(listener: (event: TypedDomainEvent) => void): () => void {
     const subscribe = getAtomicChatApi()?.subscribe;
     return subscribe ? subscribeToDomainEvents(subscribe, listener) : () => undefined;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronPreviewPort implements PreviewPort {
+  get(input: ImagePreviewRequest): Promise<Result<ImagePreviewRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.preview.get(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  open(input: PreviewOpenRequest): Promise<Result<PreviewStreamRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.preview.open(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  read(input: PreviewReadRequest): Promise<Result<PreviewChunk>> {
+    const api = getAtomicChatApi();
+    return api ? api.preview.read(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  close(input: PreviewCloseRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.preview.close(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.preview.revoke(input) : Promise.resolve(unavailable(input.requestId));
   }
 }

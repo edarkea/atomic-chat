@@ -160,7 +160,14 @@ export type AppErrorCode =
   | 'MUC_POLICY_MISSING'
   | 'MUC_POLICY_MISMATCH'
   | 'MUC_DISCOVERY_STALE'
-  | 'MUC_SERVER_REJECTED';
+  | 'MUC_SERVER_REJECTED'
+  | 'RESOURCE_CONSTRAINT'
+  | 'MEDIA_PREVIEW_UNAVAILABLE'
+  | 'MEDIA_TYPE_UNSUPPORTED'
+  | 'MEDIA_SIZE_EXCEEDED'
+  | 'MEDIA_DIMENSIONS_INVALID'
+  | 'MEDIA_DECODE_FAILED'
+  | 'MEDIA_REFERENCE_REVOKED';
 export interface AppError {
   code: AppErrorCode;
   retryable: boolean;
@@ -235,6 +242,67 @@ export interface FileSendInput {
 }
 export interface FileDroppedSendInput extends FileSendInput {
   readonly file: File;
+}
+export type StaticImageMimeType = 'image/png' | 'image/jpeg';
+export type ImagePreviewState = 'ready' | 'unsupported' | 'unavailable' | 'revoked' | 'failed';
+export type ImagePreviewFailureCode =
+  | 'MEDIA_PREVIEW_UNAVAILABLE'
+  | 'MEDIA_TYPE_UNSUPPORTED'
+  | 'MEDIA_SIZE_EXCEEDED'
+  | 'MEDIA_DIMENSIONS_INVALID'
+  | 'MEDIA_DECODE_FAILED'
+  | 'MEDIA_REFERENCE_REVOKED';
+export interface ImagePreviewReady {
+  readonly state: 'ready';
+  readonly previewId: string;
+  readonly accountId: string;
+  readonly transferId: string;
+  readonly mimeType: StaticImageMimeType;
+  readonly sizeBytes: DecimalByteCount;
+  readonly width: number;
+  readonly height: number;
+  readonly expiresAt: string;
+}
+export interface ImagePreviewUnavailable {
+  readonly state: Exclude<ImagePreviewState, 'ready'>;
+  readonly accountId: string;
+  readonly transferId: string;
+  readonly reasonCode: ImagePreviewFailureCode;
+}
+export type ImagePreviewRef = ImagePreviewReady | ImagePreviewUnavailable;
+export interface ImagePreviewRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly transferId: string;
+}
+export interface PreviewOpenRequest extends ImagePreviewRequest {
+  readonly previewId: string;
+}
+export interface PreviewStreamRef {
+  readonly previewId: string;
+  readonly streamId: string;
+  readonly expiresAt: string;
+  readonly chunkSize: number;
+}
+export interface PreviewReadRequest extends ImagePreviewRequest {
+  readonly previewId: string;
+  readonly streamId: string;
+  readonly sequence: number;
+}
+export interface PreviewChunk {
+  readonly previewId: string;
+  readonly streamId: string;
+  readonly sequence: number;
+  readonly bytes: ArrayBuffer;
+  readonly done: boolean;
+}
+export interface PreviewCloseRequest extends ImagePreviewRequest {
+  readonly previewId: string;
+  readonly streamId: string;
+}
+export interface ImagePreviewRevokeRequest extends ImagePreviewRequest {
+  readonly previewId: string;
 }
 export type Result<T> =
   | { ok: true; value: T; version: ContractVersion; requestId: RequestId }

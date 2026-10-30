@@ -13,6 +13,9 @@ import {
   FileSendInput,
   FileDroppedSendInput,
   FileTransfer,
+  ImagePreviewRequest,
+  ImagePreviewRef,
+  ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
   Message,
@@ -22,6 +25,11 @@ import {
   MucLeaveInput,
   MucSendInput,
   Presence,
+  PreviewChunk,
+  PreviewCloseRequest,
+  PreviewOpenRequest,
+  PreviewReadRequest,
+  PreviewStreamRef,
   PresenceInput,
   Preferences,
   Result,
@@ -99,6 +107,13 @@ export interface AtomicChatApi {
     open(input: FileRequest): Promise<Result<void>>;
     reveal(input: FileRequest): Promise<Result<void>>;
     listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>>;
+  };
+  preview: {
+    get(input: ImagePreviewRequest): Promise<Result<ImagePreviewRef>>;
+    open(input: PreviewOpenRequest): Promise<Result<PreviewStreamRef>>;
+    read(input: PreviewReadRequest): Promise<Result<PreviewChunk>>;
+    close(input: PreviewCloseRequest): Promise<Result<void>>;
+    revoke(input: ImagePreviewRevokeRequest): Promise<Result<void>>;
   };
   history: {
     list(input: {

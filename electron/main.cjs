@@ -7,6 +7,7 @@ const {
   webContents,
   dialog,
   shell,
+  nativeImage,
 } = require('electron');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -30,6 +31,7 @@ const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
 const { createIncomingMessageProcessor } = require('./incoming-message-persistence.cjs');
+const { PreviewGrantRegistry } = require('./preview-grants.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
   DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -57,6 +59,10 @@ const {
   selectDefaultFileDestination,
 } = createFileDialogs({ dialog, fsp });
 const localFileActions = new FileLocalActionRegistry({ shell });
+const previewGrants = new PreviewGrantRegistry({
+  nativeImage,
+  resolveSource: (senderId, input) => localFileActions.resolveForPreview(senderId, input),
+});
 let runtime;
 const currentTransferTimeout = () => {
   try {
@@ -132,6 +138,7 @@ function createWindow() {
     onDestroyed: (senderId) => {
       historySecurity.destroySender(senderId);
       localFileActions.clearSender(senderId);
+      previewGrants.clearSender(senderId);
     },
   });
   mainWindow.on('focus', applicationAttention.acknowledge);
@@ -199,6 +206,7 @@ registerIpcHandlers({
   fileTransfers,
   outgoingFileTransfers,
   localFileActions,
+  previewGrants,
   shell,
   historySecurity,
   selectFileSource,
