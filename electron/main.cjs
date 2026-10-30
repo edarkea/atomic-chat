@@ -1,4 +1,13 @@
-const { app, BrowserWindow, ipcMain, safeStorage, webContents, dialog, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Notification,
+  ipcMain,
+  safeStorage,
+  webContents,
+  dialog,
+  shell,
+} = require('electron');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -19,6 +28,7 @@ const { createMainWindow } = require('./main-window.cjs');
 const { createRuntime } = require('./runtime.cjs');
 const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
+const { createMessageNotifications } = require('./message-notifications.cjs');
 
 const fs = require('node:fs');
 
@@ -47,6 +57,18 @@ const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
 
 let runtime;
 const applicationAttention = createApplicationAttention({ BrowserWindow, app });
+const messageNotifications = createMessageNotifications({
+  Notification,
+  BrowserWindow,
+  getPreferences: () => runtime?.persistence.getPreferences('global', 'app') || {},
+  getRoster: (accountId) => runtime?.xmpp.rosters.get(accountId),
+  getMucRoom: (accountId, roomJid) =>
+    runtime?.xmpp.mucRooms.get(accountId)?.get(roomJid.toLowerCase()),
+  getIconPath: () => {
+    const iconPath = path.join(__dirname, '..', 'build', 'icons', '128x128.png');
+    return fs.existsSync(iconPath) ? iconPath : undefined;
+  },
+});
 
 function assertSender(event) {
   const packagedUrl = pathToFileURL(
@@ -96,6 +118,7 @@ function attachEventSources() {
         console.error('[PERSISTENCE] Could not save incoming message:', error.message);
       }
     }
+    messageNotifications.handle(event);
     eventRouter.forwardXmppEvent(event);
   });
 }
