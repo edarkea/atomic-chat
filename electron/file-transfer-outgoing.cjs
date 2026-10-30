@@ -6,6 +6,7 @@ const {
   transferError,
   transferView: buildTransferView,
 } = require('./file-transfer-utils.cjs');
+const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 
 const PROGRESS_INTERVAL_MS = 250;
 const DEFAULT_BLOCK_SIZE = 61440;
@@ -30,6 +31,8 @@ class OutgoingFileTransferCoordinator {
     this.initialSequence = (((options.initialSequence ?? 0) % 65536) + 65536) % 65536;
     this.siTimeout = options.siTimeout ?? 30000;
     this.iqTimeout = options.iqTimeout ?? 30000;
+    this.getTimeoutSeconds =
+      typeof options.getTimeoutSeconds === 'function' ? options.getTimeoutSeconds : undefined;
   }
 
   onEvent(listener) {
@@ -113,6 +116,9 @@ class OutgoingFileTransferCoordinator {
       progressLastEmittedAt: undefined,
       terminalRequested: false,
       cleanupReady: false,
+      timeoutSeconds: this.getTimeoutSeconds
+        ? normalizeTransferTimeout(this.getTimeoutSeconds())
+        : undefined,
     };
     this.records.set(transferId, record);
     this.emit(record);
@@ -125,7 +131,7 @@ class OutgoingFileTransferCoordinator {
     try {
       await this.withTimeout(
         () => record.transport.sendOffer(record),
-        this.siTimeout,
+        this.timeoutMilliseconds(record, this.siTimeout),
         'SI acceptance timed out',
       );
       if (record.terminalRequested) return transferView(record);
@@ -134,7 +140,7 @@ class OutgoingFileTransferCoordinator {
       this.emit(record);
       await this.withTimeout(
         () => record.transport.sendOpen(record, this.blockSize),
-        this.iqTimeout,
+        this.timeoutMilliseconds(record, this.iqTimeout),
         'IBB open timed out',
       );
       if (record.terminalRequested) return transferView(record);
@@ -158,7 +164,7 @@ class OutgoingFileTransferCoordinator {
         const block = buffer.subarray(0, read.bytesRead);
         await this.withTimeout(
           () => record.transport.sendData(record, block, sequence),
-          this.iqTimeout,
+          this.timeoutMilliseconds(record, this.iqTimeout),
           'IBB data acknowledgement timed out',
         );
         if (record.terminalRequested) return transferView(record);
@@ -177,7 +183,7 @@ class OutgoingFileTransferCoordinator {
         throw transferError('INTEGRITY_FAILED', 'source changed while sending');
       await this.withTimeout(
         () => record.transport.sendClose(record),
-        this.iqTimeout,
+        this.timeoutMilliseconds(record, this.iqTimeout),
         'IBB close acknowledgement timed out',
       );
       if (record.terminalRequested) return transferView(record);
@@ -315,6 +321,10 @@ class OutgoingFileTransferCoordinator {
           },
         );
     });
+  }
+
+  timeoutMilliseconds(record, fallback) {
+    return record.timeoutSeconds ? record.timeoutSeconds * 1000 : fallback;
   }
 }
 

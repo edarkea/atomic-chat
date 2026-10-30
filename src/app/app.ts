@@ -36,7 +36,14 @@ import { SidebarComponent, SidebarModel } from './sidebar.component';
 import { PresenceOption } from './sidebar.models';
 import { ActiveConversationStore } from './core/active-conversation.store';
 import { WindowFocusStore } from './core/window-focus.store';
+import { ConversationVisibilityStore } from './core/conversation-visibility.store';
 import { ThemeService } from './core/theme.service';
+import { NewMessageDialogComponent, NewMessageDialogModel } from './new-message-dialog.component';
+import {
+  PreferencesDialogComponent,
+  PreferencesDialogModel,
+  PreferencesSaveState,
+} from './preferences-dialog.component';
 
 type ConversationSelection =
   | { kind: 'none'; accountId: string }
@@ -51,6 +58,8 @@ type ConversationSelection =
     ConversationViewComponent,
     LoginPanelComponent,
     MucViewComponent,
+    NewMessageDialogComponent,
+    PreferencesDialogComponent,
     SidebarComponent,
   ],
   templateUrl: './app.html',
@@ -61,6 +70,7 @@ export class App {
   protected readonly chat = inject(ChatFacade);
   protected readonly muc = inject(MucFacade);
   private readonly activeConversation = inject(ActiveConversationStore);
+  private readonly conversationVisibility = inject(ConversationVisibilityStore);
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly theme = inject(ThemeService);
@@ -84,7 +94,13 @@ export class App {
   protected readonly selectedProfileId = signal('');
   protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
   protected readonly search = signal('');
-  protected readonly directoryOpen = signal(false);
+  protected readonly newMessageOpen = signal(false);
+  protected readonly newMessageSearch = signal('');
+  protected readonly newMessageJoiningRoom = signal<string | null>(null);
+  protected readonly newMessageLocalError = signal<string | null>(null);
+  protected readonly preferencesOpen = signal(false);
+  protected readonly preferencesSaveState = signal<PreferencesSaveState>('idle');
+  protected readonly preferencesError = signal<string | null>(null);
   protected readonly totalUnread = computed(() => this.chat.unreadTotal?.() ?? 0);
   protected readonly conversationError = computed(() => this.files.error() || this.chat.error());
   protected readonly conversationSelection = signal<ConversationSelection>({
@@ -110,6 +126,44 @@ export class App {
   protected readonly mucNickname = signal('');
   protected readonly mucDraft = signal('');
   protected readonly mucDiscovering = signal(false);
+  protected readonly newMessageContacts = computed(() => {
+    const term = this.newMessageSearch().trim().toLowerCase();
+    return this.chat
+      .contacts()
+      .filter(
+        (contact) =>
+          !term ||
+          contact.jid.toLowerCase().includes(term) ||
+          contact.name?.toLowerCase().includes(term),
+      );
+  });
+  protected readonly newMessageServices = computed(() => {
+    const term = this.newMessageSearch().trim().toLowerCase();
+    return this.muc
+      .services()
+      .filter(
+        (room) =>
+          !term ||
+          room.jid.toLowerCase().includes(term) ||
+          room.room.toLowerCase().includes(term) ||
+          room.service.toLowerCase().includes(term),
+      );
+  });
+  protected readonly newMessageDialogModel = computed<NewMessageDialogModel>(() => ({
+    search: this.newMessageSearch(),
+    contacts: this.newMessageContacts(),
+    joinedRooms: this.joinedRooms(),
+    services: this.newMessageServices(),
+    nickname: this.mucNickname(),
+    discovering: this.mucDiscovering(),
+    joiningRoomJid: this.newMessageJoiningRoom(),
+    error: this.newMessageLocalError() || this.muc.error(),
+  }));
+  protected readonly preferencesDialogModel = computed<PreferencesDialogModel>(() => ({
+    preferences: this.chat.preferences(),
+    saveState: this.preferencesSaveState(),
+    error: this.preferencesError(),
+  }));
   protected readonly activeSelection = computed<ConversationSelection>(() => {
     const selection = this.conversationSelection();
     const accountId = this.chat.accountId();
@@ -143,36 +197,67 @@ export class App {
     const summaries = summariesSignal();
     return summaries
       .slice()
-      .sort((left, right) =>
-        (right.lastMessageAt || 0) - (left.lastMessageAt || 0) || left.jid.localeCompare(right.jid),
+      .sort(
+        (left, right) =>
+          (right.lastMessageAt || 0) - (left.lastMessageAt || 0) ||
+          left.jid.localeCompare(right.jid),
       )
-      .filter((summary) => !term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term))
-      .map((summary) =>
-        this.chat.contacts().find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
-        ({ jid: summary.jid, name: summary.title, groups: [], source: 'conversation' } satisfies Contact),
+      .filter(
+        (summary) =>
+          !term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term),
+      )
+      .filter(
+        (summary) =>
+          !this.conversationVisibility.isHidden(summary.accountId, 'direct', summary.jid),
+      )
+      .map(
+        (summary) =>
+          this.chat
+            .contacts()
+            .find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
+          ({
+            jid: summary.jid,
+            name: summary.title,
+            groups: [],
+            source: 'conversation',
+          } satisfies Contact),
       );
   });
-  protected readonly workspaceItems = computed<ReadonlyArray<WorkspaceConversationItem> | undefined>(() => {
+  protected readonly workspaceItems = computed<
+    ReadonlyArray<WorkspaceConversationItem> | undefined
+  >(() => {
     const summariesSignal = this.chat.conversationSummaries;
     if (!summariesSignal) return undefined;
     const term = this.search().trim().toLowerCase();
     const activity = this.muc.roomActivity?.() ?? new Map<string, number>();
     const directItems: WorkspaceConversationItem[] = summariesSignal()
-      .filter((summary) => !term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term))
+      .filter(
+        (summary) =>
+          !this.conversationVisibility.isHidden(summary.accountId, 'direct', summary.jid) &&
+          (!term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term)),
+      )
       .map((summary) => ({
         kind: 'direct' as const,
         contact:
-          this.chat.contacts().find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
-          ({ jid: summary.jid, name: summary.title, groups: [], source: 'conversation' } satisfies Contact),
+          this.chat
+            .contacts()
+            .find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
+          ({
+            jid: summary.jid,
+            name: summary.title,
+            groups: [],
+            source: 'conversation',
+          } satisfies Contact),
         lastActivity: summary.lastMessageAt || 0,
       }));
     const roomItems: WorkspaceConversationItem[] = this.joinedRooms()
       .filter(
         (state) =>
-          !term ||
-          state.room.jid.toLowerCase().includes(term) ||
-          state.room.room.toLowerCase().includes(term) ||
-          state.room.service.toLowerCase().includes(term),
+          !this.conversationVisibility.isHidden(state.accountId, 'muc', state.room.jid) &&
+          (!term ||
+            state.room.jid.toLowerCase().includes(term) ||
+            state.room.room.toLowerCase().includes(term) ||
+            state.room.service.toLowerCase().includes(term)),
       )
       .map((roomState) => ({
         kind: 'muc' as const,
@@ -193,13 +278,15 @@ export class App {
   });
   protected readonly filteredContacts = computed(() => {
     const term = this.search().trim().toLowerCase();
+    const accountId = this.chat.accountId();
     return this.chat
       .contacts()
       .filter(
         (contact) =>
-          !term ||
-          contact.jid.toLowerCase().includes(term) ||
-          contact.name?.toLowerCase().includes(term),
+          !this.conversationVisibility.isHidden(accountId, 'direct', contact.jid) &&
+          (!term ||
+            contact.jid.toLowerCase().includes(term) ||
+            contact.name?.toLowerCase().includes(term)),
       );
   });
   protected readonly visibleMessages = computed(() => {
@@ -267,12 +354,6 @@ export class App {
       presenceOptions: this.presenceOptions,
       presenceOptionId: this.selectedPresenceOption().id,
       presenceStatus: this.presenceStatus(),
-      settingsOpen: this.settingsOpen(),
-      preferences: {
-        ...this.chat.preferences(),
-        theme: this.theme.themeId(),
-        ...(this.theme.themeId() === 'custom' ? { customTheme: this.theme.activePalette() } : {}),
-      },
     },
     muc: {
       nickname: this.mucNickname(),
@@ -315,7 +396,6 @@ export class App {
         selectedRoomJid: this.muc.selectedRoomJid(),
         activeRoomState: this.activeRoomState(),
       },
-      directoryOpen: this.directoryOpen(),
       unreadCounts: this.chat.unreadCounts?.() ?? new Map(),
       selectedJid: this.selectedJid(),
       selectedRoomJid: this.muc.selectedRoomJid(),
@@ -323,6 +403,7 @@ export class App {
   }));
   @ViewChild(LoginPanelComponent) private loginPanel?: LoginPanelComponent;
   @ViewChild(ConversationViewComponent) private conversationView?: ConversationViewComponent;
+  @ViewChild(SidebarComponent) private sidebar?: SidebarComponent;
 
   constructor() {
     void this.chat.tryAutoLogin();
@@ -348,6 +429,13 @@ export class App {
     effect(() => {
       const account = this.chat.accountId();
       if (this.chat.isConnected() && account) void this.files.setAccount(account);
+    });
+    effect(() => {
+      this.conversationVisibility.setAccount(this.chat.accountId());
+    });
+    effect(() => {
+      if (this.chat.preferencesLoaded?.() && !this.chat.preferences().hideClosedConversations)
+        this.conversationVisibility.clearAll();
     });
   }
 
@@ -636,11 +724,12 @@ export class App {
     await this.chat.decideCertificate(decision);
   }
   protected selectContact(contact: Contact): void {
-    this.directoryOpen.set(false);
+    this.closeNewMessageDialog();
     this.followLatest();
     this.draft.set('');
     this.mucDraft.set('');
     this.selectedContact.set(contact);
+    this.conversationVisibility.reveal(this.chat.accountId(), 'direct', contact.jid);
     this.conversationSelection.set({
       kind: 'direct',
       accountId: this.chat.accountId(),
@@ -649,24 +738,35 @@ export class App {
     void this.scrollAfterConversationLoad(contact.jid);
   }
   protected useJid(): void {
-    if (this.search().includes('@')) {
+    const jidInput = this.newMessageSearch().trim();
+    const at = jidInput.indexOf('@');
+    if (
+      at > 0 &&
+      at === jidInput.lastIndexOf('@') &&
+      at < jidInput.length - 1 &&
+      !/[\s/]/.test(jidInput)
+    ) {
       this.followLatest();
-      const jid = this.bareJid(this.search().trim());
-      this.directoryOpen.set(false);
+      const jid = this.bareJid(jidInput);
+      this.closeNewMessageDialog();
       this.draft.set('');
       this.mucDraft.set('');
       this.selectedContact.set(undefined);
+      this.conversationVisibility.reveal(this.chat.accountId(), 'direct', jid);
       this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid });
       void this.scrollAfterConversationLoad(jid);
+    } else if (jidInput.includes('@')) {
+      this.newMessageLocalError.set('Introduce un JID XMPP completo y válido.');
     }
   }
   protected selectJoinedRoom(roomJid: string): void {
     if (!this.joinedRoom(roomJid)) return;
     this.muc.select(roomJid);
-    this.directoryOpen.set(false);
+    this.closeNewMessageDialog();
     this.draft.set('');
     this.mucDraft.set('');
     this.selectedContact.set(undefined);
+    this.conversationVisibility.reveal(this.chat.accountId(), 'muc', roomJid);
     this.conversationSelection.set({ kind: 'muc', accountId: this.chat.accountId(), roomJid });
     this.followLatest();
   }
@@ -686,9 +786,6 @@ export class App {
     } catch {
       this.chat.error.set('No fue posible enviar el mensaje.');
     }
-  }
-  protected toggleDirectory(): void {
-    this.directoryOpen.update((value) => !value);
   }
   protected draftChanged(value: string): void {
     this.draft.set(value);
@@ -738,10 +835,12 @@ export class App {
   protected async joinRoom(roomJid: string): Promise<void> {
     const accountId = this.chat.accountId();
     const nickname = this.mucNickname().trim() || accountId.split('@')[0] || 'operator';
-    await this.muc.join(accountId, roomJid, nickname);
-    if (this.joinedRoom(roomJid)?.accountId === accountId) {
-      this.directoryOpen.set(false);
-      this.selectJoinedRoom(roomJid);
+    this.newMessageJoiningRoom.set(roomJid);
+    try {
+      await this.muc.join(accountId, roomJid, nickname);
+      if (this.joinedRoom(roomJid)?.accountId === accountId) this.selectJoinedRoom(roomJid);
+    } finally {
+      this.newMessageJoiningRoom.set(null);
     }
   }
   protected async leaveRoom(): Promise<void> {
@@ -750,12 +849,21 @@ export class App {
     await this.muc.leave(selection.accountId, selection.roomJid);
     if (!this.joinedRoom(selection.roomJid)) this.resetConversationSelection();
   }
-  protected closeActiveConversation(): void {
-    if (this.activeSelection().kind === 'muc') this.muc.clearSelection();
+  protected dismissConversationByUser(): void {
+    const selection = this.activeSelection();
+    if (selection.kind !== 'none' && this.chat.preferences().hideClosedConversations) {
+      const jid = selection.kind === 'direct' ? selection.jid : selection.roomJid;
+      this.conversationVisibility.hide(selection.accountId, selection.kind, jid);
+    }
+    if (selection.kind === 'muc') this.muc.clearSelection();
     this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() });
     this.selectedContact.set(undefined);
     this.draft.set('');
     this.mucDraft.set('');
+  }
+
+  protected closeActiveConversation(): void {
+    this.dismissConversationByUser();
   }
   protected async sendRoom(): Promise<void> {
     const selection = this.activeSelection();
@@ -771,8 +879,51 @@ export class App {
     void this.chat.updatePreferences(changes);
   }
   protected async resetPreferences(): Promise<void> {
-    await this.chat.resetPreferences();
+    this.preferencesSaveState.set('saving');
+    this.preferencesError.set(null);
+    const saved = await this.chat.resetPreferences();
     this.theme.resetPreferences();
+    if (saved) this.preferencesSaveState.set('saved');
+    else {
+      this.preferencesSaveState.set('error');
+      this.preferencesError.set(
+        this.chat.error() || 'No fue posible restablecer las preferencias.',
+      );
+    }
+  }
+  protected openNewMessageDialog(): void {
+    this.newMessageSearch.set('');
+    this.newMessageLocalError.set(null);
+    this.newMessageOpen.set(true);
+  }
+  protected closeNewMessageDialog(): void {
+    this.newMessageOpen.set(false);
+    this.newMessageJoiningRoom.set(null);
+    queueMicrotask(() => this.sidebar?.focusNewMessageTrigger());
+  }
+  protected setNewMessageSearch(value: string): void {
+    this.newMessageSearch.set(value);
+    this.newMessageLocalError.set(null);
+  }
+  protected openPreferences(): void {
+    this.preferencesError.set(null);
+    this.preferencesSaveState.set('idle');
+    this.preferencesOpen.set(true);
+  }
+  protected closePreferences(): void {
+    this.preferencesOpen.set(false);
+    this.preferencesSaveState.set('idle');
+    queueMicrotask(() => this.sidebar?.focusPreferencesTrigger());
+  }
+  protected async savePreferenceChange(changes: Partial<Preferences>): Promise<void> {
+    this.preferencesSaveState.set('saving');
+    this.preferencesError.set(null);
+    const saved = await this.chat.updatePreferences(changes);
+    if (saved) this.preferencesSaveState.set('saved');
+    else {
+      this.preferencesSaveState.set('error');
+      this.preferencesError.set(this.chat.error() || 'No fue posible guardar la preferencia.');
+    }
   }
   protected onUserScrollIntent(): void {
     this.conversationView?.onUserScrollIntent();
@@ -846,7 +997,11 @@ export class App {
     this.conversationView?.scrollToLatest(this.selectedJid());
   }
   private resetConversationSelection(): void {
-    this.closeActiveConversation();
+    if (this.activeSelection().kind === 'muc') this.muc.clearSelection();
+    this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() });
+    this.selectedContact.set(undefined);
+    this.draft.set('');
+    this.mucDraft.set('');
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -857,13 +1012,7 @@ export class App {
       this.theme.cancelStudio();
       return;
     }
-    if (
-      this.certificateRequest() ||
-      this.settingsOpen() ||
-      this.directoryOpen() ||
-      this.presenceOpen()
-    )
-      return;
+    if (this.certificateRequest() || this.presenceOpen()) return;
     const target = event.target;
     if (
       target instanceof Element &&
@@ -872,6 +1021,6 @@ export class App {
       return;
     if (this.activeSelection().kind === 'none') return;
     event.preventDefault();
-    this.closeActiveConversation();
+    this.dismissConversationByUser();
   }
 }

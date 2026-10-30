@@ -5,9 +5,6 @@
     (presenceClose)="presenceClose.emit()"
     (presenceSelected)="presenceSelected.emit($event)"
     (presenceStatusChange)="presenceStatusChange.emit($event)"
-    (settingsToggle)="settingsToggle.emit()"
-    (preferencesChange)="preferencesChange.emit($event)"
-    (resetPreferences)="resetPreferences.emit()"
   />
   <app-conversation-list
     [model]="model().conversations"
@@ -15,7 +12,8 @@
     (useJid)="useJid.emit()"
     (selectRoom)="selectRoom.emit($event)"
     (selectContact)="selectContact.emit($event)"
-    (directoryToggle)="directoryToggle.emit()"
+    (newMessageToggle)="newMessageToggle.emit()"
+    (preferencesToggle)="preferencesToggle.emit()"
     (nicknameChange)="nicknameChange.emit($event)"
     (discoverRooms)="discoverRooms.emit()"
     (joinRoom)="joinRoom.emit($event)"

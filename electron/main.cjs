@@ -29,14 +29,12 @@ const { createRuntime } = require('./runtime.cjs');
 const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
+const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 
 const fs = require('node:fs');
 
 const atomicDataPath = app.isPackaged
-  ? path.join(
-      process.env.PORTABLE_EXECUTABLE_DIR || app.getPath('appData'),
-      'AtomicChat-Data'
-    )
+  ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || app.getPath('appData'), 'AtomicChat-Data')
   : path.join(app.getPath('appData'), 'AtomicChat-Dev');
 
 fs.mkdirSync(atomicDataPath, { recursive: true });
@@ -45,17 +43,28 @@ const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME |
 const fileResourceLimiter = new TransferResourceLimiter();
 const { selectFileDestination, selectFileSource } = createFileDialogs({ dialog, fsp });
 const localFileActions = new FileLocalActionRegistry({ shell });
+let runtime;
+const currentTransferTimeout = () => {
+  try {
+    return normalizeTransferTimeout(
+      runtime?.persistence.getPreferences('global', 'app')?.fileTransferTimeoutSeconds,
+    );
+  } catch {
+    return normalizeTransferTimeout(undefined);
+  }
+};
 const fileTransfers = new FileTransferCoordinator({
   selectDestination: selectFileDestination,
   resourceLimiter: fileResourceLimiter,
   onCompleted: (record, direction) => localFileActions.register(record, direction),
+  getTimeoutSeconds: currentTransferTimeout,
 });
 const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   resourceLimiter: fileResourceLimiter,
   onCompleted: (record, direction) => localFileActions.register(record, direction),
+  getTimeoutSeconds: currentTransferTimeout,
 });
 
-let runtime;
 const applicationAttention = createApplicationAttention({ BrowserWindow, app });
 const messageNotifications = createMessageNotifications({
   Notification,

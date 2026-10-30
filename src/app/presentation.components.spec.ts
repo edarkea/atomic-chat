@@ -16,7 +16,9 @@ import { LoginPanelComponent } from './login-panel.component';
 import { MessageComposerComponent } from './message-composer.component';
 import { MucViewComponent } from './muc-view.component';
 import { OperatorPresenceComponent } from './operator-presence.component';
+import { PreferencesDialogComponent } from './preferences-dialog.component';
 import { SidebarComponent } from './sidebar.component';
+import { PREFERENCES_PORT } from './core/ports';
 import { PresenceOption } from './sidebar.models';
 
 const room: RoomRef = {
@@ -200,8 +202,6 @@ describe('extracted Angular presentation components', () => {
         presenceOptions: options,
         presenceOptionId: 'online',
         presenceStatus: '',
-        settingsOpen: false,
-        preferences: { theme: 'atomic', notifications: true, autoLogin: false },
       },
       muc: {
         nickname: '',
@@ -214,18 +214,13 @@ describe('extracted Angular presentation components', () => {
       },
       conversations: {
         search: '',
-        directoryOpen: true,
+        accountId: 'operator@example.invalid',
         joinedRooms: [],
         filteredContacts: contacts,
-        muc: {
-          nickname: '',
-          discovering: false,
-          error: null,
-          services: [room],
-          states: [],
-          selectedRoomJid: '',
-          activeRoomState: undefined,
-        },
+        workspaceItems: [
+          { kind: 'muc', roomState, lastActivity: 1 },
+          { kind: 'direct', contact: contacts[0], lastActivity: 0 },
+        ],
         selectedJid: '',
         selectedRoomJid: '',
       },
@@ -235,7 +230,7 @@ describe('extracted Angular presentation components', () => {
     fixture.componentInstance.selectRoom.subscribe(selectRoom);
     fixture.componentInstance.selectContact.subscribe(selectContact);
     fixture.detectChanges();
-    (fixture.nativeElement.querySelector('.room-select') as HTMLButtonElement).click();
+    (fixture.nativeElement.querySelector('.muc-conversation-item') as HTMLButtonElement).click();
     (
       fixture.nativeElement.querySelector(
         '.conversation-item:not(.muc-conversation-item)',
@@ -498,8 +493,6 @@ describe('extracted Angular presentation components', () => {
       presenceOptions: options,
       presenceOptionId: 'online',
       presenceStatus: '',
-      settingsOpen: false,
-      preferences: { theme: 'atomic', notifications: true, autoLogin: false },
     };
     fixture.componentRef.setInput('model', presenceModel);
     const selected = vi.fn();
@@ -594,28 +587,65 @@ describe('extracted Angular presentation components', () => {
     previousFocus.remove();
   });
 
-  it('renders the three Wasteland theme choices in preferences', async () => {
+  it('renders the five preference tabs and the Wasteland theme choices', async () => {
     await TestBed.configureTestingModule({
-      imports: [OperatorPresenceComponent],
+      imports: [PreferencesDialogComponent],
+      providers: [
+        {
+          provide: PREFERENCES_PORT,
+          useValue: {
+            get: async () => ({
+              ok: true,
+              value: {
+                theme: 'atomic',
+                notifications: true,
+                autoLogin: false,
+                hideClosedConversations: false,
+                fileTransferTimeoutSeconds: 300,
+              },
+              version: 1,
+              requestId: 'test',
+            }),
+            update: async ({ changes }: { changes: Record<string, unknown> }) => ({
+              ok: true,
+              value: changes,
+              version: 1,
+              requestId: 'test',
+            }),
+            reset: async () => ({
+              ok: true,
+              value: {
+                theme: 'atomic',
+                notifications: true,
+                autoLogin: false,
+                hideClosedConversations: false,
+                fileTransferTimeoutSeconds: 300,
+              },
+              version: 1,
+              requestId: 'test',
+            }),
+          },
+        },
+      ],
     }).compileComponents();
-    const fixture = TestBed.createComponent(OperatorPresenceComponent);
+    const fixture = TestBed.createComponent(PreferencesDialogComponent);
     fixture.componentRef.setInput('model', {
-      accountId: 'operator@example.invalid',
-      connectionLabel: 'Conectado',
-      presenceLabel: 'En línea',
-      presenceDot: 'online',
-      presenceOpen: false,
-      presenceOptions: [],
-      presenceOptionId: 'online',
-      presenceStatus: '',
-      settingsOpen: true,
-      preferences: { theme: 'atomic', notifications: true, autoLogin: false },
+      preferences: {
+        theme: 'atomic',
+        notifications: true,
+        autoLogin: false,
+        hideClosedConversations: false,
+        fileTransferTimeoutSeconds: 300,
+      },
+      saveState: 'idle',
+      error: null,
     });
     fixture.detectChanges();
 
-    const select = fixture.nativeElement.querySelector(
-      'select[aria-label="Tema"]',
-    ) as HTMLSelectElement;
+    expect(fixture.nativeElement.querySelectorAll('[role="tab"]')).toHaveLength(5);
+    (fixture.nativeElement.querySelector('[data-tab="appearance"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
     expect(select.disabled).toBe(false);
     expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
       'Wasteland Terminal',

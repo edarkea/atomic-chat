@@ -79,7 +79,10 @@ export class ChatFacade {
     theme: 'atomic',
     notifications: true,
     autoLogin: false,
+    hideClosedConversations: false,
+    fileTransferTimeoutSeconds: 300,
   });
+  readonly preferencesLoaded = signal(false);
   readonly profiles = signal<ReadonlyArray<XmppConnectionProfile>>([]);
   readonly unreadCounts = this.unread.counts.asReadonly();
   readonly unreadTotal = this.unread.total;
@@ -496,20 +499,30 @@ export class ChatFacade {
     if (!this.isCurrent(generation, accountId)) return;
     if (result.ok) this.preferences.set(result.value);
     else this.error.set(result.error.message);
+    this.preferencesLoaded.set(true);
   }
 
-  async updatePreferences(changes: Partial<Preferences>): Promise<void> {
-    if (!this.isAvailable()) return;
+  async updatePreferences(changes: Partial<Preferences>): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     const result = await this.preferencesPort.update({ accountId: this.accountId(), changes });
-    if (result.ok) this.preferences.update((current) => ({ ...current, ...result.value }));
-    else this.error.set(result.error.message);
+    if (result.ok) {
+      this.preferences.update((current) => ({ ...current, ...result.value }));
+      return true;
+    }
+    this.error.set(result.error.message);
+    return false;
   }
 
-  async resetPreferences(): Promise<void> {
-    if (!this.isAvailable()) return;
+  async resetPreferences(): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     const result = await this.preferencesPort.reset({ accountId: this.accountId() });
-    if (result.ok) this.preferences.set(result.value);
-    else this.error.set(result.error.message);
+    if (result.ok) {
+      this.preferences.set(result.value);
+      this.preferencesLoaded.set(true);
+      return true;
+    }
+    this.error.set(result.error.message);
+    return false;
   }
 
   async setPresence(mode: PresenceInput['mode'], status = ''): Promise<void> {

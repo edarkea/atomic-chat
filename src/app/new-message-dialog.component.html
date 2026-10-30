@@ -1,0 +1,163 @@
+<div class="new-message-backdrop" role="presentation">
+  <section
+    #dialog
+    class="new-message-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="new-message-title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="new-message-header">
+      <div>
+        <span class="eyebrow">WORKSPACE</span>
+        <h2 id="new-message-title">Nuevo mensaje</h2>
+        <p>Busca un contacto, abre un JID o entra en una sala.</p>
+      </div>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Cerrar Nuevo mensaje"
+        (click)="cancelled.emit()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-close" />
+        </svg>
+      </button>
+    </header>
+
+    <form class="new-message-search" (submit)="$event.preventDefault(); useJid.emit()">
+      <label class="dialog-search-box">
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-search" />
+        </svg>
+        <input
+          autofocus
+          name="new-message-search"
+          autocomplete="off"
+          placeholder="Nombre, JID o sala..."
+          aria-label="Buscar contacto, JID o sala"
+          [ngModel]="model().search"
+          (ngModelChange)="searchChange.emit($event)"
+        />
+      </label>
+      @if (model().search.includes('@')) {
+        <button type="submit" class="secondary">Abrir JID</button>
+      }
+    </form>
+
+    <div class="new-message-body">
+      @if (model().contacts.length) {
+        <section class="new-message-section" aria-labelledby="new-message-contacts-title">
+          <h3 id="new-message-contacts-title">Contactos</h3>
+          <div class="new-message-results">
+            @for (contact of model().contacts; track contact.jid) {
+              <button
+                type="button"
+                class="new-message-result"
+                (click)="selectContact.emit(contact)"
+              >
+                <span class="avatar" aria-hidden="true"
+                  ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+                    <use href="#ac-contact" /></svg
+                ></span>
+                <span
+                  ><strong>{{ contactName(contact) }}</strong
+                  ><small>{{ contact.jid }}</small></span
+                >
+              </button>
+            }
+          </div>
+        </section>
+      }
+
+      @if (model().joinedRooms.length) {
+        <section class="new-message-section" aria-labelledby="new-message-joined-title">
+          <h3 id="new-message-joined-title">Salas unidas</h3>
+          <div class="new-message-results">
+            @for (room of model().joinedRooms; track room.room.jid) {
+              <button
+                type="button"
+                class="new-message-result"
+                (click)="selectJoinedRoom.emit(room.room.jid)"
+              >
+                <span class="avatar muc-avatar" aria-hidden="true"
+                  ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+                    <use href="#ac-room" /></svg
+                ></span>
+                <span
+                  ><strong>{{ room.room.room }}</strong
+                  ><small
+                    >{{ room.room.jid }} · {{ room.participants.length }} participantes</small
+                  ></span
+                >
+              </button>
+            }
+          </div>
+        </section>
+      }
+
+      <section class="new-message-section" aria-labelledby="new-message-rooms-title">
+        <div class="new-message-section-heading">
+          <div>
+            <h3 id="new-message-rooms-title">Salas disponibles</h3>
+            <small>Usa el apodo configurado para unirte.</small>
+          </div>
+          <button
+            type="button"
+            class="secondary compact new-message-discover"
+            [disabled]="model().discovering"
+            (click)="discoverRooms.emit()"
+          >
+            {{ model().discovering ? 'Consultando…' : 'Descubrir' }}
+          </button>
+        </div>
+        <label class="dialog-nickname" for="new-message-nickname"
+          >Apodo en salas<input
+            id="new-message-nickname"
+            name="new-message-nickname"
+            placeholder="Ej. operador"
+            [ngModel]="model().nickname"
+            (ngModelChange)="nicknameChange.emit($event)"
+          /><small>Se usará al entrar en una sala.</small></label
+        >
+        @if (model().discovering) {
+          <p class="dialog-status" role="status">Consultando salas disponibles…</p>
+        } @else if (model().services.length) {
+          <div class="new-message-results">
+            @for (room of model().services; track room.jid) {
+              <div class="new-message-room">
+                <span class="avatar muc-avatar" aria-hidden="true"
+                  ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+                    <use href="#ac-room" /></svg
+                ></span>
+                <span
+                  ><strong>{{ room.room }}</strong
+                  ><small>{{ room.jid }}</small></span
+                >
+                <button
+                  type="button"
+                  class="secondary compact"
+                  [disabled]="isJoined(room.jid) || isJoining(room.jid)"
+                  (click)="joinRoom.emit(room.jid)"
+                >
+                  {{ isJoined(room.jid) ? 'Dentro' : isJoining(room.jid) ? 'Entrando…' : 'Entrar' }}
+                </button>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="dialog-empty">No hay salas descubiertas todavía.</p>
+        }
+      </section>
+
+      @if (model().error) {
+        <p class="dialog-error" role="alert">{{ model().error }}</p>
+      }
+    </div>
+
+    <footer class="new-message-footer">
+      <span>La búsqueda del diálogo no cambia tu área de trabajo.</span>
+      <button type="button" class="secondary" (click)="cancelled.emit()">Cancelar</button>
+    </footer>
+  </section>
+</div>

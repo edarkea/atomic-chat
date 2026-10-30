@@ -1,0 +1,190 @@
+.preferences-backdrop {
+  align-items: center;
+  background: #0009;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 40;
+}
+.preferences-dialog {
+  background: var(--atomic-surface);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-md);
+  box-shadow: 0 18px 60px #000b;
+  color: var(--atomic-text);
+  display: flex;
+  flex-direction: column;
+  max-height: min(680px, calc(100vh - 48px));
+  max-width: 640px;
+  overflow: hidden;
+  width: 100%;
+}
+.preferences-header,
+.preferences-footer {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+.preferences-header {
+  border-bottom: 1px solid var(--atomic-border-soft);
+}
+.preferences-header h2 {
+  font-size: 20px;
+  margin: 4px 0 0;
+}
+.eyebrow {
+  color: var(--atomic-green);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 36px;
+}
+.icon-button:hover {
+  background: var(--atomic-surface-hover);
+  color: var(--atomic-text);
+}
+.preferences-tabs {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 10px 20px 0;
+}
+.preferences-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  min-height: 36px;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+.preferences-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--atomic-green);
+  color: var(--atomic-text);
+}
+.preferences-body {
+  min-height: 220px;
+  overflow: auto;
+  padding: 18px 20px;
+}
+.preferences-body h3 {
+  color: var(--atomic-green-soft);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  margin: 0 0 16px;
+  text-transform: uppercase;
+}
+.preference-row {
+  align-items: center;
+  background: var(--atomic-surface-soft);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 12px;
+}
+.preference-row span {
+  display: grid;
+  gap: 5px;
+}
+.preference-row strong {
+  color: var(--atomic-text);
+  font-size: 13px;
+}
+.preference-row small,
+.preference-help {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.preference-row input {
+  accent-color: var(--atomic-green);
+  flex: 0 0 auto;
+}
+.preference-field {
+  display: grid;
+  gap: 6px;
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+}
+.preference-field select {
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  font: inherit;
+  min-height: 38px;
+  padding: 6px 8px;
+}
+.preference-help {
+  margin: 14px 0 0;
+}
+.preference-error {
+  color: var(--atomic-danger);
+}
+.secondary,
+.primary {
+  border-radius: var(--atomic-radius-sm);
+  cursor: pointer;
+  font: inherit;
+  min-height: 36px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.secondary {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  color: var(--atomic-text);
+}
+.primary {
+  background: var(--atomic-green);
+  border: 1px solid var(--atomic-green);
+  color: var(--atomic-bg);
+}
+.secondary:hover {
+  background: var(--atomic-surface-active);
+}
+.preferences-footer {
+  border-top: 1px solid var(--atomic-border-soft);
+  justify-content: flex-end;
+}
+.preferences-footer > div {
+  color: var(--atomic-text-secondary);
+  flex: 1;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .preferences-backdrop {
+    padding: 10px;
+  }
+  .preferences-header,
+  .preferences-tabs,
+  .preferences-body,
+  .preferences-footer {
+    padding-inline: 14px;
+  }
+  .preferences-footer {
+    flex-wrap: wrap;
+  }
+  .preferences-footer > div {
+    flex-basis: 100%;
+  }
+}

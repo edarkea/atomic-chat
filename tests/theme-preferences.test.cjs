@@ -145,3 +145,35 @@ test('reads global theme before account login and keeps legacy defaults', () => 
   assert.equal(result.value.autoLogin, true);
   assert.deepEqual(result.value.customTheme, palette);
 });
+
+test('validates the conversation and transfer preference additions', () => {
+  const { handlers, calls } = setup();
+  handlers.get('preferences.update')(
+    { sender: { id: 1 } },
+    {
+      accountId: 'account@example.invalid',
+      changes: { hideClosedConversations: true, fileTransferTimeoutSeconds: 600 },
+    },
+  );
+  assert.deepEqual(calls, [
+    ['global', 'app', { hideClosedConversations: true }],
+    ['global', 'app', { fileTransferTimeoutSeconds: 600 }],
+  ]);
+  for (const value of [0, 61, 301, 1000, '300'])
+    assert.throws(
+      () =>
+        handlers.get('preferences.update')(
+          { sender: { id: 1 } },
+          { accountId: 'account@example.invalid', changes: { fileTransferTimeoutSeconds: value } },
+        ),
+      /INVALID_INPUT/,
+    );
+  assert.throws(
+    () =>
+      handlers.get('preferences.update')(
+        { sender: { id: 1 } },
+        { accountId: 'account@example.invalid', changes: { hideClosedConversations: 'yes' } },
+      ),
+    /INVALID_INPUT/,
+  );
+});

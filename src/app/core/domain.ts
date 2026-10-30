@@ -438,4 +438,6 @@ export interface Preferences {
   customTheme?: ThemePalette;
   notifications: boolean;
   autoLogin: boolean;
+  hideClosedConversations: boolean;
+  fileTransferTimeoutSeconds: 60 | 180 | 300 | 600;
 }

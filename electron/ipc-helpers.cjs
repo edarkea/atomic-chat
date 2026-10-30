@@ -1,5 +1,20 @@
-const preferenceDefaults = { theme: 'atomic', notifications: true, autoLogin: false };
-const preferenceKeys = ['theme', 'customTheme', 'notifications', 'autoLogin'];
+const { isTransferTimeout } = require('./transfer-timeout.cjs');
+
+const preferenceDefaults = {
+  theme: 'atomic',
+  notifications: true,
+  autoLogin: false,
+  hideClosedConversations: false,
+  fileTransferTimeoutSeconds: 300,
+};
+const preferenceKeys = [
+  'theme',
+  'customTheme',
+  'notifications',
+  'autoLogin',
+  'hideClosedConversations',
+  'fileTransferTimeoutSeconds',
+];
 const themeColorKeys = [
   'background',
   'surface',
@@ -249,8 +264,7 @@ function createIpcHelpers({
         : 'TRANSPORT_FAILED';
     const messages = {
       INVALID_INPUT: 'La solicitud MUC no es válida.',
-      UNAUTHORIZED:
-        'La ventana o la cuenta no están autorizadas para esta operación MUC.',
+      UNAUTHORIZED: 'La ventana o la cuenta no están autorizadas para esta operación MUC.',
       MUC_POLICY_MISSING:
         'La entrada MUC está bloqueada: falta la acreditación administrativa requerida.',
       MUC_POLICY_MISMATCH:
@@ -425,6 +439,8 @@ function createIpcHelpers({
       customTheme: validateThemePalette,
       notifications: (value) => typeof value === 'boolean',
       autoLogin: (value) => typeof value === 'boolean',
+      hideClosedConversations: (value) => typeof value === 'boolean',
+      fileTransferTimeoutSeconds: isTransferTimeout,
     };
     for (const [key, value] of Object.entries(changes || {}))
       if (!allowed[key] || !allowed[key](value)) throw new Error('INVALID_INPUT');

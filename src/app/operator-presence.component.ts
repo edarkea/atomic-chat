@@ -9,9 +9,6 @@ import {
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Preferences } from './core/domain';
-import { isThemeId, THEME_OPTIONS, ThemeService } from './core/theme.service';
-import { ThemeStudioComponent } from './theme-studio.component';
 import { PresenceOption } from './sidebar.models';
 
 export interface OperatorPresenceModel {
@@ -23,13 +20,11 @@ export interface OperatorPresenceModel {
   readonly presenceOptions: ReadonlyArray<PresenceOption>;
   readonly presenceOptionId: string;
   readonly presenceStatus: string;
-  readonly settingsOpen: boolean;
-  readonly preferences: Preferences;
 }
 
 @Component({
   selector: 'app-operator-presence',
-  imports: [FormsModule, ThemeStudioComponent],
+  imports: [FormsModule],
   templateUrl: './operator-presence.component.html',
   styleUrls: ['./operator-presence.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -37,22 +32,12 @@ export interface OperatorPresenceModel {
 export class OperatorPresenceComponent {
   @ViewChild('presenceTrigger') private readonly presenceTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('presenceMenu') private readonly presenceMenu?: ElementRef<HTMLElement>;
-  @ViewChild('themeStudioTrigger')
-  private readonly themeStudioTrigger?: ElementRef<HTMLButtonElement>;
-
-  protected readonly theme = inject(ThemeService);
-  protected readonly themeOptions = THEME_OPTIONS;
   readonly model = input.required<OperatorPresenceModel>();
   readonly presenceToggle = output<void>();
   readonly presenceClose = output<void>();
   readonly presenceSelected = output<PresenceOption>();
   readonly presenceStatusChange = output<string>();
-  readonly settingsToggle = output<void>();
-  readonly preferencesChange = output<Partial<Preferences>>();
-  readonly resetPreferences = output<void>();
-
   private presenceWasOpen = false;
-  private themeStudioWasOpen = false;
 
   constructor() {
     effect(() => {
@@ -63,10 +48,6 @@ export class OperatorPresenceComponent {
         queueMicrotask(() => this.presenceTrigger?.nativeElement.focus());
       }
       this.presenceWasOpen = isOpen;
-      const themeStudioOpen = this.theme.editorOpen();
-      if (!themeStudioOpen && this.themeStudioWasOpen)
-        queueMicrotask(() => this.themeStudioTrigger?.nativeElement.focus());
-      this.themeStudioWasOpen = themeStudioOpen;
     });
   }
 
@@ -117,13 +98,6 @@ export class OperatorPresenceComponent {
     if (event.key !== 'Escape') return;
     event.preventDefault();
     this.presenceClose.emit();
-  }
-  protected openThemeStudio(): void {
-    this.theme.openStudio();
-  }
-  protected async selectTheme(value: string): Promise<void> {
-    if (!isThemeId(value)) return;
-    await this.theme.selectTheme(value);
   }
   private focusSelectedOption(): void {
     const options =

@@ -33,7 +33,13 @@ describe('ThemeService', () => {
   let stored: Preferences;
 
   beforeEach(() => {
-    stored = { theme: 'atomic', notifications: true, autoLogin: false };
+    stored = {
+      theme: 'atomic',
+      notifications: true,
+      autoLogin: false,
+      hideClosedConversations: false,
+      fileTransferTimeoutSeconds: 300,
+    };
     preferences = {
       get: vi.fn(async () => ok(stored)),
       update: vi.fn(async ({ changes }) => {
@@ -53,6 +59,8 @@ describe('ThemeService', () => {
       customTheme: validCustomPalette,
       notifications: false,
       autoLogin: true,
+      hideClosedConversations: false,
+      fileTransferTimeoutSeconds: 300,
     };
     const service = TestBed.inject(ThemeService);
 
@@ -123,6 +131,8 @@ describe('ThemeService', () => {
       customTheme: validCustomPalette,
       notifications: false,
       autoLogin: true,
+      hideClosedConversations: false,
+      fileTransferTimeoutSeconds: 300,
     };
     const service = TestBed.inject(ThemeService);
     await service.initialize();
@@ -141,6 +151,8 @@ describe('ThemeService', () => {
       customTheme: validCustomPalette,
       notifications: true,
       autoLogin: false,
+      hideClosedConversations: false,
+      fileTransferTimeoutSeconds: 300,
     };
     const service = TestBed.inject(ThemeService);
     await service.initialize();

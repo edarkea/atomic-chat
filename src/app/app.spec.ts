@@ -21,7 +21,13 @@ function fakeFacade() {
     contacts: signal([]),
     messages: signal([]),
     presence: signal({ jid: 'a@example.invalid', availability: 'available' }),
-    preferences: signal({ theme: 'atomic', notifications: true, autoLogin: false }),
+    preferences: signal({
+      theme: 'atomic',
+      notifications: true,
+      autoLogin: false,
+      hideClosedConversations: false,
+      fileTransferTimeoutSeconds: 300 as const,
+    }),
     error: signal<string | null>(null),
     profiles: signal([]),
     certificateRequest: signal<CertificateTrustRequest | null>(null),
@@ -157,9 +163,7 @@ describe('App composer integration', () => {
 
   it('renders one unique local SVG sprite with declared icon references', () => {
     const root = fixture.nativeElement as HTMLElement;
-    const symbols = root.querySelectorAll<SVGSymbolElement>(
-      'svg.ac-icon-sprite symbol[id^="ac-"]',
-    );
+    const symbols = root.querySelectorAll<SVGSymbolElement>('svg.ac-icon-sprite symbol[id^="ac-"]');
     const ids = new Set(Array.from(symbols, (symbol) => symbol.id));
 
     expect(symbols).toHaveLength(22);
@@ -172,21 +176,20 @@ describe('App composer integration', () => {
       expect(ids.has(href?.slice(1) ?? '')).toBe(true);
     }
 
-    const renderedIcons = root.querySelectorAll<SVGSVGElement>(
-      'svg.ac-icon:not(.ac-icon-sprite)',
-    );
+    const renderedIcons = root.querySelectorAll<SVGSVGElement>('svg.ac-icon:not(.ac-icon-sprite)');
     for (const icon of renderedIcons) {
       expect(icon.getAttribute('aria-hidden')).toBe('true');
       expect(icon.getAttribute('focusable')).toBe('false');
     }
   });
 
-  it('renders one accessible discovery action and a readable nickname control', () => {
+  it('opens an accessible Nuevo mensaje dialog with discovery and nickname controls', () => {
     (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
-    const panel = fixture.nativeElement.querySelector('.muc-panel') as HTMLElement;
-    expect(panel.querySelectorAll('button').length).toBe(1);
-    expect(panel.querySelector('label[for="muc-nickname"]')?.textContent).toContain(
+    const panel = fixture.nativeElement.querySelector('.new-message-dialog') as HTMLElement;
+    expect(panel.getAttribute('role')).toBe('dialog');
+    expect(panel.getAttribute('aria-modal')).toBe('true');
+    expect(panel.querySelector('label[for="new-message-nickname"]')?.textContent).toContain(
       'Apodo en salas',
     );
     expect(panel.querySelector('input[placeholder="Ej. operador"]')).toBeTruthy();
@@ -203,19 +206,93 @@ describe('App composer integration', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
-    const panel = fixture.nativeElement.querySelector('.muc-panel') as HTMLElement;
-    const select = panel.querySelector('.room-select') as HTMLButtonElement;
-    const join = panel.querySelector('.room-join') as HTMLButtonElement;
-    select.click();
-    expect(muc.select).toHaveBeenCalledWith('lobby@conference.example.invalid');
-    expect(muc.join).not.toHaveBeenCalled();
+    const panel = fixture.nativeElement.querySelector('.new-message-dialog') as HTMLElement;
+    const join = panel.querySelector('.new-message-room button') as HTMLButtonElement;
     join.click();
     expect(muc.join).toHaveBeenCalledWith(
       'a@example.invalid',
       'lobby@conference.example.invalid',
       'a',
     );
-    expect(panel.querySelectorAll('.room-item button').length).toBe(2);
+    expect(fixture.nativeElement.querySelector('.new-message-dialog')).toBeTruthy();
+  });
+  it('selects a contact or a valid new JID from the independent dialog search', () => {
+    const contact = {
+      jid: 'contact@example.invalid',
+      name: 'Contacto',
+      groups: [],
+      source: 'roster' as const,
+    };
+    facade.contacts.set([contact]);
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.new-message-result') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect((fixture.componentInstance as any).selectedJid()).toBe(contact.jid);
+    expect(fixture.nativeElement.querySelector('.new-message-dialog')).toBeNull();
+
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
+    (fixture.componentInstance as any).newMessageSearch.set('new@example.invalid');
+    fixture.detectChanges();
+    (
+      fixture.nativeElement.querySelector('.new-message-search button') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect((fixture.componentInstance as any).selectedJid()).toBe('new@example.invalid');
+  });
+  it('keeps the dialog open on failed room join and closes after confirmation', async () => {
+    const room = {
+      service: 'conference.example.invalid',
+      room: 'lobby',
+      jid: 'lobby@conference.example.invalid',
+    };
+    muc.services.set([room]);
+    (
+      muc.join as unknown as { mockImplementation: (implementation: () => Promise<void>) => void }
+    ).mockImplementation(async () => muc.error.set('No fue posible unirse a la sala.'));
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.new-message-room button') as HTMLButtonElement).click();
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.new-message-dialog')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('No fue posible unirse a la sala.');
+
+    (
+      muc.join as unknown as { mockImplementation: (implementation: () => Promise<void>) => void }
+    ).mockImplementation(async () => muc.states.set([joinedRoom(room)]));
+    (fixture.nativeElement.querySelector('.new-message-room button') as HTMLButtonElement).click();
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.new-message-dialog')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.muc-room-view')).toBeTruthy();
+  });
+  it('hides a closed conversation without deleting it and reveals it from Nuevo mensaje', () => {
+    const contact = {
+      jid: 'contact@example.invalid',
+      name: 'Contacto',
+      groups: [],
+      source: 'roster' as const,
+    };
+    facade.contacts.set([contact]);
+    facade.preferences.set({
+      theme: 'atomic',
+      notifications: true,
+      autoLogin: false,
+      hideClosedConversations: true,
+      fileTransferTimeoutSeconds: 300,
+    });
+    fixture.detectChanges();
+    (fixture.componentInstance as any).dismissConversationByUser();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Contacto');
+    expect(facade.contacts()).toContain(contact);
+
+    (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.new-message-result') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Contacto');
   });
   it('shows the local discovery state without duplicating IPC actions', async () => {
     let release!: () => void;
@@ -232,7 +309,7 @@ describe('App composer integration', () => {
     (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
     const discoverButton = fixture.nativeElement.querySelector(
-      '.muc-discover',
+      '.new-message-discover',
     ) as HTMLButtonElement;
     discoverButton.click();
     fixture.detectChanges();
@@ -548,12 +625,16 @@ describe('App composer integration', () => {
         validFrom: '2026-01-01',
         validTo: '2027-01-01',
         subjectAltNames: ['DNS:xmpp.example.invalid'],
-        chain: [{ fingerprintSha256: 'AA:BB', subject: 'CN=xmpp.example.invalid', issuer: 'CN=issuer' }],
+        chain: [
+          { fingerprintSha256: 'AA:BB', subject: 'CN=xmpp.example.invalid', issuer: 'CN=issuer' },
+        ],
         pem: 'pem',
       },
     });
     fixture.detectChanges();
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
     fixture.detectChanges();
     expect((fixture.componentInstance as any).selectedJid()).toBe('contact@example.invalid');
   });

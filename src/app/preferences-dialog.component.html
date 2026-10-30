@@ -1,0 +1,179 @@
+<div class="preferences-backdrop" role="presentation">
+  <section
+    #dialog
+    class="preferences-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="preferences-title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="preferences-header">
+      <div>
+        <span class="eyebrow">CONFIGURACIÓN</span>
+        <h2 id="preferences-title">Preferencias</h2>
+      </div>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Cerrar Preferencias"
+        (click)="cancelled.emit()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-close" />
+        </svg>
+      </button>
+    </header>
+
+    <div class="preferences-tabs" role="tablist" aria-label="Secciones de preferencias">
+      @for (tab of tabs; track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.data-tab]="tab.id"
+          [attr.aria-selected]="activeTab() === tab.id"
+          [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+          [attr.aria-controls]="'preferences-panel-' + tab.id"
+          (click)="selectTab(tab.id)"
+          (keydown)="onTabKeydown($event, tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    <div class="preferences-body">
+      @switch (activeTab()) {
+        @case ('general') {
+          <section
+            id="preferences-panel-general"
+            role="tabpanel"
+            aria-labelledby="preferences-title"
+          >
+            <h3>General</h3>
+            <label class="preference-row"
+              ><span
+                ><strong>Inicio automático</strong
+                ><small>Conecta la última cuenta con credenciales guardadas.</small></span
+              ><input
+                type="checkbox"
+                [ngModel]="model().preferences.autoLogin"
+                (ngModelChange)="preferenceChange.emit({ autoLogin: $event })"
+            /></label>
+          </section>
+        }
+        @case ('appearance') {
+          <section
+            id="preferences-panel-appearance"
+            role="tabpanel"
+            aria-labelledby="preferences-title"
+          >
+            <h3>Apariencia</h3>
+            <label class="preference-field"
+              ><span>Tema</span
+              ><select
+                [ngModel]="theme.themeId()"
+                [disabled]="theme.saving()"
+                (ngModelChange)="selectTheme($event)"
+              >
+                @for (option of themeOptions; track option.id) {
+                  <option [value]="option.id">{{ option.label }}</option>
+                }
+              </select></label
+            >
+            <button
+              #themeStudioTrigger
+              type="button"
+              class="secondary"
+              (click)="theme.openStudio()"
+            >
+              Abrir Theme Studio
+            </button>
+            @if (theme.persistenceError(); as error) {
+              <p class="preference-error" role="alert">{{ error }}</p>
+            }
+          </section>
+        }
+        @case ('conversations') {
+          <section
+            id="preferences-panel-conversations"
+            role="tabpanel"
+            aria-labelledby="preferences-title"
+          >
+            <h3>Conversaciones</h3>
+            <label class="preference-row"
+              ><span
+                ><strong>Al cerrar una conversación, quitarla del área de trabajo</strong
+                ><small
+                  >Oculta la vista sin borrar mensajes, historial, contactos ni salas.</small
+                ></span
+              ><input
+                type="checkbox"
+                [ngModel]="model().preferences.hideClosedConversations"
+                (ngModelChange)="preferenceChange.emit({ hideClosedConversations: $event })"
+            /></label>
+          </section>
+        }
+        @case ('notifications') {
+          <section
+            id="preferences-panel-notifications"
+            role="tabpanel"
+            aria-labelledby="preferences-title"
+          >
+            <h3>Notificaciones</h3>
+            <label class="preference-row"
+              ><span
+                ><strong>Activar notificaciones de escritorio</strong
+                ><small>Recibe avisos nativos cuando la ventana no está enfocada.</small></span
+              ><input
+                type="checkbox"
+                [ngModel]="model().preferences.notifications"
+                (ngModelChange)="preferenceChange.emit({ notifications: $event })"
+            /></label>
+          </section>
+        }
+        @case ('transfers') {
+          <section
+            id="preferences-panel-transfers"
+            role="tabpanel"
+            aria-labelledby="preferences-title"
+          >
+            <h3>Transferencias</h3>
+            <label class="preference-field"
+              ><span>Tiempo de espera para transferencias</span
+              ><select
+                [ngModel]="model().preferences.fileTransferTimeoutSeconds"
+                (ngModelChange)="setTransferTimeout($event)"
+              >
+                <option [ngValue]="60">1 minuto</option>
+                <option [ngValue]="180">3 minutos</option>
+                <option [ngValue]="300">5 minutos</option>
+                <option [ngValue]="600">10 minutos</option>
+              </select></label
+            >
+            <p class="preference-help">
+              Regula el tiempo máximo sin completar una fase o recibir respuesta. No limita la
+              duración total de archivos grandes que continúan avanzando.
+            </p>
+          </section>
+        }
+      }
+    </div>
+
+    <footer class="preferences-footer">
+      <div aria-live="polite">
+        @if (model().saveState === 'saving') {
+          <span>Guardando…</span>
+        }
+        @if (model().saveState === 'saved') {
+          <span>Preferencias guardadas.</span>
+        }
+        @if (model().error; as error) {
+          <span class="preference-error">{{ error }}</span>
+        }
+      </div>
+      <button type="button" class="secondary" (click)="reset.emit()">Restablecer</button>
+      <button type="button" class="primary" (click)="cancelled.emit()">Cerrar</button>
+    </footer>
+    <app-theme-studio />
+  </section>
+</div>

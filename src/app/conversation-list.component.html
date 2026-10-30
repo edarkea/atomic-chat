@@ -1,134 +1,139 @@
 <label class="search-box"
-  ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-search" /></svg
+  ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+    <use href="#ac-search" /></svg
   ><input
     placeholder="Buscar usuario o JID..."
     aria-label="Buscar conversaciones"
     [ngModel]="model().search"
     (ngModelChange)="searchChange.emit($event)"
-    (keyup.enter)="useJid.emit()"
 /></label>
 <header class="conversation-heading">
-  <p class="section-label">{{ model().directoryOpen ? 'DIRECTORIO' : 'MI ÁREA DE TRABAJO' }}</p>
+  <p class="section-label">MI ÁREA DE TRABAJO</p>
   <button
+    #newMessageTrigger
     class="directory-toggle"
     type="button"
-    (click)="directoryToggle.emit()"
-    [attr.aria-label]="model().directoryOpen ? 'Volver a conversaciones' : 'Iniciar o unirse a un chat'"
-  >@if (model().directoryOpen) {
-    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-back" /></svg>
-  } @else {
-    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-add" /></svg>
-  }</button>
+    (click)="newMessageToggle.emit()"
+    aria-label="Nuevo mensaje"
+    title="Nuevo mensaje"
+  >
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-add" />
+    </svg>
+  </button>
 </header>
-@if (!model().directoryOpen) {
-  <nav class="conversation-list" aria-label="Conversaciones">
-    @if (model().workspaceItems; as items) {
-      @for (item of items; track item.kind + ':' + (item.kind === 'muc' ? item.roomState.room.jid : item.contact.jid)) {
-        @if (item.kind === 'muc') {
-          <button
-            class="conversation-item muc-conversation-item"
-            [class.active]="isRoomSelected(item.roomState.room.jid)"
-            [attr.aria-current]="isRoomSelected(item.roomState.room.jid) ? 'page' : null"
-            type="button"
-            (click)="selectRoom.emit(item.roomState.room.jid)"
-            [attr.aria-label]="'Abrir sala ' + item.roomState.room.room"
-          >
-            <span class="avatar muc-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-room" /></svg></span
-            ><span class="contact-copy"
-              ><strong>{{ item.roomState.room.room }}</strong
-              ><small>{{ item.roomState.room.service }}</small
-              ><small class="contact-groups"
-                >Sala MUC · {{ item.roomState.participants.length }} participantes</small
-              ></span
-            ><strong
-              class="unread-badge"
-              [hidden]="unreadCount('muc', item.roomState.room.jid) === 0"
-              >{{ unreadCount('muc', item.roomState.room.jid) }}</strong
-            >
-          </button>
-        } @else {
-          <button
-            class="conversation-item"
-            [class.active]="isDirectSelected(item.contact.jid)"
-            [attr.aria-current]="isDirectSelected(item.contact.jid) ? 'page' : null"
-            type="button"
-            (click)="selectContact.emit(item.contact)"
-          >
-            <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span
-            ><span class="contact-copy"
-              ><strong
-                ><i
-                  class="contact-presence"
-                  [class]="'contact-presence ' + remotePresenceDot(item.contact)"
-                  aria-hidden="true"
-                ></i
-                >{{ contactName(item.contact) }}</strong
-              ><small class="contact-groups"
-                >{{ contactKind(item.contact) }} · {{ remotePresenceLabel(item.contact) }}</small
-              ></span
-            ><strong
-              class="unread-badge"
-              [hidden]="unreadCount('direct', item.contact.jid) === 0"
-              >{{ unreadCount('direct', item.contact.jid) }}</strong
-            >
-          </button>
-        }
-      }
-      @if (!items.length) {
-        <p class="empty">No hay conversaciones todavía. Usa + para iniciar un chat.</p>
-      }
-    } @else {
-      @for (roomState of model().joinedRooms; track roomState.room.jid) {
+<nav class="conversation-list" aria-label="Conversaciones">
+  @if (model().workspaceItems; as items) {
+    @for (
+      item of items;
+      track item.kind + ':' + (item.kind === 'muc' ? item.roomState.room.jid : item.contact.jid)
+    ) {
+      @if (item.kind === 'muc') {
         <button
           class="conversation-item muc-conversation-item"
-          [class.active]="isRoomSelected(roomState.room.jid)"
+          [class.active]="isRoomSelected(item.roomState.room.jid)"
+          [attr.aria-current]="isRoomSelected(item.roomState.room.jid) ? 'page' : null"
           type="button"
-          (click)="selectRoom.emit(roomState.room.jid)"
+          (click)="selectRoom.emit(item.roomState.room.jid)"
+          [attr.aria-label]="'Abrir sala ' + item.roomState.room.room"
         >
-          <span class="avatar muc-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-room" /></svg></span
-          ><span class="contact-copy"><strong>{{ roomState.room.room }}</strong></span>
+          <span class="avatar muc-avatar" aria-hidden="true"
+            ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+              <use href="#ac-room" /></svg></span
+          ><span class="contact-copy"
+            ><strong>{{ item.roomState.room.room }}</strong
+            ><small>{{ item.roomState.room.service }}</small
+            ><small class="contact-groups"
+              >Sala MUC · {{ item.roomState.participants.length }} participantes</small
+            ></span
+          ><strong
+            class="unread-badge"
+            [hidden]="unreadCount('muc', item.roomState.room.jid) === 0"
+            >{{ unreadCount('muc', item.roomState.room.jid) }}</strong
+          >
         </button>
-      }
-      @for (contact of (model().workspaceContacts || model().filteredContacts); track contact.jid) {
-        <button class="conversation-item" type="button" (click)="selectContact.emit(contact)">
-          <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span
-          ><span class="contact-copy"><strong>{{ contactName(contact) }}</strong></span>
+      } @else {
+        <button
+          class="conversation-item"
+          [class.active]="isDirectSelected(item.contact.jid)"
+          [attr.aria-current]="isDirectSelected(item.contact.jid) ? 'page' : null"
+          type="button"
+          (click)="selectContact.emit(item.contact)"
+        >
+          <span class="avatar" aria-hidden="true"
+            ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+              <use href="#ac-contact" /></svg></span
+          ><span class="contact-copy"
+            ><strong
+              ><i
+                class="contact-presence"
+                [class]="'contact-presence ' + remotePresenceDot(item.contact)"
+                aria-hidden="true"
+              ></i
+              >{{ contactName(item.contact) }}</strong
+            ><small class="contact-groups"
+              >{{ contactKind(item.contact) }} · {{ remotePresenceLabel(item.contact) }}</small
+            ></span
+          ><strong class="unread-badge" [hidden]="unreadCount('direct', item.contact.jid) === 0">{{
+            unreadCount('direct', item.contact.jid)
+          }}</strong>
         </button>
       }
     }
-  </nav>
-} @else {
-  <nav class="conversation-list" aria-label="Directorio de contactos">
-    @for (contact of model().filteredContacts; track contact.jid) {
-      <button class="conversation-item" type="button" (click)="selectContact.emit(contact)">
-        <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span
+    @if (!items.length) {
+      <p class="empty">No hay conversaciones todavía. Usa + para iniciar un chat.</p>
+    }
+  } @else {
+    @for (roomState of model().joinedRooms; track roomState.room.jid) {
+      <button
+        class="conversation-item muc-conversation-item"
+        [class.active]="isRoomSelected(roomState.room.jid)"
+        type="button"
+        (click)="selectRoom.emit(roomState.room.jid)"
+      >
+        <span class="avatar muc-avatar" aria-hidden="true"
+          ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+            <use href="#ac-room" /></svg></span
         ><span class="contact-copy"
-          ><strong>{{ contactName(contact) }}</strong
-          ><small class="contact-groups">Contacto conocido del roster</small></span
-      ></button>
+          ><strong>{{ roomState.room.room }}</strong></span
+        >
+      </button>
     }
-    @if (model().filteredContacts.length === 0 && model().search.includes('@')) {
-      <button class="conversation-item" type="button" (click)="useJid.emit()">
-        <span class="avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-add" /></svg></span
-        ><span class="contact-copy"><strong>Nuevo chat</strong><small>{{ model().search }}</small></span
-      ></button>
+    @for (contact of model().workspaceContacts || model().filteredContacts; track contact.jid) {
+      <button class="conversation-item" type="button" (click)="selectContact.emit(contact)">
+        <span class="avatar" aria-hidden="true"
+          ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+            <use href="#ac-contact" /></svg></span
+        ><span class="contact-copy"
+          ><strong>{{ contactName(contact) }}</strong></span
+        >
+      </button>
     }
-    @if (model().filteredContacts.length === 0 && !model().search) {
-      <p class="empty">No hay contactos cargados.</p>
-    }
-  </nav>
-  @if (model().muc; as muc) {
-    <app-muc-navigation
-      [model]="muc"
-      (nicknameChange)="nicknameChange.emit($event)"
-      (discover)="discoverRooms.emit()"
-      (selectRoom)="selectRoom.emit($event)"
-      (joinRoom)="joinRoom.emit($event)"
-      (leaveRoom)="leaveRoom.emit()"
-    />
   }
-}
+</nav>
 <div class="sidebar-actions">
-  <button type="button" aria-label="Actualizar roster" (click)="refreshRoster.emit()"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-refresh" /></svg></button
-  ><button type="button" aria-label="Desconectar" (click)="disconnect.emit()"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-disconnect" /></svg></button>
+  <button
+    type="button"
+    aria-label="Actualizar roster"
+    title="Actualizar roster"
+    (click)="refreshRoster.emit()"
+  >
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-refresh" />
+    </svg></button
+  ><button
+    #preferencesTrigger
+    type="button"
+    aria-label="Preferencias"
+    title="Preferencias"
+    (click)="preferencesToggle.emit()"
+  >
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-settings" />
+    </svg></button
+  ><button type="button" aria-label="Desconectar" title="Desconectar" (click)="disconnect.emit()">
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-disconnect" />
+    </svg>
+  </button>
 </div>

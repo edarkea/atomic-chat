@@ -1,5 +1,8 @@
 <div class="operator-card">
-  <span class="avatar operator-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
+  <span class="avatar operator-avatar" aria-hidden="true"
+    ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-contact" /></svg
+  ></span>
   <div>
     <strong>{{ model().accountId }}</strong
     ><small>{{ model().connectionLabel }} · {{ model().presenceLabel }}</small>
@@ -19,7 +22,10 @@
   >
     <i class="presence-dot" [class]="'presence-dot ' + model().presenceDot"></i
     ><span>{{ model().presenceLabel }}</span
-    ><span class="presence-arrow" aria-hidden="true"><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-expand" /></svg></span>
+    ><span class="presence-arrow" aria-hidden="true"
+      ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false">
+        <use href="#ac-expand" /></svg
+    ></span>
   </button>
   @if (model().presenceOpen) {
     <div class="presence-popover">
@@ -49,55 +55,3 @@
     </div>
   }
 </div>
-<button
-  type="button"
-  class="preferences-trigger"
-  [attr.aria-expanded]="model().settingsOpen"
-  aria-controls="preferences-panel"
-  (click)="settingsToggle.emit()"
->
-  Preferencias
-</button>
-@if (model().settingsOpen) {
-  <section id="preferences-panel" class="preferences-panel" aria-label="Preferencias">
-    <strong>Preferencias</strong
-    ><label
-      >Tema<select
-        aria-label="Tema"
-        [ngModel]="theme.themeId()"
-        [disabled]="theme.saving()"
-        (ngModelChange)="selectTheme($event)"
-      >
-        @for (option of themeOptions; track option.id) {
-          <option [value]="option.id">{{ option.label }}</option>
-        }
-      </select></label
-    >
-    @if (theme.persistenceError(); as error) {
-      <p class="preference-error" role="alert">{{ error }}</p>
-    }
-    <button
-      #themeStudioTrigger
-      type="button"
-      class="theme-studio-trigger"
-      (click)="openThemeStudio()"
-    >
-      Personalizar tema</button
-    ><label class="check-preference"
-      ><input
-        type="checkbox"
-        [ngModel]="model().preferences.notifications"
-        (ngModelChange)="preferencesChange.emit({ notifications: $event })"
-      />
-      Notificaciones</label
-    ><label class="check-preference"
-      ><input
-        type="checkbox"
-        [ngModel]="model().preferences.autoLogin"
-        (ngModelChange)="preferencesChange.emit({ autoLogin: $event })"
-      />
-      Inicio automático</label
-    ><button type="button" (click)="resetPreferences.emit()">Restablecer</button>
-  </section>
-}
-<app-theme-studio />

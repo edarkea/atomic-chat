@@ -7,6 +7,7 @@ const {
   transferError,
   transferView: buildTransferView,
 } = require('./file-transfer-utils.cjs');
+const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const error = transferError;
 
 const ACTIVE_PER_ACCOUNT = 2;
@@ -40,6 +41,8 @@ class FileTransferCoordinator {
     this.cleanupJobs = new Map();
     this.resourceLimiter = options.resourceLimiter;
     this.onCompleted = options.onCompleted;
+    this.getTimeoutSeconds =
+      typeof options.getTimeoutSeconds === 'function' ? options.getTimeoutSeconds : undefined;
   }
 
   onEvent(listener) {
@@ -89,9 +92,18 @@ class FileTransferCoordinator {
       progressLastEmittedAt: undefined,
       terminalResponsePending: 0,
       cleanupReady: false,
+      timeoutSeconds: this.getTimeoutSeconds
+        ? normalizeTransferTimeout(this.getTimeoutSeconds())
+        : undefined,
     };
     this.records.set(input.offer.transferId, record);
-    this.armTimer(record, 'offer', 60000, 'timed_out', 'cancelled');
+    this.armTimer(
+      record,
+      'offer',
+      this.timeoutMilliseconds(record, 60000),
+      'timed_out',
+      'cancelled',
+    );
     this.emit(record, 'file.offerReceived');
     return record;
   }
@@ -462,6 +474,10 @@ class FileTransferCoordinator {
     record.timer?.unref?.();
   }
 
+  timeoutMilliseconds(record, fallback) {
+    return record.timeoutSeconds ? record.timeoutSeconds * 1000 : fallback;
+  }
+
   async cancelAccount(accountId) {
     await Promise.all(
       [...this.records.values()]
@@ -492,9 +508,21 @@ class FileTransferCoordinator {
         if (record.terminalRequested) throw error('CONFLICT', 'transfer was cancelled');
         record.bytes = next;
         record.state = 'transferring';
-        this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
+        this.armTimer(
+          record,
+          'close',
+          this.timeoutMilliseconds(record, 30000),
+          'timed_out',
+          'failed',
+        );
         if (next < BigInt(record.offer.sizeBytes))
-          this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
+          this.armTimer(
+            record,
+            'idle',
+            this.timeoutMilliseconds(record, 60000),
+            'timed_out',
+            'failed',
+          );
         record.updatedAt = new Date().toISOString();
         this.requestProgress(record);
         return transferView(record);
@@ -572,9 +600,15 @@ class FileTransferCoordinator {
       if (record.terminalRequested || record.state !== 'accepted')
         throw error('CONFLICT', 'transfer is not accepted');
       record.state = 'transferring';
-      this.armTimer(record, 'idle', 60000, 'timed_out', 'failed');
+      this.armTimer(record, 'idle', this.timeoutMilliseconds(record, 60000), 'timed_out', 'failed');
       if (record.bytes === BigInt(record.offer.sizeBytes))
-        this.armTimer(record, 'close', 30000, 'timed_out', 'failed');
+        this.armTimer(
+          record,
+          'close',
+          this.timeoutMilliseconds(record, 30000),
+          'timed_out',
+          'failed',
+        );
       record.updatedAt = new Date().toISOString();
       this.emit(record);
       return transferView(record);

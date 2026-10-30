@@ -74,9 +74,24 @@ describe('ChatFacade roster reconciliation', () => {
       conversations: async (input: any) => ok(history[input.accountId]),
     };
     preferencesPort = {
-      get: async () => ok({ theme: 'atomic', notifications: true, autoLogin: false }),
+      get: async () =>
+        ok({
+          theme: 'atomic',
+          notifications: true,
+          autoLogin: false,
+          hideClosedConversations: false,
+          fileTransferTimeoutSeconds: 300,
+        }),
       update: vi.fn(async () => ok({})),
-      reset: vi.fn(async () => ok({ theme: 'atomic', notifications: true, autoLogin: false })),
+      reset: vi.fn(async () =>
+        ok({
+          theme: 'atomic',
+          notifications: true,
+          autoLogin: false,
+          hideClosedConversations: false,
+          fileTransferTimeoutSeconds: 300,
+        }),
+      ),
     };
     certificatePort = { decide: vi.fn(async () => ok(undefined)) };
     accountPort = {
@@ -143,7 +158,13 @@ describe('ChatFacade roster reconciliation', () => {
 
   it('uses injected preferences and certificate ports for autologin and decisions', async () => {
     preferencesPort.get = vi.fn(async () =>
-      ok({ theme: 'atomic', notifications: false, autoLogin: true }),
+      ok({
+        theme: 'atomic',
+        notifications: false,
+        autoLogin: true,
+        hideClosedConversations: false,
+        fileTransferTimeoutSeconds: 300,
+      }),
     );
     const facade = TestBed.inject(ChatFacade);
     await facade.tryAutoLogin();
@@ -568,10 +589,23 @@ describe('ChatFacade login profile safety', () => {
         {
           provide: PREFERENCES_PORT,
           useValue: {
-            get: async () => ok({ theme: 'atomic' as const, notifications: true, autoLogin: true }),
+            get: async () =>
+              ok({
+                theme: 'atomic' as const,
+                notifications: true,
+                autoLogin: true,
+                hideClosedConversations: false,
+                fileTransferTimeoutSeconds: 300,
+              }),
             update: async () => ok({}),
             reset: async () =>
-              ok({ theme: 'atomic' as const, notifications: true, autoLogin: false }),
+              ok({
+                theme: 'atomic' as const,
+                notifications: true,
+                autoLogin: false,
+                hideClosedConversations: false,
+                fileTransferTimeoutSeconds: 300,
+              }),
           },
         },
         { provide: CERTIFICATE_PORT, useValue: { decide: async () => ok(undefined) } },

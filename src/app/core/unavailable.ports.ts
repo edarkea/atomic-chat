@@ -106,7 +106,13 @@ export class UnavailablePreferencesPort implements PreferencesPort {
       ok: true,
       version: 1,
       requestId: 'preferences-get',
-      value: { theme: 'atomic', notifications: true, autoLogin: false },
+      value: {
+        theme: 'atomic',
+        notifications: true,
+        autoLogin: false,
+        hideClosedConversations: false,
+        fileTransferTimeoutSeconds: 300,
+      },
     });
   }
   update(_input: {
@@ -120,7 +126,13 @@ export class UnavailablePreferencesPort implements PreferencesPort {
       ok: true,
       version: 1,
       requestId: 'preferences-reset',
-      value: { theme: 'atomic', notifications: true, autoLogin: false },
+      value: {
+        theme: 'atomic',
+        notifications: true,
+        autoLogin: false,
+        hideClosedConversations: false,
+        fileTransferTimeoutSeconds: 300,
+      },
     });
   }
 }
