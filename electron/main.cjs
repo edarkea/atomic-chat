@@ -117,13 +117,14 @@ const fileTransfers = new FileTransferCoordinator({
 const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   resourceLimiter: fileResourceLimiter,
   onCompleted: async (record, direction) => {
+    const localActions = await localFileActions.register(record, direction);
     await persistCompletedTransfer({
       record,
       direction,
       media: runtime?.media,
       fileHistory: runtime?.fileHistory,
     });
-    return false;
+    return localActions;
   },
   getTimeoutSeconds: currentTransferTimeout,
 });

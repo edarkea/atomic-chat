@@ -189,16 +189,14 @@ class OutgoingFileTransferCoordinator {
       if (record.terminalRequested) return transferView(record);
       record.state = 'completed';
       record.terminalRequested = true;
-      // El remitente conserva el archivo original; las acciones locales solo
-      // se publican para archivos recibidos y guardados por Atomic Chat.
-      record.localActions = undefined;
+      try {
+        const localActions = await this.onCompleted?.(record, 'outgoing');
+        if (localActions) record.localActions = { open: true, reveal: true };
+      } catch {
+        /* Persistence or local-action registration must not change transfer outcome. */
+      }
       this.clearProgressTimer(record);
       record.updatedAt = new Date().toISOString();
-      try {
-        await this.onCompleted?.(record, 'outgoing');
-      } catch {
-        /* Media persistence must not change the real transfer outcome. */
-      }
       this.emit(record);
       return transferView(record);
     } catch (cause) {

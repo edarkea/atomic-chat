@@ -97,7 +97,7 @@ export class FileTransferCardComponent {
   protected canOpenFile(): boolean {
     const history = this.history();
     if (history) return history.availability === 'available';
-    return this.transfer().direction === 'incoming' && this.transfer().localActions?.open === true;
+    return this.transfer().state === 'completed' && this.transfer().localActions?.open === true;
   }
 
   protected openFile(): void {
@@ -114,10 +114,7 @@ export class FileTransferCardComponent {
   protected canRevealFolder(): boolean {
     const history = this.history();
     if (history) return history.availability === 'available';
-    return (
-      this.transfer().direction === 'incoming' &&
-      this.transfer().localActions?.reveal === true
-    );
+    return this.transfer().state === 'completed' && this.transfer().localActions?.reveal === true;
   }
 
   protected openPreview(): void {

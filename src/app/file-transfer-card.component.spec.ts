@@ -39,8 +39,9 @@ const unavailable = (): Result<ImagePreviewRef> => ({
   },
 });
 
-const documentTransfer = (): FileTransfer => ({
+const documentTransfer = (direction: FileTransfer['direction'] = 'incoming'): FileTransfer => ({
   ...transfer(),
+  direction,
   offer: {
     ...transfer().offer,
     name: 'report.pdf',
@@ -179,6 +180,20 @@ describe('FileTransferCardComponent preview lifecycle', () => {
     heading.click();
     expect(openedId).toBe('transfer-preview');
     expect(fixture.nativeElement.querySelectorAll('.file-action-icon')).toHaveLength(0);
+  });
+
+  it('opens a completed sent file from its compact heading', async () => {
+    let openedId = '';
+    fixture.componentInstance.opened.subscribe((value) => (openedId = value));
+    fixture.componentRef.setInput('transfer', documentTransfer('outgoing'));
+    fixture.componentRef.setInput('label', 'Archivo enviado');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const heading = fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement;
+    expect(heading.disabled).toBe(false);
+    heading.click();
+    expect(openedId).toBe('transfer-preview');
   });
 
   it('shows a friendly unavailable state without exposing internal messages', async () => {
