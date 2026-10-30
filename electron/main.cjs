@@ -76,6 +76,13 @@ const currentDownloadDirectory = () => {
     return defaultDownloadDirectory;
   }
 };
+const autoAcceptFileTransfers = () => {
+  try {
+    return runtime?.persistence.getPreferences('global', 'app')?.autoAcceptFileTransfers === true;
+  } catch {
+    return false;
+  }
+};
 const fileTransfers = new FileTransferCoordinator({
   selectDestination: selectFileDestination,
   getDefaultDirectory: currentDownloadDirectory,
@@ -132,7 +139,15 @@ function createWindow() {
 
 function attachEventSources() {
   const eventRouter = createEventRouter({ BrowserWindow, webContents });
-  fileTransfers.onEvent(eventRouter.forwardTransferEvent);
+  fileTransfers.onEvent((event) => {
+    eventRouter.forwardTransferEvent(event);
+    if (event.type !== 'file.offerReceived' || !autoAcceptFileTransfers()) return;
+    void fileTransfers
+      .accept(event.payload.transferId, event.targetSenderId)
+      .catch((error) =>
+        console.warn('[FILE TRANSFER] Automatic acceptance failed:', error.code || error.message),
+      );
+  });
   outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
   runtime.xmpp.onEvent((event) => {
     if (event.type === 'message.received') {

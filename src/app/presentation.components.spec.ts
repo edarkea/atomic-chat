@@ -599,6 +599,7 @@ describe('extracted Angular presentation components', () => {
               value: {
                 theme: 'atomic',
                 notifications: true,
+                autoAcceptFileTransfers: false,
                 autoLogin: false,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
@@ -618,6 +619,7 @@ describe('extracted Angular presentation components', () => {
               value: {
                 theme: 'atomic',
                 notifications: true,
+                autoAcceptFileTransfers: false,
                 autoLogin: false,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
@@ -635,6 +637,7 @@ describe('extracted Angular presentation components', () => {
       preferences: {
         theme: 'atomic',
         notifications: true,
+        autoAcceptFileTransfers: false,
         autoLogin: false,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
@@ -658,6 +661,14 @@ describe('extracted Angular presentation components', () => {
     ]);
     (fixture.nativeElement.querySelector('[data-tab="transfers"]') as HTMLButtonElement).click();
     fixture.detectChanges();
+    const preferenceChange = vi.fn();
+    fixture.componentInstance.preferenceChange.subscribe(preferenceChange);
+    const autoAccept = fixture.nativeElement.querySelector(
+      '.transfer-auto-accept input',
+    ) as HTMLInputElement;
+    expect(autoAccept.checked).toBe(false);
+    autoAccept.click();
+    expect(preferenceChange).toHaveBeenCalledWith({ autoAcceptFileTransfers: true });
     expect(
       (fixture.nativeElement.querySelector('.download-directory-input') as HTMLInputElement).value,
     ).toBe('Documents/Downloads');

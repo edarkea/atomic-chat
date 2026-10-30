@@ -154,12 +154,17 @@ test('validates the conversation and transfer preference additions', () => {
     { sender: { id: 1 } },
     {
       accountId: 'account@example.invalid',
-      changes: { hideClosedConversations: true, fileTransferTimeoutSeconds: 600 },
+      changes: {
+        hideClosedConversations: true,
+        fileTransferTimeoutSeconds: 600,
+        autoAcceptFileTransfers: true,
+      },
     },
   );
   assert.deepEqual(calls, [
     ['global', 'app', { hideClosedConversations: true }],
     ['global', 'app', { fileTransferTimeoutSeconds: 600 }],
+    ['global', 'app', { autoAcceptFileTransfers: true }],
   ]);
   for (const value of [0, 61, 301, 1000, '300'])
     assert.throws(
@@ -178,6 +183,14 @@ test('validates the conversation and transfer preference additions', () => {
       ),
     /INVALID_INPUT/,
   );
+  assert.throws(
+    () =>
+      handlers.get('preferences.update')(
+        { sender: { id: 1 } },
+        { accountId: 'account@example.invalid', changes: { autoAcceptFileTransfers: 'yes' } },
+      ),
+    /INVALID_INPUT/,
+  );
 });
 
 test('uses Documents/Downloads as the default and returns a selected directory', async () => {
@@ -185,6 +198,7 @@ test('uses Documents/Downloads as the default and returns a selected directory',
   const { handlers } = setup(defaultDirectory);
   const preferences = handlers.get('preferences.get')({ sender: { id: 1 } }, { accountId: '' });
   assert.equal(preferences.value.downloadDirectory, defaultDirectory);
+  assert.equal(preferences.value.autoAcceptFileTransfers, false);
 
   const selected = await handlers.get('preferences.selectDownloadDirectory')({ sender: { id: 1 } });
   assert.deepEqual(selected, {

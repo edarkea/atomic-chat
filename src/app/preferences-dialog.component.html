@@ -140,6 +140,18 @@
             aria-labelledby="preferences-title"
           >
             <h3>Transferencias</h3>
+            <label class="preference-row transfer-auto-accept"
+              ><span
+                ><strong>Aceptar transferencias automáticamente</strong
+                ><small
+                  >Acepta archivos entrantes y los guarda en la carpeta configurada sin pedir
+                  confirmación.</small
+                ></span
+              ><input
+                type="checkbox"
+                [ngModel]="model().preferences.autoAcceptFileTransfers"
+                (ngModelChange)="preferenceChange.emit({ autoAcceptFileTransfers: $event })"
+            /></label>
             <label class="preference-field"
               ><span>Tiempo de espera para transferencias</span
               ><select

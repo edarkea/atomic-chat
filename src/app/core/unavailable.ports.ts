@@ -109,6 +109,7 @@ export class UnavailablePreferencesPort implements PreferencesPort {
       value: {
         theme: 'atomic',
         notifications: true,
+        autoAcceptFileTransfers: false,
         autoLogin: false,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
@@ -130,6 +131,7 @@ export class UnavailablePreferencesPort implements PreferencesPort {
       value: {
         theme: 'atomic',
         notifications: true,
+        autoAcceptFileTransfers: false,
         autoLogin: false,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,

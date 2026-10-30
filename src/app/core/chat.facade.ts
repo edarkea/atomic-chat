@@ -78,6 +78,7 @@ export class ChatFacade {
   readonly preferences = signal<Preferences>({
     theme: 'atomic',
     notifications: true,
+    autoAcceptFileTransfers: false,
     autoLogin: false,
     hideClosedConversations: false,
     fileTransferTimeoutSeconds: 300,

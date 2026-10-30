@@ -78,6 +78,7 @@ describe('ChatFacade roster reconciliation', () => {
         ok({
           theme: 'atomic',
           notifications: true,
+          autoAcceptFileTransfers: false,
           autoLogin: false,
           hideClosedConversations: false,
           fileTransferTimeoutSeconds: 300,
@@ -89,6 +90,7 @@ describe('ChatFacade roster reconciliation', () => {
         ok({
           theme: 'atomic',
           notifications: true,
+          autoAcceptFileTransfers: false,
           autoLogin: false,
           hideClosedConversations: false,
           fileTransferTimeoutSeconds: 300,
@@ -164,6 +166,7 @@ describe('ChatFacade roster reconciliation', () => {
       ok({
         theme: 'atomic',
         notifications: false,
+        autoAcceptFileTransfers: false,
         autoLogin: true,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
@@ -603,6 +606,7 @@ describe('ChatFacade login profile safety', () => {
               ok({
                 theme: 'atomic' as const,
                 notifications: true,
+                autoAcceptFileTransfers: false,
                 autoLogin: true,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
@@ -614,6 +618,7 @@ describe('ChatFacade login profile safety', () => {
               ok({
                 theme: 'atomic' as const,
                 notifications: true,
+                autoAcceptFileTransfers: false,
                 autoLogin: false,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,

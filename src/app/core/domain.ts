@@ -437,6 +437,7 @@ export interface Preferences {
   theme: ThemeId;
   customTheme?: ThemePalette;
   notifications: boolean;
+  autoAcceptFileTransfers: boolean;
   autoLogin: boolean;
   hideClosedConversations: boolean;
   fileTransferTimeoutSeconds: 60 | 180 | 300 | 600;

@@ -4,6 +4,7 @@ const { isDownloadDirectory } = require('./download-directory.cjs');
 const preferenceDefaults = {
   theme: 'atomic',
   notifications: true,
+  autoAcceptFileTransfers: false,
   autoLogin: false,
   hideClosedConversations: false,
   fileTransferTimeoutSeconds: 300,
@@ -13,6 +14,7 @@ const preferenceKeys = [
   'theme',
   'customTheme',
   'notifications',
+  'autoAcceptFileTransfers',
   'autoLogin',
   'hideClosedConversations',
   'fileTransferTimeoutSeconds',
@@ -441,6 +443,7 @@ function createIpcHelpers({
         (allowLegacyTheme && (value === 'dark' || value === 'light')),
       customTheme: validateThemePalette,
       notifications: (value) => typeof value === 'boolean',
+      autoAcceptFileTransfers: (value) => typeof value === 'boolean',
       autoLogin: (value) => typeof value === 'boolean',
       hideClosedConversations: (value) => typeof value === 'boolean',
       fileTransferTimeoutSeconds: isTransferTimeout,

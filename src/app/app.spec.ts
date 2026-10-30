@@ -24,6 +24,7 @@ function fakeFacade() {
     preferences: signal({
       theme: 'atomic',
       notifications: true,
+      autoAcceptFileTransfers: false,
       autoLogin: false,
       hideClosedConversations: false,
       fileTransferTimeoutSeconds: 300 as const,
@@ -279,6 +280,7 @@ describe('App composer integration', () => {
     facade.preferences.set({
       theme: 'atomic',
       notifications: true,
+      autoAcceptFileTransfers: false,
       autoLogin: false,
       hideClosedConversations: true,
       fileTransferTimeoutSeconds: 300,
