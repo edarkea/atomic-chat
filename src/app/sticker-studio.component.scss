@@ -1,0 +1,38 @@
+.studio-backdrop { align-items: center; background: rgb(0 0 0 / 70%); display: flex; inset: 0; justify-content: center; padding: 16px; position: fixed; z-index: 70; }
+.studio-dialog { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: var(--atomic-radius-md); box-shadow: 0 18px 48px rgb(0 0 0 / 68%); color: var(--atomic-text); max-height: min(760px, calc(100vh - 32px)); max-width: 980px; overflow: auto; width: min(100%, 980px); }
+.studio-header, .section-heading, .studio-actions, .pack-row { align-items: center; display: flex; }
+.studio-header { border-bottom: 1px solid var(--atomic-border); justify-content: space-between; padding: 16px 20px; }
+.studio-header h2, .studio-header p, .studio-header span, .studio-editor h3, .studio-editor p { margin: 0; }
+.studio-header h2 { font-size: 24px; margin-top: 4px; }
+.studio-header p, .muted, .pack-select small { color: var(--atomic-text-secondary); font-size: 12px; }
+.eyebrow { color: var(--atomic-green); font: 11px var(--atomic-font-mono); }
+.icon-button, .secondary, .primary, .item-actions button, .available-item { border: 1px solid var(--atomic-border); border-radius: var(--atomic-radius-sm); cursor: pointer; }
+.icon-button { background: transparent; color: var(--atomic-text-secondary); font-size: 24px; height: 34px; width: 34px; }
+.icon-button--small { font-size: 18px; height: 26px; width: 26px; }
+.studio-body { display: grid; gap: 16px; grid-template-columns: 240px 1fr; padding: 16px 20px 20px; }
+.pack-list { border-right: 1px solid var(--atomic-border-soft); padding-right: 16px; }
+.section-heading { gap: 8px; justify-content: space-between; margin-bottom: 10px; }
+.pack-row { border-bottom: 1px solid var(--atomic-border-soft); gap: 4px; padding: 6px 0; }
+.pack-row--selected { border-left: 2px solid var(--atomic-green); padding-left: 6px; }
+.pack-select { background: transparent; border: 0; color: var(--atomic-text); cursor: pointer; display: grid; flex: 1; gap: 3px; min-width: 0; padding: 5px; text-align: left; }
+.studio-editor label { display: grid; font-size: 12px; gap: 4px; margin-bottom: 10px; }
+.studio-editor input, .studio-editor textarea { background: var(--atomic-bg); border: 1px solid var(--atomic-border-soft); border-radius: var(--atomic-radius-sm); color: var(--atomic-text); font: inherit; padding: 8px; }
+.editor-section { border-top: 1px solid var(--atomic-border-soft); margin-top: 14px; padding-top: 12px; }
+.editor-section h3 { font-size: 13px; }
+.selected-grid, .available-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+.selected-item { align-items: center; display: grid; gap: 4px; justify-items: center; min-width: 0; }
+.selected-name { font-size: 11px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-actions { display: flex; gap: 3px; }
+.item-actions button { background: var(--atomic-surface-hover); color: var(--atomic-text); font-size: 12px; height: 24px; min-width: 24px; }
+.available-item { background: transparent; padding: 3px; }
+.available-item:disabled { cursor: default; opacity: .38; }
+.studio-actions { gap: 8px; margin-top: 16px; }
+.studio-actions span { flex: 1; }
+.primary, .secondary { background: var(--atomic-surface-hover); color: var(--atomic-text); padding: 8px 11px; }
+.primary { background: var(--atomic-green); border-color: var(--atomic-green); color: var(--atomic-bg); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--atomic-green); outline-offset: 2px; }
+button:disabled { cursor: default; opacity: .55; }
+.studio-error { background: var(--atomic-danger-surface); border: 1px solid var(--atomic-danger); color: var(--atomic-danger); padding: 8px; }
+.draft-note { color: var(--atomic-green); font-size: 11px; margin-top: 12px !important; }
+.studio-empty { align-items: center; display: flex; flex-direction: column; gap: 14px; justify-content: center; min-height: 300px; }
+@media (max-width: 720px) { .studio-body { grid-template-columns: 1fr; } .pack-list { border-bottom: 1px solid var(--atomic-border-soft); border-right: 0; padding-bottom: 12px; padding-right: 0; } }

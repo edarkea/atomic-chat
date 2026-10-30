@@ -44,9 +44,22 @@ import {
   XmppConnectionProfile,
   XmppTransport,
   StickerDeleteRequest,
+  StickerDraftCommitRequest,
+  StickerDraftCreateRequest,
+  StickerDraftDiscardRequest,
+  StickerDraftDTO,
+  StickerDraftGetRequest,
+  StickerDraftListSnapshot,
+  StickerDraftUpdateRequest,
   StickerImportRequest,
   StickerImportResult,
   StickerLibrarySnapshot,
+  StickerPackDTO,
+  StickerPackDeleteRequest,
+  StickerPackGetRequest,
+  StickerPackListRequest,
+  StickerPackListSnapshot,
+  StickerPackSaveRequest,
   StickerListRequest,
   StickerPreviewChunk,
   StickerPreviewCloseRequest,
@@ -143,6 +156,20 @@ export interface AtomicChatApi {
       read(input: StickerPreviewReadRequest): Promise<Result<StickerPreviewChunk>>;
       close(input: StickerPreviewCloseRequest): Promise<Result<void>>;
       revoke(input: StickerPreviewRevokeRequest): Promise<Result<void>>;
+    };
+    packs: {
+      list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>>;
+      get(input: StickerPackGetRequest): Promise<Result<StickerPackDTO>>;
+      save(input: StickerPackSaveRequest): Promise<Result<StickerPackDTO>>;
+      delete(input: StickerPackDeleteRequest): Promise<Result<void>>;
+      drafts: {
+        list(input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>>;
+        create(input: StickerDraftCreateRequest): Promise<Result<StickerDraftDTO>>;
+        get(input: StickerDraftGetRequest): Promise<Result<StickerDraftDTO>>;
+        update(input: StickerDraftUpdateRequest): Promise<Result<StickerDraftDTO>>;
+        discard(input: StickerDraftDiscardRequest): Promise<Result<void>>;
+        commit(input: StickerDraftCommitRequest): Promise<Result<StickerPackDTO>>;
+      };
     };
   };
   history: {

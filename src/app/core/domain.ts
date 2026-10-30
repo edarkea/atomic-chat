@@ -336,7 +336,7 @@ export interface StickerRecord {
 }
 export interface StickerLibrarySnapshot {
   readonly accountId: string;
-  readonly collectionId: 'my-stickers';
+  readonly collectionId: 'my-stickers' | `pack:${string}`;
   readonly query: string;
   readonly stickers: ReadonlyArray<StickerRecord>;
 }
@@ -356,12 +356,86 @@ export interface StickerListRequest {
   readonly accountId: string;
   readonly query?: string;
   readonly limit?: number;
+  readonly packId?: string;
 }
 export interface StickerDeleteRequest {
   readonly version: ContractVersion;
   readonly requestId: RequestId;
   readonly accountId: string;
   readonly stickerId: string;
+}
+
+export type StickerPackSource = 'created';
+export type StickerPackStatus = 'installed';
+export interface StickerPackDTO {
+  readonly packId: string;
+  readonly accountId: string;
+  readonly source: StickerPackSource;
+  readonly status: StickerPackStatus;
+  readonly name: string;
+  readonly description?: string;
+  readonly stickerIds: readonly string[];
+  readonly revision: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+export type StickerDraftStatus = 'editing' | 'validating' | 'ready' | 'failed' | 'saved' | 'discarded';
+export interface StickerDraftDTO {
+  readonly draftId: string;
+  readonly accountId: string;
+  readonly basePackId?: string;
+  readonly basePackRevision?: number;
+  readonly status: StickerDraftStatus;
+  readonly name: string;
+  readonly description?: string;
+  readonly stickerIds: readonly string[];
+  readonly revision: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+export interface StickerPackListSnapshot {
+  readonly accountId: string;
+  readonly packs: ReadonlyArray<StickerPackDTO>;
+}
+export interface StickerDraftListSnapshot {
+  readonly accountId: string;
+  readonly drafts: ReadonlyArray<StickerDraftDTO>;
+}
+export interface StickerPackListRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+}
+export interface StickerPackGetRequest extends StickerPackListRequest {
+  readonly packId: string;
+}
+export interface StickerPackSaveRequest extends StickerPackListRequest {
+  readonly packId?: string;
+  readonly revision: number;
+  readonly name: string;
+  readonly description?: string;
+  readonly stickerIds: readonly string[];
+}
+export interface StickerPackDeleteRequest extends StickerPackGetRequest {
+  readonly revision: number;
+}
+export interface StickerDraftCreateRequest extends StickerPackListRequest {
+  readonly basePackId?: string;
+}
+export interface StickerDraftGetRequest extends StickerPackListRequest {
+  readonly draftId: string;
+}
+export interface StickerDraftUpdateRequest extends StickerDraftGetRequest {
+  readonly revision: number;
+  readonly name: string;
+  readonly description?: string;
+  readonly stickerIds: readonly string[];
+}
+export interface StickerDraftDiscardRequest extends StickerDraftGetRequest {
+  readonly revision: number;
+}
+export interface StickerDraftCommitRequest extends StickerDraftGetRequest {
+  readonly revision: number;
 }
 export interface StickerPreviewGetRequest {
   readonly version: ContractVersion;

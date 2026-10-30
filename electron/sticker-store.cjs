@@ -223,9 +223,9 @@ class StickerStore {
     } finally { await handle.close().catch(() => undefined); }
   }
 
-  list(accountId, query = '', limit = MAX_STICKERS_PER_ACCOUNT) {
+  list(accountId, query = '', limit = MAX_STICKERS_PER_ACCOUNT, packId) {
     const bounded = Math.max(1, Math.min(MAX_STICKERS_PER_ACCOUNT, Number(limit) || MAX_STICKERS_PER_ACCOUNT));
-    return this.persistence.listStickers(accountId, query, bounded).map((sticker) => ({
+    return this.persistence.listStickers(accountId, query, bounded, packId).map((sticker) => ({
       ...this.publicSticker(sticker),
       availability: this.persistence.getStickerAsset(accountId, sticker.assetId)?.availability || 'missing',
     }));

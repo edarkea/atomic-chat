@@ -35,6 +35,7 @@ const { PreviewGrantRegistry } = require('./preview-grants.cjs');
 const { MediaStore } = require('./media-store.cjs');
 const { FileHistoryStore } = require('./file-history.cjs');
 const { StickerStore } = require('./sticker-store.cjs');
+const { StickerPackStore } = require('./sticker-pack-store.cjs');
 const { StickerGrantRegistry } = require('./sticker-grants.cjs');
 const { persistCompletedTransfer } = require('./media-transfer-persistence.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
@@ -213,6 +214,7 @@ function initializeRuntime() {
     MediaStore,
     FileHistoryStore,
     StickerStore,
+    StickerPackStore,
     nativeImage,
     fileTransfers,
     outgoingFileTransfers,

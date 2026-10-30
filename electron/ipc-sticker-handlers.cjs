@@ -68,10 +68,11 @@ function registerStickerHandlers({
     try {
       authorize(event, input);
       if (input.query !== undefined && (typeof input.query !== 'string' || input.query.length > 128)) throw new Error('INVALID_INPUT');
+      if (input.packId !== undefined && (typeof input.packId !== 'string' || !input.packId.trim() || input.packId.length > 512)) throw new Error('INVALID_INPUT');
       const limit = input.limit === undefined ? 250 : input.limit;
       if (!Number.isInteger(limit) || limit < 1 || limit > 250) throw new Error('INVALID_INPUT');
-      const stickers = getRuntime().stickers.list(input.accountId, input.query || '', limit);
-      return success(input, { accountId: input.accountId, collectionId: 'my-stickers', query: input.query || '', stickers });
+      const stickers = getRuntime().stickers.list(input.accountId, input.query || '', limit, input.packId?.trim());
+      return success(input, { accountId: input.accountId, collectionId: input.packId ? `pack:${input.packId.trim()}` : 'my-stickers', query: input.query || '', stickers });
     } catch (error) { return resultError(error, event, input); }
   });
   ipcMain.handle('stickers.delete', async (event, input) => {

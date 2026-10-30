@@ -107,6 +107,20 @@ contextBridge.exposeInMainWorld(
         close: (input) => invoke('stickers.preview.close', input),
         revoke: (input) => invoke('stickers.preview.revoke', input),
       }),
+      packs: Object.freeze({
+        list: (input) => invoke('stickerPacks.list', input),
+        get: (input) => invoke('stickerPacks.get', input),
+        save: (input) => invoke('stickerPacks.save', input),
+        delete: (input) => invoke('stickerPacks.delete', input),
+        drafts: Object.freeze({
+          list: (input) => invoke('stickerDrafts.list', input),
+          create: (input) => invoke('stickerDrafts.create', input),
+          get: (input) => invoke('stickerDrafts.get', input),
+          update: (input) => invoke('stickerDrafts.update', input),
+          discard: (input) => invoke('stickerDrafts.discard', input),
+          commit: (input) => invoke('stickerDrafts.commit', input),
+        }),
+      }),
     }),
     history: Object.freeze({
       list: (input) => invoke('messages.list', input),

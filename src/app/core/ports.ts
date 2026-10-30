@@ -25,9 +25,22 @@ import {
   PreviewReadRequest,
   PreviewStreamRef,
   StickerDeleteRequest,
+  StickerDraftCommitRequest,
+  StickerDraftCreateRequest,
+  StickerDraftDiscardRequest,
+  StickerDraftDTO,
+  StickerDraftGetRequest,
+  StickerDraftListSnapshot,
+  StickerDraftUpdateRequest,
   StickerImportRequest,
   StickerImportResult,
   StickerLibrarySnapshot,
+  StickerPackDTO,
+  StickerPackDeleteRequest,
+  StickerPackGetRequest,
+  StickerPackListRequest,
+  StickerPackListSnapshot,
+  StickerPackSaveRequest,
   StickerListRequest,
   StickerPreviewChunk,
   StickerPreviewCloseRequest,
@@ -177,6 +190,19 @@ export interface StickerLibraryPort {
   delete(input: StickerDeleteRequest): Promise<Result<void>>;
 }
 
+export interface StickerPackPort {
+  list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>>;
+  get(input: StickerPackGetRequest): Promise<Result<StickerPackDTO>>;
+  save(input: StickerPackSaveRequest): Promise<Result<StickerPackDTO>>;
+  delete(input: StickerPackDeleteRequest): Promise<Result<void>>;
+  listDrafts(input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>>;
+  createDraft(input: StickerDraftCreateRequest): Promise<Result<StickerDraftDTO>>;
+  getDraft(input: StickerDraftGetRequest): Promise<Result<StickerDraftDTO>>;
+  updateDraft(input: StickerDraftUpdateRequest): Promise<Result<StickerDraftDTO>>;
+  discardDraft(input: StickerDraftDiscardRequest): Promise<Result<void>>;
+  commitDraft(input: StickerDraftCommitRequest): Promise<Result<StickerPackDTO>>;
+}
+
 export interface StickerPreviewPort {
   get(input: StickerPreviewGetRequest): Promise<Result<StickerPreviewGrant>>;
   open(input: StickerPreviewOpenRequest): Promise<Result<StickerPreviewStreamRef>>;
@@ -200,4 +226,5 @@ export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewP
 export const MEDIA_PORT = new InjectionToken<MediaPort>('AtomicChat MediaPort');
 export const FILE_HISTORY_PORT = new InjectionToken<FileHistoryPort>('AtomicChat FileHistoryPort');
 export const STICKER_LIBRARY_PORT = new InjectionToken<StickerLibraryPort>('AtomicChat StickerLibraryPort');
+export const STICKER_PACK_PORT = new InjectionToken<StickerPackPort>('AtomicChat StickerPackPort');
 export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>('AtomicChat StickerPreviewPort');

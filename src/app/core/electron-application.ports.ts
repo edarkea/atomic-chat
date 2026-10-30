@@ -26,9 +26,22 @@ import {
   PreviewReadRequest,
   PreviewStreamRef,
   StickerDeleteRequest,
+  StickerDraftCommitRequest,
+  StickerDraftCreateRequest,
+  StickerDraftDiscardRequest,
+  StickerDraftDTO,
+  StickerDraftGetRequest,
+  StickerDraftListSnapshot,
+  StickerDraftUpdateRequest,
   StickerImportRequest,
   StickerImportResult,
   StickerLibrarySnapshot,
+  StickerPackDTO,
+  StickerPackDeleteRequest,
+  StickerPackGetRequest,
+  StickerPackListRequest,
+  StickerPackListSnapshot,
+  StickerPackSaveRequest,
   StickerListRequest,
   StickerPreviewChunk,
   StickerPreviewCloseRequest,
@@ -59,6 +72,7 @@ import {
   PreferencesPort,
   PreviewPort,
   StickerLibraryPort,
+  StickerPackPort,
   StickerPreviewPort,
 } from './ports';
 
@@ -319,6 +333,50 @@ export class ElectronStickerLibraryPort implements StickerLibraryPort {
   delete(input: StickerDeleteRequest): Promise<Result<void>> {
     const api = getAtomicChatApi();
     return api ? api.stickers.delete(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronStickerPackPort implements StickerPackPort {
+  list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.list(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  get(input: StickerPackGetRequest): Promise<Result<StickerPackDTO>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.get(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  save(input: StickerPackSaveRequest): Promise<Result<StickerPackDTO>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.save(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  delete(input: StickerPackDeleteRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.delete(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  listDrafts(input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.drafts.list(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  createDraft(input: StickerDraftCreateRequest): Promise<Result<StickerDraftDTO>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.drafts.create(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  getDraft(input: StickerDraftGetRequest): Promise<Result<StickerDraftDTO>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.drafts.get(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  updateDraft(input: StickerDraftUpdateRequest): Promise<Result<StickerDraftDTO>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.drafts.update(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  discardDraft(input: StickerDraftDiscardRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.drafts.discard(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  commitDraft(input: StickerDraftCommitRequest): Promise<Result<StickerPackDTO>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.packs.drafts.commit(input) : Promise.resolve(unavailable(input.requestId));
   }
 }
 

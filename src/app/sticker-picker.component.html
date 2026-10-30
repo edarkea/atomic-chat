@@ -7,6 +7,13 @@
       <strong>Mis stickers</strong>
       <button type="button" class="close" aria-label="Cerrar stickers" title="Cerrar" (click)="close()">×</button>
     </header>
+    <nav class="sticker-collections" aria-label="Colecciones de stickers">
+      <button type="button" [class.collection-active]="facade.selectedCollection() === 'my-stickers'" (click)="facade.selectCollection('my-stickers')">Mis stickers</button>
+      @for (pack of packFacade.packs(); track pack.packId) {
+        <button type="button" [class.collection-active]="facade.selectedCollection() === 'pack:' + pack.packId" (click)="selectPack(pack.packId)">{{ pack.name }}</button>
+      }
+      <button type="button" class="studio-link" aria-label="Abrir Sticker Studio" title="Abrir Sticker Studio" (click)="openStudio()">Studio</button>
+    </nav>
     <div class="sticker-toolbar">
       <input aria-label="Buscar stickers" placeholder="Buscar" [ngModel]="facade.query()" (ngModelChange)="facade.setQuery($event)" />
       <button type="button" class="import" (click)="facade.importSticker()">Importar PNG/JPEG</button>
@@ -31,3 +38,4 @@
     <small class="sticker-hint">Los stickers se guardan localmente. Seleccionar no envía mensajes.</small>
   </section>
 }
+@if (studioOpen()) { <app-sticker-studio [accountId]="accountId()" (closed)="closeStudio()" /> }

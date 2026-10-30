@@ -11,7 +11,8 @@ export class StickerLibraryFacade {
   readonly query = signal('');
   readonly state = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   readonly error = signal<string | null>(null);
-  readonly selectedCollection = signal<'my-stickers' | undefined>(undefined);
+  readonly selectedCollection = signal<StickerLibrarySnapshot['collectionId'] | undefined>(undefined);
+  readonly selectedPackId = signal<string | undefined>(undefined);
   readonly selectedSticker = signal<StickerRecord | undefined>(undefined);
   readonly stickers = signal<ReadonlyArray<StickerRecord>>([]);
   readonly packs = computed(() => [] as const);
@@ -27,6 +28,7 @@ export class StickerLibraryFacade {
       this.stickers.set([]);
       this.selectedSticker.set(undefined);
       this.selectedCollection.set(normalizedAccountId ? 'my-stickers' : undefined);
+      this.selectedPackId.set(undefined);
       this.query.set('');
       this.error.set(null);
     }
@@ -34,7 +36,8 @@ export class StickerLibraryFacade {
       this.state.set('idle');
       return;
     }
-    this.selectedCollection.set('my-stickers');
+    const packId = this.selectedPackId();
+    this.selectedCollection.set(packId ? `pack:${packId}` : 'my-stickers');
     this.state.set('loading');
     this.error.set(null);
     if (!this.port) {
@@ -42,7 +45,7 @@ export class StickerLibraryFacade {
       this.error.set('Los stickers locales no están disponibles.');
       return;
     }
-    const result = await this.port.list({ version: 1, requestId: createOpaqueId('stickers-list'), accountId: normalizedAccountId, query: this.query(), limit: 250 });
+    const result = await this.port.list({ version: 1, requestId: createOpaqueId('stickers-list'), accountId: normalizedAccountId, query: this.query(), limit: 250, ...(packId ? { packId } : {}) });
     if (!this.isCurrentContext(normalizedAccountId, current)) return;
     if (!result.ok) {
       this.state.set('error');
@@ -53,12 +56,17 @@ export class StickerLibraryFacade {
   }
 
   selectCollection(collectionId: 'my-stickers'): void {
+    this.selectedPackId.set(undefined);
     this.selectedCollection.set(collectionId);
     if (this.account()) void this.load(this.account());
   }
 
-  selectPack(_packId: string): void {
-    // E8.3 packages are intentionally outside E8.2.
+  selectPack(packId: string): void {
+    const normalized = packId.trim();
+    if (!normalized) return;
+    this.selectedPackId.set(normalized);
+    this.selectedCollection.set(`pack:${normalized}`);
+    if (this.account()) void this.load(this.account());
   }
 
   setQuery(value: string): void {
@@ -116,6 +124,7 @@ export class StickerLibraryFacade {
     this.stickers.set([]);
     this.selectedSticker.set(undefined);
     this.selectedCollection.set(undefined);
+    this.selectedPackId.set(undefined);
     this.state.set('idle');
     this.error.set(null);
   }

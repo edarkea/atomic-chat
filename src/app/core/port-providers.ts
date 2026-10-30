@@ -12,6 +12,7 @@ import {
   ElectronPreferencesPort,
   ElectronPreviewPort,
   ElectronStickerLibraryPort,
+  ElectronStickerPackPort,
   ElectronStickerPreviewPort,
 } from './electron-application.ports';
 import { ElectronXmppPort } from './electron-xmpp.port';
@@ -25,6 +26,7 @@ import {
   FILE_HISTORY_PORT,
   PREVIEW_PORT,
   STICKER_LIBRARY_PORT,
+  STICKER_PACK_PORT,
   STICKER_PREVIEW_PORT,
   MEDIA_PORT,
   HISTORY_PORT,
@@ -44,6 +46,7 @@ import {
   UnavailablePreferencesPort,
   UnavailablePreviewPort,
   UnavailableStickerLibraryPort,
+  UnavailableStickerPackPort,
   UnavailableStickerPreviewPort,
 } from './unavailable.ports';
 
@@ -132,6 +135,12 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronStickerLibraryPort, unavailable: UnavailableStickerLibraryPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronStickerLibraryPort, UnavailableStickerLibraryPort],
+  },
+  {
+    provide: STICKER_PACK_PORT,
+    useFactory: (electron: ElectronStickerPackPort, unavailable: UnavailableStickerPackPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronStickerPackPort, UnavailableStickerPackPort],
   },
   {
     provide: STICKER_PREVIEW_PORT,

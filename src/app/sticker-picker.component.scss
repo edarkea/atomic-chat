@@ -4,6 +4,10 @@
 .sticker-toggle:hover, .sticker-toggle:focus-visible { color: var(--atomic-green); outline: 2px solid var(--atomic-green); outline-offset: 2px; }
 .sticker-panel { background: var(--atomic-surface); border: 1px solid var(--atomic-separator); border-radius: 10px; bottom: 42px; box-shadow: 0 12px 32px rgb(0 0 0 / 35%); display: grid; gap: 10px; padding: 12px; position: absolute; right: 0; width: min(320px, calc(100vw - 24px)); z-index: 20; }
 header, .sticker-toolbar, .sticker-selection { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
+.sticker-collections { display: flex; gap: 5px; max-width: 100%; overflow-x: auto; }
+.sticker-collections button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--atomic-text-secondary); cursor: pointer; font-size: 11px; padding: 4px 5px; white-space: nowrap; }
+.sticker-collections button:hover, .sticker-collections button:focus-visible, .sticker-collections .collection-active { border-bottom-color: var(--atomic-green); color: var(--atomic-green); outline: 0; }
+.sticker-collections .studio-link { margin-left: auto; }
 .close { font-size: 20px; }
 .sticker-toolbar input { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-separator); color: var(--atomic-text); min-width: 0; padding: 6px 8px; width: 100%; }
 .import { color: var(--atomic-green); font-size: 11px; white-space: nowrap; }
