@@ -49,10 +49,14 @@ class PreviewGrantRegistry {
     this.grants = new Map();
     this.revoked = new Map();
     this.requests = new Map();
+    this.senderEpochs = new Map();
+    this.accountEpochs = new Map();
   }
 
   async get(senderId, input) {
     this.prune();
+    const senderEpoch = this.currentEpoch(this.senderEpochs, senderId);
+    const accountEpoch = this.currentEpoch(this.accountEpochs, input.accountId);
     const requestKey = `${senderId}:${input.requestId}`;
     const fingerprint = `${input.accountId}:${input.transferId}`;
     const previous = this.requests.get(requestKey);
@@ -93,6 +97,7 @@ class PreviewGrantRegistry {
         await handle.close().catch(() => undefined);
       }
       const image = inspectStaticImage(data, this.decoder);
+      this.assertGetStillAuthorized(senderId, input.accountId, senderEpoch, accountEpoch);
       this.assertGrantCapacity(senderId);
       const previewId = crypto.randomUUID();
       const grant = {
@@ -146,18 +151,30 @@ class PreviewGrantRegistry {
 
   async open(senderId, input) {
     const grant = this.authorizeGrant(senderId, input);
-    if (grant.streams.size >= 1) throw previewError('RESOURCE_CONSTRAINT', 'la previsualización ya tiene un stream abierto');
-    await this.assertGrantSource(grant);
+    if (grant.streams.size >= 1 || grant.opening)
+      throw previewError('RESOURCE_CONSTRAINT', 'la previsualización ya tiene un stream abierto');
+    const opening = { cancelled: false };
+    grant.opening = opening;
     let opened;
     let handle;
+    let published = false;
     try {
+      await this.assertGrantActive(grant);
+      await this.assertGrantSource(grant);
+      await this.assertGrantActive(grant);
       opened = await this.openGrantHandle(grant);
       handle = opened.handle;
+      opening.handle = handle;
+      opening.cleanupPath = opened.cleanupPath;
+      opening.cleanupDirectory = opened.cleanupDirectory;
+      await this.assertGrantActive(grant);
       const stats = await handle.stat();
+      await this.assertGrantActive(grant);
       if (process.platform !== 'win32' && !sameMetadata(grant.metadata, fileMetadata(stats)))
         throw previewError('STORAGE_FAILED', 'el archivo cambió');
       if (Number(stats.size) !== Number(grant.sizeBytes))
         throw previewError('STORAGE_FAILED', 'el tamaño del archivo cambió');
+      await this.assertGrantActive(grant);
       const streamId = crypto.randomUUID();
       grant.streams.set(streamId, {
         handle,
@@ -167,6 +184,8 @@ class PreviewGrantRegistry {
         sequence: 0,
         done: false,
       });
+      grant.opening = undefined;
+      published = true;
       return {
         previewId: grant.previewId,
         streamId,
@@ -177,6 +196,8 @@ class PreviewGrantRegistry {
       if (handle) await handle.close().catch(() => undefined);
       await this.removePrivateCopy(opened?.cleanupPath, opened?.cleanupDirectory);
       throw error;
+    } finally {
+      if (!published && grant.opening === opening) grant.opening = undefined;
     }
   }
 
@@ -197,7 +218,9 @@ class PreviewGrantRegistry {
   }
 
   async readChunk(grant, stream, input) {
+    await this.assertReadable(grant, stream, input.streamId);
     const before = await stream.handle.stat();
+    await this.assertReadable(grant, stream, input.streamId);
     if (!this.isStreamIdentityValid(grant, before)) {
       await this.revokeGrant(grant);
       throw previewError('STORAGE_FAILED', 'el archivo cambió durante la lectura');
@@ -215,7 +238,9 @@ class PreviewGrantRegistry {
       await this.revokeGrant(grant);
       throw previewError('STORAGE_FAILED', 'la lectura devolvió un tamaño inválido');
     }
+    await this.assertReadable(grant, stream, input.streamId);
     const after = await stream.handle.stat();
+    await this.assertReadable(grant, stream, input.streamId);
     if (!this.isStreamIdentityValid(grant, after)) {
       await this.revokeGrant(grant);
       throw previewError('STORAGE_FAILED', 'el archivo cambió durante la lectura');
@@ -239,9 +264,16 @@ class PreviewGrantRegistry {
   }
 
   async close(senderId, input) {
-    const grant = this.authorizeGrant(senderId, input, true);
+    const grant = this.grants.get(input.previewId);
+    if (!grant) {
+      if (this.isRevokedOwner(senderId, input)) return;
+      throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
+    }
+    if (grant.senderId !== senderId || grant.accountId !== input.accountId || grant.transferId !== input.transferId)
+      throw previewError('UNAUTHORIZED', 'la referencia no está autorizada');
     const stream = grant.streams.get(input.streamId);
     if (!stream) return;
+    stream.closed = true;
     grant.streams.delete(input.streamId);
     await stream.handle.close().catch(() => undefined);
     await this.removePrivateCopy(stream.cleanupPath, stream.cleanupDirectory);
@@ -266,17 +298,20 @@ class PreviewGrantRegistry {
   }
 
   clearSender(senderId) {
+    this.bumpEpoch(this.senderEpochs, senderId);
     for (const grant of [...this.grants.values()]) if (grant.senderId === senderId) void this.revokeGrant(grant);
     for (const key of this.requests.keys()) if (key.startsWith(`${senderId}:`)) this.requests.delete(key);
   }
 
   clearAccount(accountId) {
+    this.bumpEpoch(this.accountEpochs, accountId);
     for (const grant of [...this.grants.values()]) if (grant.accountId === accountId) void this.revokeGrant(grant);
   }
 
   async revokeGrant(grant) {
     if (grant.revoking) return;
     grant.revoking = true;
+    if (grant.opening) grant.opening.cancelled = true;
     if (grant.expiryTimer) clearTimeout(grant.expiryTimer);
     this.revoked.set(grant.previewId, {
       senderId: grant.senderId,
@@ -285,12 +320,66 @@ class PreviewGrantRegistry {
       expiresAtMs: Date.now() + TTL_MS,
     });
     this.grants.delete(grant.previewId);
+    const opening = grant.opening;
+    if (opening?.handle) await opening.handle.close().catch(() => undefined);
+    await this.removePrivateCopy(opening?.cleanupPath, opening?.cleanupDirectory);
     for (const stream of grant.streams.values()) {
       await stream.handle.close().catch(() => undefined);
       await this.removePrivateCopy(stream.cleanupPath, stream.cleanupDirectory);
     }
     grant.streams.clear();
+    grant.opening = undefined;
     while (this.revoked.size > MAX_REQUESTS) this.revoked.delete(this.revoked.keys().next().value);
+  }
+
+  async assertGrantActive(grant) {
+    if (
+      grant.revoking ||
+      this.grants.get(grant.previewId) !== grant ||
+      Date.now() >= grant.expiresAtMs
+    ) {
+      await this.revokeGrant(grant);
+      throw previewError('MEDIA_REFERENCE_REVOKED', 'la referencia expiró o fue revocada');
+    }
+  }
+
+  async assertReadable(grant, stream, streamId) {
+    if (
+      grant.revoking ||
+      this.grants.get(grant.previewId) !== grant ||
+      Date.now() >= grant.expiresAtMs
+    ) {
+      await this.revokeGrant(grant);
+      throw previewError('MEDIA_REFERENCE_REVOKED', 'la referencia expiró o fue revocada');
+    }
+    if (grant.streams.get(streamId) !== stream || stream.closed)
+      throw previewError('CONFLICT', 'el stream ya no está abierto');
+  }
+
+  isRevokedOwner(senderId, input) {
+    const revoked = this.revoked.get(input.previewId);
+    return Boolean(
+      revoked &&
+        revoked.senderId === senderId &&
+        revoked.accountId === input.accountId &&
+        revoked.transferId === input.transferId,
+    );
+  }
+
+  assertGetStillAuthorized(senderId, accountId, senderEpoch, accountEpoch) {
+    if (
+      this.currentEpoch(this.senderEpochs, senderId) !== senderEpoch ||
+      this.currentEpoch(this.accountEpochs, accountId) !== accountEpoch
+    )
+      throw previewError('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+  }
+
+  currentEpoch(epochs, key) {
+    return epochs.get(key) || 0;
+  }
+
+  bumpEpoch(epochs, key) {
+    epochs.set(key, this.currentEpoch(epochs, key) + 1);
   }
 
   authorizeGrant(senderId, input, allowExpired = false) {
