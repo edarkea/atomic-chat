@@ -97,6 +97,7 @@ contextBridge.exposeInMainWorld(
       get: (input) => invoke('preferences.get', input),
       update: (input) => invoke('preferences.update', input),
       reset: (input) => invoke('preferences.reset', input),
+      selectDownloadDirectory: () => invoke('preferences.selectDownloadDirectory'),
     }),
     subscribe: (listener) => {
       const handler = (_event, value) => listener(value);

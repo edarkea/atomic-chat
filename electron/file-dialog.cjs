@@ -1,3 +1,33 @@
+const path = require('node:path');
+
+function safeTransferFileName(value) {
+  const normalized = String(value || 'download').replaceAll('\\', '/');
+  const base = path.posix.basename(normalized);
+  const cleaned = base
+    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .trim();
+  return (cleaned || 'download').slice(0, 255);
+}
+
+async function nextAvailableDestination(directory, fileName, fsp) {
+  const extension = path.extname(fileName);
+  const stem = fileName.slice(0, fileName.length - extension.length);
+  for (let index = 0; index <= 10000; index += 1) {
+    const suffix = index === 0 ? '' : ` (${index})`;
+    const candidate = path.join(directory, `${stem}${suffix}${extension}`);
+    try {
+      await fsp.lstat(candidate);
+    } catch (cause) {
+      if (cause.code === 'ENOENT') return candidate;
+      throw cause;
+    }
+  }
+  const cause = new Error('download destination exhausted');
+  cause.code = 'STORAGE_FAILED';
+  throw cause;
+}
+
 function createFileDialogs({ dialog, fsp }) {
   async function selectFileDestination(offer) {
     while (true) {
@@ -32,7 +62,32 @@ function createFileDialogs({ dialog, fsp }) {
     return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
   }
 
-  return { selectFileDestination, selectFileSource };
+  async function selectDownloadDirectory() {
+    const result = await dialog.showOpenDialog({
+      title: 'Seleccionar carpeta de descargas',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+  }
+
+  async function selectDefaultFileDestination(directory, offer) {
+    const destinationDirectory = path.resolve(directory);
+    await fsp.mkdir(destinationDirectory, { recursive: true });
+    const information = await fsp.lstat(destinationDirectory);
+    if (!information.isDirectory() || information.isSymbolicLink()) {
+      const cause = new Error('download directory is not trusted');
+      cause.code = 'STORAGE_FAILED';
+      throw cause;
+    }
+    return nextAvailableDestination(destinationDirectory, safeTransferFileName(offer?.name), fsp);
+  }
+
+  return {
+    selectFileDestination,
+    selectFileSource,
+    selectDownloadDirectory,
+    selectDefaultFileDestination,
+  };
 }
 
 module.exports = { createFileDialogs };

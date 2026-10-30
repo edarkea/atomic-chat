@@ -39,6 +39,7 @@ describe('ThemeService', () => {
       autoLogin: false,
       hideClosedConversations: false,
       fileTransferTimeoutSeconds: 300,
+      downloadDirectory: '',
     };
     preferences = {
       get: vi.fn(async () => ok(stored)),
@@ -46,6 +47,7 @@ describe('ThemeService', () => {
         stored = { ...stored, ...changes };
         return ok(changes);
       }),
+      selectDownloadDirectory: vi.fn(async () => ok(null)),
       reset: vi.fn(async () => ok(stored)),
     };
     TestBed.configureTestingModule({
@@ -61,6 +63,7 @@ describe('ThemeService', () => {
       autoLogin: true,
       hideClosedConversations: false,
       fileTransferTimeoutSeconds: 300,
+      downloadDirectory: '',
     };
     const service = TestBed.inject(ThemeService);
 
@@ -133,6 +136,7 @@ describe('ThemeService', () => {
       autoLogin: true,
       hideClosedConversations: false,
       fileTransferTimeoutSeconds: 300,
+      downloadDirectory: '',
     };
     const service = TestBed.inject(ThemeService);
     await service.initialize();
@@ -153,6 +157,7 @@ describe('ThemeService', () => {
       autoLogin: false,
       hideClosedConversations: false,
       fileTransferTimeoutSeconds: 300,
+      downloadDirectory: '',
     };
     const service = TestBed.inject(ThemeService);
     await service.initialize();

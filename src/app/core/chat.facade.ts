@@ -81,6 +81,7 @@ export class ChatFacade {
     autoLogin: false,
     hideClosedConversations: false,
     fileTransferTimeoutSeconds: 300,
+    downloadDirectory: '',
   });
   readonly preferencesLoaded = signal(false);
   readonly profiles = signal<ReadonlyArray<XmppConnectionProfile>>([]);
@@ -523,6 +524,10 @@ export class ChatFacade {
     }
     this.error.set(result.error.message);
     return false;
+  }
+
+  selectDownloadDirectory(): Promise<Result<string | null>> {
+    return this.preferencesPort.selectDownloadDirectory();
   }
 
   async setPresence(mode: PresenceInput['mode'], status = ''): Promise<void> {

@@ -118,6 +118,7 @@ export interface AtomicChatApi {
       changes: Partial<Preferences>;
     }): Promise<Result<Partial<Preferences>>>;
     reset(input: { accountId: string }): Promise<Result<Preferences>>;
+    selectDownloadDirectory(): Promise<Result<string | null>>;
   };
   subscribe(listener: (event: unknown) => void): () => void;
 }

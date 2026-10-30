@@ -141,6 +141,16 @@
 .preference-help {
   margin: 14px 0 0;
 }
+.download-directory-control {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.download-directory-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .preference-error {
   color: var(--atomic-danger);
 }

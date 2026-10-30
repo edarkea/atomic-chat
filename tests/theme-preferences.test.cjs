@@ -3,7 +3,7 @@ const test = require('node:test');
 const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
 const { registerPreferenceHandlers } = require('../electron/ipc-preference-handlers.cjs');
 
-function setup() {
+function setup(defaultDownloadDirectory = '') {
   const handlers = new Map();
   const values = new Map();
   const calls = [];
@@ -28,6 +28,8 @@ function setup() {
     assertSender: () => undefined,
     getRuntime: () => ({ persistence, xmpp }),
     helpers,
+    selectDownloadDirectory: async () => defaultDownloadDirectory || null,
+    defaultDownloadDirectory,
   });
   return { handlers, calls, values };
 }
@@ -176,4 +178,19 @@ test('validates the conversation and transfer preference additions', () => {
       ),
     /INVALID_INPUT/,
   );
+});
+
+test('uses Documents/Downloads as the default and returns a selected directory', async () => {
+  const defaultDirectory = 'C:\\Users\\tester\\Documents\\Downloads';
+  const { handlers } = setup(defaultDirectory);
+  const preferences = handlers.get('preferences.get')({ sender: { id: 1 } }, { accountId: '' });
+  assert.equal(preferences.value.downloadDirectory, defaultDirectory);
+
+  const selected = await handlers.get('preferences.selectDownloadDirectory')({ sender: { id: 1 } });
+  assert.deepEqual(selected, {
+    ok: true,
+    value: defaultDirectory,
+    version: 1,
+    requestId: selected.requestId,
+  });
 });

@@ -156,6 +156,25 @@
               Regula el tiempo máximo sin completar una fase o recibir respuesta. No limita la
               duración total de archivos grandes que continúan avanzando.
             </p>
+            <div class="download-directory-control">
+              <label class="preference-field"
+                ><span>Carpeta de descargas</span
+                ><input
+                  class="download-directory-input"
+                  type="text"
+                  readonly
+                  [value]="model().preferences.downloadDirectory || 'Documents/Downloads'"
+                  aria-label="Carpeta de descargas"
+              /></label>
+              <button
+                type="button"
+                class="secondary"
+                [disabled]="model().downloadDirectorySelecting"
+                (click)="selectDownloadDirectory.emit()"
+              >
+                {{ model().downloadDirectorySelecting ? 'Abriendo…' : 'Cambiar carpeta' }}
+              </button>
+            </div>
           </section>
         }
       }

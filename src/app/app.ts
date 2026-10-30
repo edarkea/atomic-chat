@@ -101,6 +101,7 @@ export class App {
   protected readonly preferencesOpen = signal(false);
   protected readonly preferencesSaveState = signal<PreferencesSaveState>('idle');
   protected readonly preferencesError = signal<string | null>(null);
+  protected readonly downloadDirectorySelecting = signal(false);
   protected readonly totalUnread = computed(() => this.chat.unreadTotal?.() ?? 0);
   protected readonly conversationError = computed(() => this.files.error() || this.chat.error());
   protected readonly conversationSelection = signal<ConversationSelection>({
@@ -161,6 +162,7 @@ export class App {
   }));
   protected readonly preferencesDialogModel = computed<PreferencesDialogModel>(() => ({
     preferences: this.chat.preferences(),
+    downloadDirectorySelecting: this.downloadDirectorySelecting(),
     saveState: this.preferencesSaveState(),
     error: this.preferencesError(),
   }));
@@ -923,6 +925,22 @@ export class App {
     else {
       this.preferencesSaveState.set('error');
       this.preferencesError.set(this.chat.error() || 'No fue posible guardar la preferencia.');
+    }
+  }
+  protected async selectDownloadDirectory(): Promise<void> {
+    if (this.downloadDirectorySelecting()) return;
+    this.downloadDirectorySelecting.set(true);
+    this.preferencesError.set(null);
+    try {
+      const result = await this.chat.selectDownloadDirectory();
+      if (!result.ok) {
+        this.preferencesSaveState.set('error');
+        this.preferencesError.set(result.error.message);
+      } else if (result.value) {
+        await this.savePreferenceChange({ downloadDirectory: result.value });
+      }
+    } finally {
+      this.downloadDirectorySelecting.set(false);
     }
   }
   protected onUserScrollIntent(): void {

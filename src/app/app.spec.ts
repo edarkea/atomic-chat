@@ -27,6 +27,7 @@ function fakeFacade() {
       autoLogin: false,
       hideClosedConversations: false,
       fileTransferTimeoutSeconds: 300 as const,
+      downloadDirectory: '',
     }),
     error: signal<string | null>(null),
     profiles: signal([]),
@@ -281,6 +282,7 @@ describe('App composer integration', () => {
       autoLogin: false,
       hideClosedConversations: true,
       fileTransferTimeoutSeconds: 300,
+      downloadDirectory: '',
     });
     fixture.detectChanges();
     (fixture.componentInstance as any).dismissConversationByUser();

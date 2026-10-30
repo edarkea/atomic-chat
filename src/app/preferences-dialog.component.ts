@@ -19,6 +19,7 @@ export type PreferencesSaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export interface PreferencesDialogModel {
   readonly preferences: Preferences;
+  readonly downloadDirectorySelecting: boolean;
   readonly saveState: PreferencesSaveState;
   readonly error: string | null;
 }
@@ -48,6 +49,7 @@ export class PreferencesDialogComponent {
   protected readonly activeTab = signal<PreferencesTab>('general');
   readonly model = input.required<PreferencesDialogModel>();
   readonly preferenceChange = output<Partial<Preferences>>();
+  readonly selectDownloadDirectory = output<void>();
   readonly reset = output<void>();
   readonly cancelled = output<void>();
 

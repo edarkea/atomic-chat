@@ -136,6 +136,13 @@ export class ElectronPreferencesPort implements PreferencesPort {
     const api = getAtomicChatApi();
     return api ? api.preferences.reset(input) : Promise.resolve(unavailable('preferences-reset'));
   }
+
+  selectDownloadDirectory(): Promise<Result<string | null>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.preferences.selectDownloadDirectory()
+      : Promise.resolve(unavailable('preferences-select-download-directory'));
+  }
 }
 
 @Injectable({ providedIn: 'root' })

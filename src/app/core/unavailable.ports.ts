@@ -112,6 +112,7 @@ export class UnavailablePreferencesPort implements PreferencesPort {
         autoLogin: false,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
+        downloadDirectory: '',
       },
     });
   }
@@ -132,8 +133,13 @@ export class UnavailablePreferencesPort implements PreferencesPort {
         autoLogin: false,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
+        downloadDirectory: '',
       },
     });
+  }
+
+  selectDownloadDirectory(): Promise<Result<string | null>> {
+    return Promise.resolve(unsupported('preferences-select-download-directory'));
   }
 }
 

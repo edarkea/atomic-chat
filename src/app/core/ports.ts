@@ -97,6 +97,7 @@ export interface PreferencesPort {
     changes: Partial<Preferences>;
   }): Promise<Result<Partial<Preferences>>>;
   reset(input: { accountId: string }): Promise<Result<Preferences>>;
+  selectDownloadDirectory(): Promise<Result<string | null>>;
 }
 
 export interface CertificatePort {

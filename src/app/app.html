@@ -249,6 +249,7 @@
   <app-preferences-dialog
     [model]="preferencesDialogModel()"
     (preferenceChange)="savePreferenceChange($event)"
+    (selectDownloadDirectory)="selectDownloadDirectory()"
     (reset)="resetPreferences()"
     (cancelled)="closePreferences()"
   />

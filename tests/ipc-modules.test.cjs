@@ -42,6 +42,7 @@ const channels = [
   'conversations.list',
   'preferences.get',
   'preferences.update',
+  'preferences.selectDownloadDirectory',
   'preferences.reset',
   'connectionProfiles.list',
   'connectionProfiles.save',
@@ -146,6 +147,8 @@ function createHarness() {
     localFileActions,
     historySecurity,
     selectFileSource: async () => null,
+    selectDownloadDirectory: async () => null,
+    defaultDownloadDirectory: 'C:\\Users\\tester\\Documents\\Downloads',
   };
   registerIpcHandlers(options);
   return {
@@ -179,9 +182,9 @@ test('each domain registrar owns only its assigned channels', () => {
     [registerMucHandlers, channels.slice(10, 14)],
     [registerFileHandlers, channels.slice(14, 22)],
     [registerHistoryHandlers, channels.slice(22, 25)],
-    [registerPreferenceHandlers, channels.slice(25, 28)],
-    [registerConnectionProfileHandlers, channels.slice(28, 32)],
-    [registerAttentionHandlers, channels.slice(32, 34)],
+    [registerPreferenceHandlers, channels.slice(25, 29)],
+    [registerConnectionProfileHandlers, channels.slice(29, 33)],
+    [registerAttentionHandlers, channels.slice(33, 35)],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();

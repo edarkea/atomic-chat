@@ -1,4 +1,5 @@
 const { isTransferTimeout } = require('./transfer-timeout.cjs');
+const { isDownloadDirectory } = require('./download-directory.cjs');
 
 const preferenceDefaults = {
   theme: 'atomic',
@@ -6,6 +7,7 @@ const preferenceDefaults = {
   autoLogin: false,
   hideClosedConversations: false,
   fileTransferTimeoutSeconds: 300,
+  downloadDirectory: '',
 };
 const preferenceKeys = [
   'theme',
@@ -14,6 +16,7 @@ const preferenceKeys = [
   'autoLogin',
   'hideClosedConversations',
   'fileTransferTimeoutSeconds',
+  'downloadDirectory',
 ];
 const themeColorKeys = [
   'background',
@@ -441,6 +444,7 @@ function createIpcHelpers({
       autoLogin: (value) => typeof value === 'boolean',
       hideClosedConversations: (value) => typeof value === 'boolean',
       fileTransferTimeoutSeconds: isTransferTimeout,
+      downloadDirectory: (value) => value === '' || isDownloadDirectory(value),
     };
     for (const [key, value] of Object.entries(changes || {}))
       if (!allowed[key] || !allowed[key](value)) throw new Error('INVALID_INPUT');

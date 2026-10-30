@@ -602,6 +602,7 @@ describe('extracted Angular presentation components', () => {
                 autoLogin: false,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
+                downloadDirectory: '',
               },
               version: 1,
               requestId: 'test',
@@ -620,6 +621,7 @@ describe('extracted Angular presentation components', () => {
                 autoLogin: false,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
+                downloadDirectory: '',
               },
               version: 1,
               requestId: 'test',
@@ -636,8 +638,10 @@ describe('extracted Angular presentation components', () => {
         autoLogin: false,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
+        downloadDirectory: '',
       },
       saveState: 'idle',
+      downloadDirectorySelecting: false,
       error: null,
     });
     fixture.detectChanges();
@@ -652,5 +656,11 @@ describe('extracted Angular presentation components', () => {
       'Wasteland Terminal Claro',
       'Personalizado',
     ]);
+    (fixture.nativeElement.querySelector('[data-tab="transfers"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('.download-directory-input') as HTMLInputElement).value,
+    ).toBe('Documents/Downloads');
+    expect(fixture.nativeElement.textContent).toContain('Cambiar carpeta');
   });
 });

@@ -81,8 +81,10 @@ describe('ChatFacade roster reconciliation', () => {
           autoLogin: false,
           hideClosedConversations: false,
           fileTransferTimeoutSeconds: 300,
+          downloadDirectory: '',
         }),
       update: vi.fn(async () => ok({})),
+      selectDownloadDirectory: vi.fn(async () => ok(null)),
       reset: vi.fn(async () =>
         ok({
           theme: 'atomic',
@@ -90,6 +92,7 @@ describe('ChatFacade roster reconciliation', () => {
           autoLogin: false,
           hideClosedConversations: false,
           fileTransferTimeoutSeconds: 300,
+          downloadDirectory: '',
         }),
       ),
     };
@@ -164,6 +167,7 @@ describe('ChatFacade roster reconciliation', () => {
         autoLogin: true,
         hideClosedConversations: false,
         fileTransferTimeoutSeconds: 300,
+        downloadDirectory: '',
       }),
     );
     const facade = TestBed.inject(ChatFacade);
@@ -396,7 +400,10 @@ describe('ChatFacade roster reconciliation', () => {
         updatedAt: new Date().toISOString(),
       },
     });
-    expect(facade.contacts().find((contact) => contact.jid === 'keep@example.invalid')?.presence?.availability).toBe('available');
+    expect(
+      facade.contacts().find((contact) => contact.jid === 'keep@example.invalid')?.presence
+        ?.availability,
+    ).toBe('available');
 
     emitEvent({
       type: 'connection.stateChanged',
@@ -407,7 +414,10 @@ describe('ChatFacade roster reconciliation', () => {
         since: new Date().toISOString(),
       },
     });
-    expect(facade.contacts().find((contact) => contact.jid === 'keep@example.invalid')?.presence?.availability).toBe('unknown');
+    expect(
+      facade.contacts().find((contact) => contact.jid === 'keep@example.invalid')?.presence
+        ?.availability,
+    ).toBe('unknown');
   });
 
   it('counts a direct message for the selected conversation while the window is unfocused', async () => {
@@ -596,8 +606,10 @@ describe('ChatFacade login profile safety', () => {
                 autoLogin: true,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
+                downloadDirectory: '',
               }),
             update: async () => ok({}),
+            selectDownloadDirectory: async () => ok(null),
             reset: async () =>
               ok({
                 theme: 'atomic' as const,
@@ -605,6 +617,7 @@ describe('ChatFacade login profile safety', () => {
                 autoLogin: false,
                 hideClosedConversations: false,
                 fileTransferTimeoutSeconds: 300,
+                downloadDirectory: '',
               }),
           },
         },

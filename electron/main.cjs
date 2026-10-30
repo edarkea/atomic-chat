@@ -30,18 +30,31 @@ const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
+const {
+  DEFAULT_DOWNLOAD_DIRECTORY_NAME,
+  normalizeDownloadDirectory,
+} = require('./download-directory.cjs');
 
 const fs = require('node:fs');
 
 const atomicDataPath = app.isPackaged
   ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || app.getPath('appData'), 'AtomicChat-Data')
   : path.join(app.getPath('appData'), 'AtomicChat-Dev');
+const defaultDownloadDirectory = path.join(
+  app.getPath('documents'),
+  DEFAULT_DOWNLOAD_DIRECTORY_NAME,
+);
 
 fs.mkdirSync(atomicDataPath, { recursive: true });
 app.setPath('userData', atomicDataPath);
 const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
 const fileResourceLimiter = new TransferResourceLimiter();
-const { selectFileDestination, selectFileSource } = createFileDialogs({ dialog, fsp });
+const {
+  selectFileDestination,
+  selectFileSource,
+  selectDownloadDirectory,
+  selectDefaultFileDestination,
+} = createFileDialogs({ dialog, fsp });
 const localFileActions = new FileLocalActionRegistry({ shell });
 let runtime;
 const currentTransferTimeout = () => {
@@ -53,8 +66,20 @@ const currentTransferTimeout = () => {
     return normalizeTransferTimeout(undefined);
   }
 };
+const currentDownloadDirectory = () => {
+  try {
+    return normalizeDownloadDirectory(
+      runtime?.persistence.getPreferences('global', 'app')?.downloadDirectory,
+      defaultDownloadDirectory,
+    );
+  } catch {
+    return defaultDownloadDirectory;
+  }
+};
 const fileTransfers = new FileTransferCoordinator({
   selectDestination: selectFileDestination,
+  getDefaultDirectory: currentDownloadDirectory,
+  selectDefaultDestination: selectDefaultFileDestination,
   resourceLimiter: fileResourceLimiter,
   onCompleted: (record, direction) => localFileActions.register(record, direction),
   getTimeoutSeconds: currentTransferTimeout,
@@ -172,6 +197,8 @@ registerIpcHandlers({
   shell,
   historySecurity,
   selectFileSource,
+  selectDownloadDirectory,
+  defaultDownloadDirectory,
   applicationAttention,
 });
 app.whenReady().then(initializeRuntime);

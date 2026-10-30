@@ -26,6 +26,12 @@ class FileTransferCoordinator {
     this.ownedTemporaries = new Set();
     this.listeners = new Set();
     this.selectDestination = options.selectDestination || (async () => null);
+    this.getDefaultDirectory =
+      typeof options.getDefaultDirectory === 'function' ? options.getDefaultDirectory : undefined;
+    this.selectDefaultDestination =
+      typeof options.selectDefaultDestination === 'function'
+        ? options.selectDefaultDestination
+        : undefined;
     this.beforePublish = options.beforePublish;
     this.publish =
       options.publish || ((temporary, destination) => fsp.link(temporary, destination));
@@ -280,7 +286,11 @@ class FileTransferCoordinator {
     }
     record.accepting = true;
     try {
-      const destination = await this.selectDestination(record.offer);
+      const defaultDirectory = this.getDefaultDirectory?.();
+      const destination =
+        defaultDirectory && this.selectDefaultDestination
+          ? await this.selectDefaultDestination(defaultDirectory, record.offer)
+          : await this.selectDestination(record.offer);
       if (record.terminalRequested || record.state !== 'offered') return transferView(record);
       if (!destination) return this.reject(id, 'user_rejected');
       const destinationPath = path.resolve(String(destination));

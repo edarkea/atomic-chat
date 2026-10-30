@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { FileTransferCoordinator } = require('../electron/file-transfer.cjs');
 const { OutgoingFileTransferCoordinator } = require('../electron/file-transfer-outgoing.cjs');
+const { createFileDialogs } = require('../electron/file-dialog.cjs');
 
 function timerHarness() {
   const timers = [];
@@ -49,6 +50,46 @@ test('captures one validated timeout per incoming transfer', async () => {
 
   assert.equal(harness.timers[0].delay, 180000);
   await coordinator.reject('incoming-timeout');
+});
+
+test('uses the configured download directory without opening a destination prompt', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-downloads-'));
+  const downloadDirectory = path.join(root, 'Documents', 'Downloads');
+  const dialogs = createFileDialogs({ dialog: {}, fsp: fs });
+  const selected = await dialogs.selectDefaultFileDestination(downloadDirectory, {
+    name: '..\\safe.txt',
+  });
+  assert.equal(path.basename(selected), 'safe.txt');
+  await fs.writeFile(selected, 'existing');
+  const next = await dialogs.selectDefaultFileDestination(downloadDirectory, {
+    name: '..\\safe.txt',
+  });
+  assert.equal(path.basename(next), 'safe (1).txt');
+
+  const harness = timerHarness();
+  let prompted = false;
+  const coordinator = new FileTransferCoordinator({
+    getDefaultDirectory: () => downloadDirectory,
+    selectDestination: async () => {
+      prompted = true;
+      return null;
+    },
+    selectDefaultDestination: dialogs.selectDefaultFileDestination,
+    scheduleTimeout: harness.scheduleTimeout,
+    cancelTimeout: harness.cancelTimeout,
+  });
+  try {
+    coordinator.add({
+      ...incomingOffer(),
+      offer: { ...incomingOffer().offer, transferId: 'default-directory' },
+    });
+    await coordinator.accept('default-directory', 1);
+    assert.equal(prompted, false);
+    assert.match(coordinator.get('default-directory').destination, /Downloads/);
+    await coordinator.cancel('default-directory');
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test('uses the configured timeout for outgoing protocol phases without creating a total-duration limit', async () => {
