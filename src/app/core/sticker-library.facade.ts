@@ -8,6 +8,8 @@ export class StickerLibraryFacade {
   private readonly port = inject<StickerLibraryPort | null>(STICKER_LIBRARY_PORT, { optional: true });
   private readonly account = signal('');
   private readonly generation = signal(0);
+  private readonly allAccount = signal('');
+  private allGeneration = 0;
   readonly query = signal('');
   readonly state = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
   readonly error = signal<string | null>(null);
@@ -15,6 +17,7 @@ export class StickerLibraryFacade {
   readonly selectedPackId = signal<string | undefined>(undefined);
   readonly selectedSticker = signal<StickerRecord | undefined>(undefined);
   readonly stickers = signal<ReadonlyArray<StickerRecord>>([]);
+  readonly allStickers = signal<ReadonlyArray<StickerRecord>>([]);
   readonly packs = computed(() => [] as const);
   readonly selectedPack = computed(() => undefined);
 
@@ -26,6 +29,9 @@ export class StickerLibraryFacade {
     this.account.set(normalizedAccountId);
     if (switchedAccount) {
       this.stickers.set([]);
+      this.allStickers.set([]);
+      this.allGeneration += 1;
+      this.allAccount.set(normalizedAccountId);
       this.selectedSticker.set(undefined);
       this.selectedCollection.set(normalizedAccountId ? 'my-stickers' : undefined);
       this.selectedPackId.set(undefined);
@@ -53,6 +59,33 @@ export class StickerLibraryFacade {
       return;
     }
     this.applySnapshot(result);
+  }
+
+  async loadAll(accountId: string): Promise<void> {
+    const normalizedAccountId = accountId.trim();
+    const current = ++this.allGeneration;
+    this.allAccount.set(normalizedAccountId);
+    if (!normalizedAccountId) {
+      this.allStickers.set([]);
+      return;
+    }
+    if (!this.port) {
+      this.allStickers.set([]);
+      return;
+    }
+    try {
+      const result = await this.port.list({
+        version: 1,
+        requestId: createOpaqueId('stickers-all'),
+        accountId: normalizedAccountId,
+        query: '',
+        limit: 250,
+      });
+      if (this.allAccount() !== normalizedAccountId || this.allGeneration !== current) return;
+      this.allStickers.set(result.ok ? result.value.stickers : []);
+    } catch {
+      if (this.allAccount() === normalizedAccountId && this.allGeneration === current) this.allStickers.set([]);
+    }
   }
 
   selectCollection(collectionId: 'my-stickers'): void {
@@ -119,9 +152,12 @@ export class StickerLibraryFacade {
 
   reset(): void {
     this.generation.set(this.generation() + 1);
+    this.allGeneration += 1;
     this.account.set('');
+    this.allAccount.set('');
     this.query.set('');
     this.stickers.set([]);
+    this.allStickers.set([]);
     this.selectedSticker.set(undefined);
     this.selectedCollection.set(undefined);
     this.selectedPackId.set(undefined);

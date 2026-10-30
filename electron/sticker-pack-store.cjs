@@ -57,10 +57,14 @@ class StickerPackStore {
     if (!isAuthorized()) throw packError('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
   }
 
-  assertStickerOwnership(accountId, stickerIds) {
+  assertStickerOwnership(accountId, stickerIds, existingStickerIds = new Set()) {
     for (const stickerId of stickerIds) {
       const sticker = this.persistence.getSticker(accountId, stickerId);
-      if (!sticker) throw packError('UNAUTHORIZED', 'el sticker no pertenece a la cuenta');
+      if (!sticker || sticker.accountId !== accountId) throw packError('UNAUTHORIZED', 'el sticker no pertenece a la cuenta');
+      if (existingStickerIds.has(stickerId)) continue;
+      const asset = this.persistence.getStickerAsset(accountId, sticker.assetId);
+      if (!asset || asset.accountId !== accountId || asset.availability !== 'available' || sticker.availability !== 'available')
+        throw packError('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
     }
   }
 
@@ -86,7 +90,8 @@ class StickerPackStore {
     const stickerIds = normalizeStickerIds(input.stickerIds, false);
     return this.withAccountLock(input.accountId, () => {
       this.assertAuthorized(isAuthorized);
-      this.assertStickerOwnership(input.accountId, stickerIds);
+      const existing = input.packId ? this.persistence.getStickerPack(input.accountId, input.packId) : null;
+      this.assertStickerOwnership(input.accountId, stickerIds, new Set(existing?.stickerIds || []));
       if (input.packId && (!Number.isInteger(input.revision) || input.revision < 1)) throw packError('INVALID_INPUT', 'la revisión del paquete no es válida');
       if (!input.packId && input.revision !== 0) throw packError('CONFLICT', 'la revisión inicial del paquete no es válida');
       const now = new Date().toISOString();
@@ -156,7 +161,8 @@ class StickerPackStore {
     const stickerIds = normalizeStickerIds(input.stickerIds, true);
     return this.withAccountLock(input.accountId, () => {
       this.assertAuthorized(isAuthorized);
-      this.assertStickerOwnership(input.accountId, stickerIds);
+      const existingDraft = this.persistence.getStickerDraft(input.accountId, input.draftId);
+      this.assertStickerOwnership(input.accountId, stickerIds, new Set(existingDraft?.stickerIds || []));
       if (!Number.isInteger(input.revision) || input.revision < 1) throw packError('INVALID_INPUT', 'la revisión del borrador no es válida');
       const draft = this.persistence.updateStickerDraft({
         accountId: input.accountId, draftId: input.draftId, revision: input.revision,
@@ -184,7 +190,8 @@ class StickerPackStore {
       if (!draft || draft.revision !== revision || ['discarded', 'saved'].includes(draft.status)) throw packError('CONFLICT', 'el borrador no está disponible');
       const name = normalizeName(draft.name);
       const stickerIds = normalizeStickerIds(draft.stickerIds, false);
-      this.assertStickerOwnership(accountId, stickerIds);
+      const existingPack = draft.basePackId ? this.persistence.getStickerPack(accountId, draft.basePackId) : null;
+      this.assertStickerOwnership(accountId, stickerIds, new Set(existingPack?.stickerIds || []));
       const value = this.persistence.commitStickerDraft(
         accountId, draftId, revision, `sticker_pack_${crypto.randomUUID()}`, draft.basePackRevision, new Date().toISOString(),
       );

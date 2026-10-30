@@ -19,6 +19,7 @@ export class StickerPickerComponent {
   readonly facade = inject(StickerLibraryFacade);
   readonly packFacade = inject(StickerPackFacade);
   readonly studioOpen = signal(false);
+  private studioReturnFocus?: HTMLElement;
 
   constructor() {
     effect(() => {
@@ -31,8 +32,19 @@ export class StickerPickerComponent {
   toggle(): void { if (!this.disabled() && this.accountId()) this.open.update((value) => !value); }
   close(): void { this.open.set(false); }
   selectPack(packId: string): void { this.facade.selectPack(packId); }
-  openStudio(): void { this.studioOpen.set(true); }
-  closeStudio(): void { this.studioOpen.set(false); }
+  openStudio(event: Event): void {
+    this.studioReturnFocus = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined;
+    this.studioOpen.set(true);
+  }
+  closeStudio(): void {
+    this.studioOpen.set(false);
+    const returnFocus = this.studioReturnFocus;
+    this.studioReturnFocus = undefined;
+    queueMicrotask(() => returnFocus?.focus());
+  }
   async remove(event: Event, stickerId: string): Promise<void> { event.stopPropagation(); await this.facade.remove(stickerId); }
-  @HostListener('document:keydown.escape') onEscape(): void { if (this.open()) this.close(); }
+  @HostListener('document:keydown.escape', ['$event']) onEscape(event: Event): void {
+    if (this.studioOpen()) return;
+    if (this.open()) { event.preventDefault(); this.close(); }
+  }
 }

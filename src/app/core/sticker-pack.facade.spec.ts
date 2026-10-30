@@ -41,4 +41,73 @@ describe('StickerPackFacade', () => {
     expect(facade.packs()).toEqual([]);
     expect(facade.draft()).toBeUndefined();
   });
+
+  it('serializes draft mutations and advances the revision for each request', async () => {
+    let updateCount = 0;
+    let resolveFirst!: (value: Result<StickerDraftDTO>) => void;
+    const updateDraft: StickerPackPort['updateDraft'] = vi.fn((input) => {
+      updateCount += 1;
+      if (updateCount === 1) return new Promise<Result<StickerDraftDTO>>((resolve) => { resolveFirst = resolve; });
+      return Promise.resolve({ ok: true as const, version: 1 as const, requestId: input.requestId, value: { ...draft, name: input.name, revision: input.revision + 1 } });
+    });
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft: vi.fn(),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    const first = facade.updateDraft('Uno', '', ['s1']);
+    const second = facade.updateDraft('Dos', '', ['s1']);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(updateCount).toBe(1);
+    resolveFirst({ ok: true, version: 1, requestId: 'first', value: { ...draft, name: 'Uno', revision: 2 } });
+    await Promise.all([first, second]);
+    expect(updateCount).toBe(2);
+    expect(facade.draft()?.name).toBe('Dos');
+    expect(facade.draft()?.revision).toBe(3);
+  });
+
+  it('persists the form snapshot before committing it', async () => {
+    const calls: string[] = [];
+    const updateDraft: StickerPackPort['updateDraft'] = vi.fn(async (input) => {
+      calls.push(`update:${input.revision}`);
+      return { ok: true as const, version: 1 as const, requestId: input.requestId, value: { ...draft, name: input.name, description: input.description, revision: input.revision + 1 } };
+    });
+    const commitDraft: StickerPackPort['commitDraft'] = vi.fn(async (input) => {
+      calls.push(`commit:${input.revision}`);
+      return { ok: true as const, version: 1 as const, requestId: input.requestId, value: pack };
+    });
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(), updateDraft,
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(), discardDraft: vi.fn(), commitDraft,
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.commitDraft({ name: 'Final', description: 'persistido', stickerIds: ['s1'] });
+    expect(calls).toEqual(['update:1', 'commit:2']);
+  });
+
+  it('does not commit when persisting the form snapshot fails', async () => {
+    const commitDraft = vi.fn();
+    const port: StickerPackPort = {
+      list: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, packs: [] } })),
+      get: vi.fn(), save: vi.fn(), delete: vi.fn(),
+      listDrafts: vi.fn(async (input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> => ({ ok: true, version: 1, requestId: input.requestId, value: { accountId: input.accountId, drafts: [draft] } })),
+      createDraft: vi.fn(), getDraft: vi.fn(),
+      updateDraft: vi.fn(async (input) => ({ ok: false as const, version: 1 as const, requestId: input.requestId, error: { code: 'STORAGE_FAILED' as const, retryable: true, requestId: input.requestId, message: 'fail' } })),
+      discardDraft: vi.fn(), commitDraft,
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: STICKER_PACK_PORT, useValue: port }] });
+    const facade = TestBed.inject(StickerPackFacade);
+    await facade.load('alice');
+    await facade.commitDraft({ name: 'No confirmado', description: '', stickerIds: ['s1'] });
+    expect(commitDraft).not.toHaveBeenCalled();
+    expect(facade.draft()?.name).toBe('Borrador');
+  });
 });

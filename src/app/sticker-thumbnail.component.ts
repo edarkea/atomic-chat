@@ -34,11 +34,19 @@ const previewLoadLimiter = new PreviewLoadLimiter();
 @Component({
   selector: 'app-sticker-thumbnail',
   template: `
-    <button class="sticker-thumbnail" type="button" [class.sticker-thumbnail--large]="large()" (click)="activated.emit()" [attr.aria-label]="sticker().name || sticker().altText || 'Sticker'">
-      @if (url()) { <img [src]="url()" [alt]="sticker().altText || sticker().name || 'Sticker'" loading="lazy" /> }
-      @else if (loading()) { <span class="sticker-thumbnail__state" aria-label="Cargando sticker">…</span> }
-      @else { <span class="sticker-thumbnail__state" [attr.aria-label]="error() ? 'Sticker no disponible' : 'Sticker'">✦</span> }
-    </button>
+    @if (interactive()) {
+      <button class="sticker-thumbnail" type="button" [class.sticker-thumbnail--large]="large()" (click)="activated.emit()" [attr.aria-label]="sticker().name || sticker().altText || 'Sticker'">
+        @if (url()) { <img [src]="url()" [alt]="sticker().altText || sticker().name || 'Sticker'" loading="lazy" /> }
+        @else if (loading()) { <span class="sticker-thumbnail__state" aria-label="Cargando sticker">…</span> }
+        @else { <span class="sticker-thumbnail__state" [attr.aria-label]="error() ? 'Sticker no disponible' : 'Sticker'">✦</span> }
+      </button>
+    } @else {
+      <div class="sticker-thumbnail" aria-hidden="true" [class.sticker-thumbnail--large]="large()">
+        @if (url()) { <img [src]="url()" alt="" loading="lazy" /> }
+        @else if (loading()) { <span class="sticker-thumbnail__state">…</span> }
+        @else { <span class="sticker-thumbnail__state">✦</span> }
+      </div>
+    }
   `,
   styles: [`
     :host { display: block; min-width: 0; }
@@ -54,6 +62,7 @@ export class StickerThumbnailComponent implements AfterViewInit, OnDestroy {
   readonly accountId = input.required<string>();
   readonly sticker = input.required<StickerRecord>();
   readonly large = input(false);
+  readonly interactive = input(true);
   readonly activated = output<void>();
   readonly url = signal<string | null>(null);
   readonly loading = signal(false);

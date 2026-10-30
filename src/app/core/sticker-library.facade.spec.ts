@@ -66,4 +66,14 @@ describe('StickerLibraryFacade', () => {
     expect(list).toHaveBeenCalledTimes(1);
     expect(facade.stickers()).toEqual([]);
   });
+
+  it('loads the complete Studio library without changing picker search state', async () => {
+    await facade.load('alice');
+    facade.setQuery('one');
+    await facade.loadAll('alice');
+    expect(facade.query()).toBe('one');
+    expect(facade.stickers()).toEqual([sticker]);
+    expect(facade.allStickers()).toEqual([sticker]);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ query: '', limit: 250 }));
+  });
 });

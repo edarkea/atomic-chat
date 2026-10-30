@@ -12,7 +12,7 @@
       @for (pack of packFacade.packs(); track pack.packId) {
         <button type="button" [class.collection-active]="facade.selectedCollection() === 'pack:' + pack.packId" (click)="selectPack(pack.packId)">{{ pack.name }}</button>
       }
-      <button type="button" class="studio-link" aria-label="Abrir Sticker Studio" title="Abrir Sticker Studio" (click)="openStudio()">Studio</button>
+      <button type="button" class="studio-link" aria-label="Abrir Sticker Studio" title="Abrir Sticker Studio" (click)="openStudio($event)">Studio</button>
     </nav>
     <div class="sticker-toolbar">
       <input aria-label="Buscar stickers" placeholder="Buscar" [ngModel]="facade.query()" (ngModelChange)="facade.setQuery($event)" />
@@ -25,7 +25,9 @@
       @for (sticker of facade.stickers(); track sticker.stickerId) {
         <div class="sticker-entry">
           <app-sticker-thumbnail [accountId]="accountId()" [sticker]="sticker" (activated)="facade.selectSticker(sticker)" />
-          <button type="button" class="delete" [attr.aria-label]="'Eliminar ' + (sticker.name || 'sticker')" title="Eliminar sticker" (click)="remove($event, sticker.stickerId)">×</button>
+          @if (!facade.selectedPackId()) {
+            <button type="button" class="delete" [attr.aria-label]="'Eliminar ' + (sticker.name || 'sticker')" title="Eliminar sticker" (click)="remove($event, sticker.stickerId)">×</button>
+          }
         </div>
       }
     </div>

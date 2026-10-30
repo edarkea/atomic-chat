@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, effect, input, output, signal, untracked } from '@angular/core';
+import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, OnDestroy, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { StickerLibraryFacade } from './core/sticker-library.facade';
 import { StickerPackFacade } from './core/sticker-pack.facade';
-import { StickerRecord } from './core/domain';
+import { StickerDraftDTO, StickerRecord } from './core/domain';
 import { StickerThumbnailComponent } from './sticker-thumbnail.component';
 
 @Component({
@@ -12,13 +12,16 @@ import { StickerThumbnailComponent } from './sticker-thumbnail.component';
   styleUrls: ['./sticker-studio.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class StickerStudioComponent {
+export class StickerStudioComponent implements AfterViewInit, OnDestroy {
   readonly accountId = input.required<string>();
   readonly closed = output<void>();
   readonly name = signal('');
   readonly description = signal('');
   readonly library: StickerLibraryFacade;
   readonly packs: StickerPackFacade;
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private destroyed = false;
+  private focusTask?: ReturnType<typeof setTimeout>;
 
   constructor(library: StickerLibraryFacade, packs: StickerPackFacade) {
     this.library = library;
@@ -27,7 +30,7 @@ export class StickerStudioComponent {
       const accountId = this.accountId();
       if (!accountId) return;
       untracked(() => {
-        this.library.selectCollection('my-stickers');
+        void this.library.loadAll(accountId);
         void this.packs.load(accountId);
       });
     });
@@ -36,6 +39,7 @@ export class StickerStudioComponent {
       if (draft) {
         this.name.set(draft.name);
         this.description.set(draft.description || '');
+        this.scheduleFocus();
       }
     });
   }
@@ -62,15 +66,75 @@ export class StickerStudioComponent {
     [ids[index], ids[next]] = [ids[next], ids[index]];
     await this.packs.updateDraft(this.name(), this.description(), ids);
   }
-  async updateMetadata(): Promise<void> { await this.packs.updateDraft(this.name(), this.description(), this.packs.draft()?.stickerIds || []); }
-  async commit(): Promise<void> { await this.packs.commitDraft(); }
+  async commit(): Promise<void> {
+    const draft = this.packs.draft();
+    if (!draft) return;
+    await this.packs.commitDraft({ name: this.name(), description: this.description(), stickerIds: [...draft.stickerIds] });
+  }
   async discard(): Promise<void> { await this.packs.discardDraft(); }
   async deletePack(packId: string): Promise<void> {
     const pack = this.packs.packs().find((item) => item.packId === packId);
     if (pack && window.confirm(`¿Eliminar el paquete «${pack.name}»?`)) await this.packs.deletePack(pack);
   }
-  close(): void { this.closed.emit(); }
   hasSticker(stickerId: string): boolean { return this.packs.draft()?.stickerIds.includes(stickerId) || false; }
   indexOf(stickerId: string): number { return this.packs.draft()?.stickerIds.indexOf(stickerId) ?? -1; }
-  stickerById(stickerId: string): StickerRecord | undefined { return this.library.stickers().find((sticker) => sticker.stickerId === stickerId); }
+  stickerById(stickerId: string): StickerRecord | undefined { return this.library.allStickers().find((sticker) => sticker.stickerId === stickerId); }
+
+  ngAfterViewInit(): void { this.scheduleFocus(); }
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    if (this.focusTask) clearTimeout(this.focusTask);
+  }
+
+  onSubmit(event: SubmitEvent): void { event.preventDefault(); void this.commit(); }
+
+  async close(): Promise<void> {
+    if (this.isBusy()) return;
+    const draft = this.packs.draft();
+    if (draft && this.hasUnsavedChanges(draft)) {
+      const saved = await this.packs.updateDraft(this.name(), this.description(), [...draft.stickerIds]);
+      if (!saved) return;
+    }
+    this.closed.emit();
+  }
+
+  onDialogKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.close();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = this.focusableElements();
+    if (!focusable.length) { event.preventDefault(); return; }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+
+  isBusy(): boolean { return this.packs.state() === 'saving' || this.packs.state() === 'loading'; }
+
+  private focusFirst(): void {
+    if (this.destroyed) return;
+    this.focusableElements()[0]?.focus();
+  }
+
+  private scheduleFocus(): void {
+    if (this.focusTask) clearTimeout(this.focusTask);
+    this.focusTask = setTimeout(() => {
+      this.focusTask = undefined;
+      this.focusFirst();
+    });
+  }
+
+  private focusableElements(): HTMLElement[] {
+    return Array.from(this.host.nativeElement.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')) as HTMLElement[];
+  }
+
+  private hasUnsavedChanges(draft: StickerDraftDTO): boolean {
+    return draft.name !== this.name() || (draft.description || '') !== this.description();
+  }
 }

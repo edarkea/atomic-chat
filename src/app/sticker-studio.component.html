@@ -1,32 +1,32 @@
 <div class="studio-backdrop" role="presentation">
-  <section class="studio-dialog" role="dialog" aria-modal="true" aria-labelledby="sticker-studio-title">
+  <section class="studio-dialog" role="dialog" aria-modal="true" aria-labelledby="sticker-studio-title" tabindex="-1" (keydown)="onDialogKeydown($event)">
     <header class="studio-header">
       <div>
         <span class="eyebrow">E8.3 / LOCAL</span>
         <h2 id="sticker-studio-title">Sticker Studio</h2>
         <p>Organiza paquetes locales sin enviar stickers.</p>
       </div>
-      <button type="button" class="icon-button" aria-label="Cerrar Sticker Studio" title="Cerrar" (click)="close()">×</button>
+      <button type="button" class="icon-button" aria-label="Cerrar Sticker Studio" title="Cerrar" [disabled]="isBusy()" (click)="void close()">×</button>
     </header>
     <div class="studio-body">
       <aside class="pack-list" aria-label="Paquetes locales">
-        <div class="section-heading"><strong>Paquetes</strong><button type="button" class="secondary" (click)="createDraft()">Nuevo</button></div>
+        <div class="section-heading"><strong>Paquetes</strong><button type="button" class="secondary" [disabled]="isBusy()" (click)="void createDraft()">Nuevo</button></div>
         @if (!packs.packs().length) { <p class="muted">Aún no hay paquetes.</p> }
         @for (pack of packs.packs(); track pack.packId) {
           <div class="pack-row" [class.pack-row--selected]="packs.selectedPackId() === pack.packId">
-            <button type="button" class="pack-select" [attr.aria-label]="'Editar ' + pack.name" (click)="selectPack(pack.packId)">
+            <button type="button" class="pack-select" [disabled]="isBusy()" [attr.aria-label]="'Editar ' + pack.name" (click)="void selectPack(pack.packId)">
               <strong>{{ pack.name }}</strong><small>{{ pack.stickerIds.length }} stickers</small>
             </button>
-            <button type="button" class="icon-button icon-button--small" [attr.aria-label]="'Eliminar ' + pack.name" title="Eliminar paquete" (click)="deletePack(pack.packId)">×</button>
+            <button type="button" class="icon-button icon-button--small" [disabled]="isBusy()" [attr.aria-label]="'Eliminar ' + pack.name" title="Eliminar paquete" (click)="void deletePack(pack.packId)">×</button>
           </div>
         }
         @if (packs.drafts().length) { <p class="draft-note" role="status">Borrador recuperado.</p> }
       </aside>
       <main class="studio-editor">
         @if (packs.draft(); as draft) {
-          <form (submit)="$event.preventDefault(); commit()" aria-label="Editor de paquete">
-            <label>Nombre<input aria-label="Nombre del paquete" [ngModel]="name()" (ngModelChange)="name.set($event)" (blur)="updateMetadata()" name="pack-name" maxlength="128" autocomplete="off" required /></label>
-            <label>Descripción<textarea aria-label="Descripción del paquete" [ngModel]="description()" (ngModelChange)="description.set($event)" (blur)="updateMetadata()" name="pack-description" maxlength="1024" rows="2"></textarea></label>
+          <form (submit)="onSubmit($event)" aria-label="Editor de paquete">
+            <label>Nombre<input aria-label="Nombre del paquete" [disabled]="isBusy()" [ngModel]="name()" (ngModelChange)="name.set($event)" name="pack-name" maxlength="128" autocomplete="off" required /></label>
+            <label>Descripción<textarea aria-label="Descripción del paquete" [disabled]="isBusy()" [ngModel]="description()" (ngModelChange)="description.set($event)" name="pack-description" maxlength="1024" rows="2"></textarea></label>
             <section class="editor-section" aria-labelledby="selected-stickers-title">
               <div class="section-heading"><h3 id="selected-stickers-title">Contenido · {{ draft.stickerIds.length }}</h3><span class="muted">Orden persistente</span></div>
               @if (!draft.stickerIds.length) { <p class="muted">Agrega al menos un sticker.</p> }
@@ -37,9 +37,9 @@
                       <app-sticker-thumbnail [accountId]="accountId()" [sticker]="sticker" />
                       <span class="selected-name">{{ sticker.name || sticker.altText || 'Sticker' }}</span>
                       <div class="item-actions">
-                        <button type="button" [disabled]="position === 0" [attr.aria-label]="'Subir ' + (sticker.name || 'sticker')" (click)="moveSticker(stickerId, -1)">↑</button>
-                        <button type="button" [disabled]="position === draft.stickerIds.length - 1" [attr.aria-label]="'Bajar ' + (sticker.name || 'sticker')" (click)="moveSticker(stickerId, 1)">↓</button>
-                        <button type="button" [attr.aria-label]="'Quitar ' + (sticker.name || 'sticker')" (click)="removeSticker(stickerId)">×</button>
+                        <button type="button" [disabled]="isBusy() || position === 0" [attr.aria-label]="'Subir ' + (sticker.name || 'sticker')" (click)="void moveSticker(stickerId, -1)">↑</button>
+                        <button type="button" [disabled]="isBusy() || position === draft.stickerIds.length - 1" [attr.aria-label]="'Bajar ' + (sticker.name || 'sticker')" (click)="void moveSticker(stickerId, 1)">↓</button>
+                        <button type="button" [disabled]="isBusy()" [attr.aria-label]="'Quitar ' + (sticker.name || 'sticker')" (click)="void removeSticker(stickerId)">×</button>
                       </div>
                     </div>
                   }
@@ -49,22 +49,22 @@
             <section class="editor-section" aria-labelledby="available-stickers-title">
               <div class="section-heading"><h3 id="available-stickers-title">Mis stickers</h3><span class="muted">Selecciona para agregar</span></div>
               <div class="available-grid">
-                @for (sticker of library.stickers(); track sticker.stickerId) {
-                  <button type="button" class="available-item" [disabled]="hasSticker(sticker.stickerId)" [attr.aria-label]="'Agregar ' + (sticker.name || sticker.altText || 'sticker')" (click)="addSticker(sticker.stickerId)">
-                    <app-sticker-thumbnail [accountId]="accountId()" [sticker]="sticker" />
+                @for (sticker of library.allStickers(); track sticker.stickerId) {
+                  <button type="button" class="available-item" [disabled]="isBusy() || hasSticker(sticker.stickerId)" [attr.aria-label]="'Agregar ' + (sticker.name || sticker.altText || 'sticker')" (click)="void addSticker(sticker.stickerId)">
+                    <app-sticker-thumbnail [accountId]="accountId()" [sticker]="sticker" [interactive]="false" />
                   </button>
                 }
               </div>
             </section>
             @if (packs.error(); as error) { <p class="studio-error" role="alert">{{ error }}</p> }
             <div class="studio-actions">
-              <button type="button" class="secondary" [disabled]="packs.state() === 'saving'" (click)="discard()">Descartar</button>
+              <button type="button" class="secondary" [disabled]="isBusy()" (click)="void discard()">Descartar</button>
               <span></span>
-              <button type="submit" class="primary" [disabled]="packs.state() === 'saving' || !name().trim() || !draft.stickerIds.length">{{ packs.state() === 'saving' ? 'Guardando…' : 'Guardar paquete' }}</button>
+              <button type="submit" class="primary" [disabled]="isBusy() || !name().trim() || !draft.stickerIds.length">{{ isBusy() ? 'Guardando…' : 'Guardar paquete' }}</button>
             </div>
           </form>
         } @else {
-          <div class="studio-empty"><p>Selecciona un paquete para editarlo o crea uno nuevo.</p><button type="button" class="primary" (click)="createDraft()">Crear paquete</button></div>
+          <div class="studio-empty"><p>Selecciona un paquete para editarlo o crea uno nuevo.</p><button type="button" class="primary" [disabled]="isBusy()" (click)="void createDraft()">Crear paquete</button></div>
         }
       </main>
     </div>

@@ -78,6 +78,28 @@ test('E8.3-PACK-002B saves a new package through the direct pack contract', asyn
   await close(value);
 });
 
+test('E8.3-PACK-002C rejects invalid assets for new membership and preserves existing references', async () => {
+  const value = await fixture();
+  const otherSource = path.join(value.root, 'other.png');
+  await fs.writeFile(otherSource, Buffer.concat([png, Buffer.from([1])]));
+  const invalid = await value.stickers.importFile('alice@example.test', otherSource);
+  value.persistence.markStickerAssetAvailability('alice@example.test', invalid.asset.assetId, 'invalid');
+  await assert.rejects(() => value.packs.save({
+    accountId: 'alice@example.test', revision: 0, name: 'Inválido', description: '',
+    stickerIds: [invalid.sticker.stickerId],
+  }), { code: 'MEDIA_PREVIEW_UNAVAILABLE' });
+
+  const draft = await value.packs.createDraft('alice@example.test');
+  const valid = await value.packs.updateDraft({ accountId: 'alice@example.test', draftId: draft.draftId, revision: draft.revision, name: 'Válido', description: '', stickerIds: [value.first.sticker.stickerId] });
+  const pack = await value.packs.commitDraft('alice@example.test', draft.draftId, valid.revision);
+  value.persistence.markStickerAssetAvailability('alice@example.test', value.first.asset.assetId, 'invalid');
+  const edit = await value.packs.createDraft('alice@example.test', pack.packId);
+  const preserved = await value.packs.updateDraft({ accountId: 'alice@example.test', draftId: edit.draftId, revision: edit.revision, name: 'Conservado', description: '', stickerIds: edit.stickerIds });
+  const saved = await value.packs.commitDraft('alice@example.test', edit.draftId, preserved.revision);
+  assert.deepEqual(saved.stickerIds, [value.first.sticker.stickerId]);
+  await close(value);
+});
+
 test('E8.3-PACK-003 commits an ordered package and edits it with optimistic revision', async () => {
   const value = await fixture();
   const draft = await value.packs.createDraft('alice@example.test');
