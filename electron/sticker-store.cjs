@@ -201,6 +201,35 @@ class StickerStore {
     } finally { await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined); }
   }
 
+  async storeHistoricalAsset(accountId, data, expected, isAuthorized = () => true) {
+    return this.withAccountLock(accountId, async () => {
+      if (!Buffer.isBuffer(data) || data.length < 1 || data.length > MAX_STICKER_BYTES)
+        throw error('MEDIA_SIZE_EXCEEDED', 'el sticker supera 2 MiB');
+      const inspected = inspectStaticImage(data, this.nativeImage);
+      const hashValue = crypto.createHash('sha256').update(data).digest('hex');
+      if (hashValue !== String(expected.hashValue).toLowerCase() || inspected.mimeType !== expected.mimeType ||
+          data.length !== Number(expected.sizeBytes) || inspected.width !== Number(expected.width) || inspected.height !== Number(expected.height))
+        throw error('MEDIA_DECODE_FAILED', 'el contenido histórico no coincide con su metadata');
+      if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+      let asset = this.persistence.getStickerAssetByHash(accountId, hashValue);
+      if (asset?.availability === 'available' && await this.isManagedAssetValid(asset)) return asset;
+      if (!asset && this.persistence.sumStickerStorage(accountId) + data.length > MAX_STORAGE_BYTES_PER_ACCOUNT)
+        throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de almacenamiento de stickers');
+      const assetId = asset?.assetId || `sticker_asset_${crypto.randomUUID()}`;
+      const published = await this.publishBytes(assetId, data);
+      try {
+        if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+        asset = asset
+          ? this.persistence.updateStickerAsset({ accountId, assetId, mimeType: inspected.mimeType, sizeBytes: data.length, width: inspected.width, height: inspected.height, storageKey: published.storageKey, updatedAt: new Date().toISOString() })
+          : this.persistence.insertStickerAsset({ accountId, assetId, hashValue, mimeType: inspected.mimeType, sizeBytes: String(data.length), width: inspected.width, height: inspected.height, storageKey: published.storageKey, availability: 'available', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        return asset;
+      } catch (cause) {
+        await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+        throw cause?.code ? cause : error('STORAGE_FAILED', 'no se pudo guardar el asset histórico');
+      }
+    });
+  }
+
   async readAndInspect(sourcePath) {
     let initial;
     try { initial = await fsp.lstat(sourcePath); } catch { throw error('STORAGE_FAILED', 'el archivo no está disponible'); }
@@ -238,10 +267,106 @@ class StickerStore {
     });
   }
 
+  async saveHistoricalMessage(accountId, source, message, isAuthorized = () => true) {
+    return this.withAccountLock(accountId, async () => {
+      if (!source?.path || source.accountId !== accountId || !message?.refId)
+        throw error('INVALID_INPUT', 'la referencia histórica no es válida');
+      const stickerId = `sticker_saved_${crypto.createHash('sha256').update(message.refId).digest('hex').slice(0, 32)}`;
+      const existingSticker = this.persistence.getSticker(accountId, stickerId);
+      if (existingSticker) return this.publicSticker(existingSticker);
+      if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+      const inspected = await this.readAndInspect(source.path);
+      const hashValue = crypto.createHash('sha256').update(inspected.data).digest('hex');
+      if (hashValue !== String(message.hashValue).toLowerCase() || inspected.image.mimeType !== message.mimeType ||
+          inspected.data.length !== Number(message.sizeBytes) || inspected.image.width !== Number(message.width) ||
+          inspected.image.height !== Number(message.height))
+        throw error('MEDIA_DECODE_FAILED', 'el contenido histórico no coincide con su metadata');
+      if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+      const now = new Date().toISOString();
+      let asset = this.persistence.getStickerAssetByHash(accountId, hashValue);
+      let published;
+      if (!asset || asset.availability !== 'available') {
+        if (!asset && this.persistence.sumStickerStorage(accountId) + inspected.data.length > MAX_STORAGE_BYTES_PER_ACCOUNT)
+          throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de almacenamiento de stickers');
+        const assetId = asset?.assetId || `sticker_asset_${crypto.randomUUID()}`;
+        published = await this.publishBytes(assetId, inspected.data);
+        try {
+          if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+          asset = asset
+            ? this.persistence.updateStickerAsset({ accountId, assetId, mimeType: inspected.image.mimeType, sizeBytes: inspected.data.length, width: inspected.image.width, height: inspected.image.height, storageKey: published.storageKey, updatedAt: now })
+            : this.persistence.insertStickerAsset({ accountId, assetId, hashValue, mimeType: inspected.image.mimeType, sizeBytes: String(inspected.data.length), width: inspected.image.width, height: inspected.image.height, storageKey: published.storageKey, availability: 'available', createdAt: now, updatedAt: now });
+        } catch (cause) {
+          await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+          throw cause?.code ? cause : error('STORAGE_FAILED', 'no se pudo guardar el asset histórico');
+        }
+      }
+      if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+      try {
+        return this.publicSticker(this.persistence.insertStickerReference({
+          stickerId, accountId, assetId: asset.assetId, name: message.name || 'sticker',
+          altText: message.altText || message.fallbackText || 'sticker', sortKey: `${now}_${stickerId}`,
+          availability: 'available', createdAt: now, updatedAt: now,
+        }));
+      } catch (cause) {
+        if (published) await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+        throw cause?.code ? cause : error('STORAGE_FAILED', 'no se pudo guardar el sticker histórico');
+      }
+    });
+  }
+
   resolveForPreview(accountId, stickerId) {
     const sticker = this.persistence.getSticker(accountId, stickerId);
     const asset = sticker && this.persistence.getStickerAsset(accountId, sticker.assetId);
     if (!sticker || !asset || asset.availability !== 'available') throw error('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
+    return {
+      accountId, stickerId, assetId: asset.assetId, path: path.join(this.directory, asset.storageKey),
+      mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height, hashValue: asset.hashValue,
+    };
+  }
+
+  async resolveForSend(accountId, stickerId) {
+    const source = this.resolveForPreview(accountId, stickerId);
+    const inspected = await this.readAndInspect(source.path);
+    if (inspected.image.width === 512 && inspected.image.height === 512)
+      return { ...source, bytes: inspected.data };
+    if (!this.nativeImage || typeof this.nativeImage.createFromBuffer !== 'function')
+      throw error('MEDIA_DECODE_FAILED', 'no hay transformador de imágenes disponible');
+    const image = this.nativeImage.createFromBuffer(inspected.data);
+    if (!image || image.isEmpty() || typeof image.resize !== 'function')
+      throw error('MEDIA_DECODE_FAILED', 'no se pudo normalizar el sticker');
+    if (typeof image.getSize !== 'function' || typeof image.toBitmap !== 'function' || typeof this.nativeImage.createFromBitmap !== 'function')
+      throw error('MEDIA_DECODE_FAILED', 'no se pudo construir el lienzo del sticker');
+    const originalSize = image.getSize();
+    const scale = Math.min(512 / originalSize.width, 512 / originalSize.height);
+    const contentWidth = Math.max(1, Math.round(originalSize.width * scale));
+    const contentHeight = Math.max(1, Math.round(originalSize.height * scale));
+    const resized = image.resize({ width: contentWidth, height: contentHeight, quality: 'best' });
+    const bitmap = resized.toBitmap();
+    const canvas = Buffer.alloc(512 * 512 * 4);
+    const left = Math.floor((512 - contentWidth) / 2);
+    const top = Math.floor((512 - contentHeight) / 2);
+    for (let row = 0; row < contentHeight; row += 1)
+      bitmap.copy(canvas, ((top + row) * 512 + left) * 4, row * contentWidth * 4, (row + 1) * contentWidth * 4);
+    const square = this.nativeImage.createFromBitmap(canvas, { width: 512, height: 512, scaleFactor: 1 });
+    const bytes = inspected.image.mimeType === 'image/png' ? square.toPNG() : square.toJPEG(90);
+    const normalized = inspectStaticImage(bytes, this.nativeImage);
+    if (normalized.width !== 512 || normalized.height !== 512 || bytes.length > MAX_STICKER_BYTES)
+      throw error('MEDIA_DECODE_FAILED', 'la normalización no produjo un lienzo 512x512');
+    return {
+      ...source,
+      bytes,
+      mimeType: normalized.mimeType,
+      sizeBytes: String(bytes.length),
+      width: normalized.width,
+      height: normalized.height,
+      hashValue: crypto.createHash('sha256').update(bytes).digest('hex'),
+    };
+  }
+
+  resolveAssetForPreview(accountId, assetId, stickerId = assetId) {
+    const asset = this.persistence.getStickerAsset(accountId, assetId);
+    if (!asset || asset.availability !== 'available' || path.basename(asset.storageKey) !== asset.storageKey)
+      throw error('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
     return {
       accountId, stickerId, assetId: asset.assetId, path: path.join(this.directory, asset.storageKey),
       mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height, hashValue: asset.hashValue,

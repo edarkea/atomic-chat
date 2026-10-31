@@ -73,7 +73,27 @@ test('E8.5-XMPP-002 parses static incoming stickers and rejects non-static sourc
     ),
   );
   assert.throws(() => parseStickerMessage('bob@example.test', animated), { code: 'MEDIA_TYPE_UNSUPPORTED' });
-  assert.throws(() => validateHttpsUrl('https://cdn.example.test/sticker.png?token=secret'), { code: 'UNSUPPORTED' });
+  assert.equal(validateHttpsUrl('https://cdn.example.test/sticker.png?token=secret'), 'https://cdn.example.test/sticker.png?token=secret');
+  assert.throws(() => validateHttpsUrl('https://[::ffff:127.0.0.1]/sticker.png?token=secret'), { code: 'UNSUPPORTED' });
+});
+
+test('E8.5-XMPP-004 rejects a slot with duplicate put/get elements instead of guessing', async () => {
+  const adapter = mockAdapter();
+  adapter.session.iqCaller.request = async (request) => {
+    adapter.requests.push(request);
+    if (request.getChild('query', DISCO_ITEMS_NS)) return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_ITEMS_NS }));
+    if (request.getChild('query', DISCO_INFO_NS)) return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: UPLOAD_NS })));
+    return xml('iq', { type: 'result' }, xml('slot', { xmlns: UPLOAD_NS },
+      xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/a' }),
+      xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/b' }),
+      xml('get', { xmlns: UPLOAD_NS, url: 'https://cdn.example.test/a' }),
+    ));
+  };
+  const service = createXmppStickerService(adapter, { lookup: async () => [{ address: '203.0.113.10', family: 4 }] });
+  await assert.rejects(() => service.send(
+    { version: 1, requestId: 'r2', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm2', stickerId: 's1' },
+    async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+  ), { code: 'UNSUPPORTED' });
 });
 
 function mockAdapter() {
@@ -91,8 +111,11 @@ function mockAdapter() {
             xml('x', { xmlns: DATAFORM_NS }, xml('field', { var: 'max-file-size' }, xml('value', {}, '4'))),
           ));
         return xml('iq', { type: 'result' }, xml('slot', { xmlns: UPLOAD_NS },
-          xml('put', { xmlns: UPLOAD_NS }, 'https://upload.example.test/put', xml('header', { name: 'Authorization' }, 'Bearer test')),
-          xml('get', { xmlns: UPLOAD_NS }, 'https://cdn.example.test/sticker.png'),
+          xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/put' },
+            xml('header', { name: 'Authorization' }, 'Bearer test'),
+            xml('header', { name: 'Expires' }, 'one\r\n'),
+            xml('header', { name: 'Expires' }, 'two')),
+          xml('get', { xmlns: UPLOAD_NS, url: 'https://cdn.example.test/sticker.png' }),
         ));
       },
     },
@@ -115,18 +138,22 @@ function mockAdapter() {
 test('E8.5-XMPP-003 discovers HTTP Upload, validates the slot and sends one message', async () => {
   const adapter = mockAdapter();
   let putBody;
+  let putOptions;
   const service = createXmppStickerService(adapter, {
     lookup: async () => [{ address: '203.0.113.10' }],
     readFile: async () => Buffer.from('data'),
-    put: async (_url, body, headers) => { putBody = { body, headers }; return 201; },
+    put: async (_url, body, headers, options) => { putBody = { body, headers }; putOptions = options; return 201; },
   });
   const input = { version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1' };
   const capability = await service.discover(input);
   assert.equal(capability.serviceJid, 'example.test');
   assert.equal(capability.maxFileSize, 4);
-  const result = await service.send(input, async () => ({ ...sticker(), path: 'private', assetId: 'a1' }));
+  const states = [];
+  const result = await service.send(input, async () => ({ ...sticker(), path: 'private', assetId: 'a1' }), (state) => states.push(state.transportStatus));
   assert.equal(result.transportStatus, 'sent');
+  assert.deepEqual(states, ['uploading', 'sending']);
   assert.equal(putBody.body.toString(), 'data');
   assert.equal(putBody.headers.Authorization, 'Bearer test');
+  assert.deepEqual(putOptions.headerEntries, [['Authorization', 'Bearer test'], ['Expires', 'one'], ['Expires', 'two']]);
   assert.equal(adapter.sent.length, 1);
 });

@@ -387,6 +387,65 @@ class PersistenceStore {
           UPDATE schema_meta SET version = 12;
         `);
       }
+      const fallbackColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
+      if (fallbackColumns.length && !fallbackColumns.some((column) => column.name === 'fallback_text'))
+        this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN fallback_text TEXT');
+      const schemaAfterStickerMessages = this.database.prepare('SELECT version FROM schema_meta').get().version;
+      if (schemaAfterStickerMessages < 13) {
+        this.database.exec(`
+          CREATE TABLE sticker_message_refs_v13 (
+            ref_id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            client_message_id TEXT NOT NULL,
+            stanza_id TEXT,
+            origin_id TEXT,
+            direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
+            sender_jid TEXT NOT NULL,
+            source_sticker_id TEXT,
+            preview_sticker_id TEXT NOT NULL,
+            name TEXT,
+            alt_text TEXT,
+            fallback_text TEXT,
+            mime_type TEXT NOT NULL CHECK (mime_type IN ('image/png', 'image/jpeg')),
+            size_bytes TEXT NOT NULL,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            hash_algorithm TEXT NOT NULL CHECK (hash_algorithm IN ('sha-256')),
+            hash_value TEXT NOT NULL,
+            remote_url TEXT,
+            local_asset_id TEXT,
+            storage_key TEXT,
+            transport_status TEXT NOT NULL CHECK (transport_status IN ('queued', 'uploading', 'sending', 'sent', 'failed')),
+            availability TEXT NOT NULL CHECK (availability IN ('available', 'missing', 'invalid', 'blocked')),
+            error_code TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (account_id, direction, conversation_id, client_message_id, sender_jid),
+            FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+          );
+          INSERT INTO sticker_message_refs_v13(
+            ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
+            sender_jid, source_sticker_id, preview_sticker_id, name, alt_text, fallback_text, mime_type,
+            size_bytes, width, height, hash_algorithm, hash_value, remote_url, local_asset_id, storage_key,
+            transport_status, availability, error_code, created_at, updated_at
+          ) SELECT
+            ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
+            sender_jid, source_sticker_id, preview_sticker_id, name, alt_text, fallback_text, mime_type,
+            size_bytes, width, height, hash_algorithm, hash_value, remote_url, local_asset_id, storage_key,
+            transport_status, availability, error_code, created_at, updated_at
+          FROM sticker_message_refs;
+          DROP INDEX IF EXISTS idx_sticker_messages_account_conversation_created;
+          DROP INDEX IF EXISTS idx_sticker_messages_asset;
+          DROP TABLE sticker_message_refs;
+          ALTER TABLE sticker_message_refs_v13 RENAME TO sticker_message_refs;
+          CREATE INDEX idx_sticker_messages_account_conversation_created
+            ON sticker_message_refs(account_id, conversation_id, created_at, ref_id);
+          CREATE INDEX idx_sticker_messages_asset
+            ON sticker_message_refs(account_id, local_asset_id);
+          UPDATE schema_meta SET version = 13;
+        `);
+      }
       const stickerMessageColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
       if (stickerMessageColumns.length && !stickerMessageColumns.some((column) => column.name === 'fallback_text'))
         this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN fallback_text TEXT');
@@ -898,7 +957,7 @@ class PersistenceStore {
     ).get(accountId, refId));
   }
 
-  getStickerMessageRefByClientMessageId(accountId, clientMessageId) {
+  getStickerMessageRefByClientMessageId(accountId, clientMessageId, conversationId, direction = 'outgoing', senderJid = accountId) {
     return this.stickerMessageFromRow(this.database.prepare(
       `SELECT ref_id AS refId, preview_sticker_id AS previewStickerId, account_id AS accountId,
         conversation_id AS conversationId, client_message_id AS clientMessageId, stanza_id AS stanzaId,
@@ -907,8 +966,9 @@ class PersistenceStore {
         hash_algorithm AS hashAlgorithm, hash_value AS hashValue, remote_url AS remoteUrl,
         local_asset_id AS localAssetId, storage_key AS storageKey, transport_status AS transportStatus,
         availability, error_code AS errorCode, created_at AS createdAt, updated_at AS updatedAt
-       FROM sticker_message_refs WHERE account_id = ? AND client_message_id = ?`,
-    ).get(accountId, clientMessageId));
+       FROM sticker_message_refs WHERE account_id = ? AND client_message_id = ? AND direction = ?
+         AND conversation_id = ? AND sender_jid = ?`,
+    ).get(accountId, clientMessageId, direction, conversationId, senderJid));
   }
 
   upsertStickerMessageRef(record) {
@@ -925,7 +985,7 @@ class PersistenceStore {
         @senderJid, @sourceStickerId, @previewStickerId, @name, @altText, @fallbackText, @mimeType, @sizeBytes,
         @width, @height, @hashAlgorithm, @hashValue, @remoteUrl, @localAssetId, @storageKey,
         @transportStatus, @availability, @errorCode, @createdAt, @updatedAt
-      ) ON CONFLICT(account_id, client_message_id) DO UPDATE SET
+      ) ON CONFLICT(ref_id) DO UPDATE SET
         stanza_id = excluded.stanza_id,
         origin_id = excluded.origin_id,
         direction = excluded.direction,
@@ -969,6 +1029,22 @@ class PersistenceStore {
       `UPDATE sticker_message_refs SET local_asset_id = ?, storage_key = ?, availability = ?, error_code = NULL, updated_at = ?
        WHERE account_id = ? AND ref_id = ?`,
     ).run(changes.localAssetId, changes.storageKey, changes.availability, changes.updatedAt, accountId, refId);
+    return this.getStickerMessageRef(accountId, refId);
+  }
+
+  markStickerMessageFailed(accountId, refId, errorCode, updatedAt) {
+    this.database.prepare(
+      `UPDATE sticker_message_refs SET transport_status = 'failed', error_code = ?, updated_at = ?
+       WHERE account_id = ? AND ref_id = ?`,
+    ).run(errorCode || 'STORAGE_FAILED', updatedAt, accountId, refId);
+    return this.getStickerMessageRef(accountId, refId);
+  }
+
+  markStickerMessageUnavailable(accountId, refId, errorCode, updatedAt) {
+    this.database.prepare(
+      `UPDATE sticker_message_refs SET availability = 'missing', error_code = ?, updated_at = ?
+       WHERE account_id = ? AND ref_id = ?`,
+    ).run(errorCode || 'MEDIA_PREVIEW_UNAVAILABLE', updatedAt, accountId, refId);
     return this.getStickerMessageRef(accountId, refId);
   }
 
@@ -1074,6 +1150,15 @@ class PersistenceStore {
     if (!['pending', 'available', 'missing', 'invalid', 'blocked'].includes(availability)) throw new Error('INVALID_INPUT');
     this.database.prepare('UPDATE sticker_assets SET availability = ?, updated_at = ? WHERE account_id = ? AND asset_id = ?')
       .run(availability, new Date().toISOString(), accountId, assetId);
+  }
+
+  updateStickerAsset(record) {
+    this.database.prepare(
+      `UPDATE sticker_assets SET mime_type = ?, size_bytes = ?, width = ?, height = ?, storage_key = ?,
+         availability = 'available', orphaned_at = NULL, updated_at = ?
+       WHERE account_id = ? AND asset_id = ?`,
+    ).run(record.mimeType, String(record.sizeBytes), record.width, record.height, record.storageKey, record.updatedAt, record.accountId, record.assetId);
+    return this.getStickerAsset(record.accountId, record.assetId);
   }
 
   listStickerAssets(accountId) {

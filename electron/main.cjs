@@ -208,6 +208,22 @@ function attachEventSources() {
       try {
         const persisted = runtime.stickerMessages.save(event.payload);
         eventRouter.forwardXmppEvent({ type: event.type, payload: persisted });
+        const accountId = persisted.accountId;
+        const generation = runtime.xmpp.sessionGenerations.get(accountId) || 0;
+        const isAuthorizedSource = () =>
+          runtime.xmpp.sessionGenerations.get(accountId) === generation &&
+          runtime.xmpp.isStickerSourceAuthorized(accountId, persisted.senderJid);
+        if (isAuthorizedSource()) {
+          void runtime.stickerMessages.load(accountId, persisted.refId, isAuthorizedSource)
+            .then((loaded) => eventRouter.forwardXmppEvent({ type: 'sticker.stateChanged', payload: loaded }))
+            .catch((error) => {
+              if (error?.code === 'UNAUTHORIZED') return;
+              const failed = runtime.persistence.markStickerMessageUnavailable(
+                accountId, persisted.refId, error?.code || 'MEDIA_PREVIEW_UNAVAILABLE', new Date().toISOString(),
+              );
+              if (failed) eventRouter.forwardXmppEvent({ type: 'sticker.stateChanged', payload: runtime.stickerMessages.publicRef(failed) });
+            });
+        }
       } catch (error) {
         console.error('[STICKER] Could not save incoming sticker:', error?.message || 'STORAGE_FAILED');
       }

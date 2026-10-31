@@ -4,8 +4,8 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const https = require('node:https');
 const dns = require('node:dns').promises;
-const net = require('node:net');
 const { inspectStaticImage } = require('./preview-image.cjs');
+const { isPrivateAddress, validateHttpsUrl } = require('./xmpp-stickers.cjs');
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -16,33 +16,15 @@ function storeError(code, message) {
 }
 
 function validHttps(value) {
-  let url;
-  try { url = new URL(String(value)); } catch { throw storeError('UNSUPPORTED', 'la fuente remota no es válida'); }
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash)
-    throw storeError('UNSUPPORTED', 'la fuente remota no es segura');
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd') ||
-      (net.isIP(host) === 4 && (() => {
-        const parts = host.split('.').map(Number);
-        return parts[0] === 10 || parts[0] === 127 || (parts[0] === 169 && parts[1] === 254) ||
-          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168);
-      })()))
-    throw storeError('UNSUPPORTED', 'la fuente remota no es segura');
-  return url;
+  try { return new URL(validateHttpsUrl(value)); }
+  catch (cause) { throw storeError(cause?.code || 'UNSUPPORTED', 'la fuente remota no es segura'); }
 }
 
 async function downloadHttps(url, options = {}) {
   const target = validHttps(url);
   const addresses = await (options.lookup || dns.lookup)(target.hostname, { all: true });
-  if (!addresses?.length || addresses.some((entry) => {
-    const address = String(entry.address || '').toLowerCase();
-    return address === 'localhost' || address === '::1' || address.startsWith('fe80:') || address.startsWith('fc') || address.startsWith('fd') ||
-      (net.isIP(address) === 4 && (() => {
-        const parts = address.split('.').map(Number);
-        return parts[0] === 10 || parts[0] === 127 || (parts[0] === 169 && parts[1] === 254) ||
-          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168);
-      })());
-  })) throw storeError('UNSUPPORTED', 'la fuente remota no es segura');
+  if (!addresses?.length || addresses.some((entry) => isPrivateAddress(entry.address)))
+    throw storeError('UNSUPPORTED', 'la fuente remota no es segura');
   const selected = addresses[0];
   return new Promise((resolve, reject) => {
     const request = https.get(target, {
@@ -87,6 +69,8 @@ class StickerMessageStore {
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     try { fs.chmodSync(this.directory, 0o700); } catch { /* Windows ACLs are inherited. */ }
     this.download = options.download || downloadHttps;
+    this.assetStore = options.assetStore;
+    this.stickerStore = options.stickerStore;
     this.locks = new Map();
   }
 
@@ -122,6 +106,17 @@ class StickerMessageStore {
       const hashValue = crypto.createHash('sha256').update(bytes).digest('hex');
       if (image.mimeType !== current.mimeType || String(bytes.length) !== String(current.sizeBytes) || image.width !== current.width || image.height !== current.height || hashValue !== current.hashValue)
         throw storeError('MEDIA_DECODE_FAILED', 'el contenido remoto no coincide con la metadata');
+      if (this.stickerStore) {
+        const asset = await this.stickerStore.storeHistoricalAsset(accountId, bytes, {
+          mimeType: current.mimeType, sizeBytes: current.sizeBytes, width: current.width, height: current.height, hashValue: current.hashValue,
+        }, isAuthorized);
+        const updated = this.persistence.markStickerMessageAvailable(accountId, refId, {
+          storageKey: asset.storageKey, localAssetId: asset.assetId, availability: 'available', updatedAt: new Date().toISOString(),
+        });
+        if (current.storageKey && path.basename(current.storageKey) === current.storageKey)
+          await fsp.rm(path.join(this.directory, current.storageKey), { force: true }).catch(() => undefined);
+        return this.publicRef(updated);
+      }
       const storageKey = `${current.refId}_${crypto.randomUUID()}.bin`;
       const target = path.join(this.directory, storageKey);
       const temporaryDirectory = await fsp.mkdtemp(path.join(this.directory, '.tmp-'));
@@ -153,7 +148,12 @@ class StickerMessageStore {
     const prefix = 'message:';
     if (typeof previewId !== 'string' || !previewId.startsWith(prefix)) throw storeError('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
     const ref = this.persistence.getStickerMessageRef(accountId, previewId.slice(prefix.length));
-    if (!ref || ref.availability !== 'available' || !ref.storageKey || path.basename(ref.storageKey) !== ref.storageKey)
+    if (!ref || ref.availability !== 'available')
+      throw storeError('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
+    if (ref.localAssetId && this.assetStore) {
+      try { return this.assetStore.resolveAssetForPreview(accountId, ref.localAssetId, previewId); } catch { /* fall through to historical bytes */ }
+    }
+    if (!ref.storageKey || path.basename(ref.storageKey) !== ref.storageKey)
       throw storeError('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no está disponible');
     return {
       accountId,

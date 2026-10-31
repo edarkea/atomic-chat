@@ -166,21 +166,40 @@ function parseStickerMessage(accountId, stanza, direction = 'incoming') {
 
 function isPrivateAddress(address) {
   const value = String(address || '').toLowerCase().replace(/^\[|\]$/g, '');
-  if (value === 'localhost' || value === '::1' || value.startsWith('fe80:') || value.startsWith('fc') || value.startsWith('fd')) return true;
-  if (net.isIP(value) === 6) return false;
-  const parts = value.split('.').map(Number);
-  return parts.length === 4 && parts.every((part) => Number.isInteger(part)) && (
-    parts[0] === 10 || parts[0] === 127 || (parts[0] === 169 && parts[1] === 254) ||
-    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-    (parts[0] === 192 && parts[1] === 168)
-  );
+  if (value === 'localhost') return true;
+  if (net.isIP(value) === 4) {
+    const parts = value.split('.').map(Number);
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
+      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && (parts[1] === 0 || parts[1] === 168)) ||
+      (parts[0] === 198 && parts[1] === 18) ||
+      parts[0] >= 224;
+  }
+  if (net.isIP(value) !== 6) return false;
+  if (value === '::' || value === '::1' || value.startsWith('fe80:') || value.startsWith('fc') ||
+      value.startsWith('fd') || value.startsWith('ff')) return true;
+  const dottedMapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(value);
+  if (dottedMapped) return isPrivateAddress(dottedMapped[1]);
+  const mappedIndex = value.lastIndexOf(':ffff:');
+  if (mappedIndex >= 0) {
+    const tail = value.slice(mappedIndex + 6).split(':');
+    if (tail.length === 2 && tail.every((part) => /^[0-9a-f]{1,4}$/.test(part))) {
+      const first = Number.parseInt(tail[0], 16);
+      const second = Number.parseInt(tail[1], 16);
+      return isPrivateAddress(`${first >>> 8}.${first & 255}.${second >>> 8}.${second & 255}`);
+    }
+  }
+  return false;
 }
 
 function validateHttpsUrl(value) {
   let url;
   try { url = new URL(String(value)); } catch { throw stickerError('UNSUPPORTED', 'la fuente remota no es válida', 'sticker.url'); }
-  if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search)
-    throw stickerError('UNSUPPORTED', 'solo se permiten fuentes HTTPS sin credenciales ni tokens', 'sticker.url');
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash)
+    throw stickerError('UNSUPPORTED', 'solo se permiten fuentes HTTPS seguras', 'sticker.url');
   if (isPrivateAddress(url.hostname)) throw stickerError('UNSUPPORTED', 'la fuente remota no está permitida', 'sticker.url');
   return url.toString();
 }
@@ -197,9 +216,16 @@ async function assertPublicHost(url, lookup = dns.lookup) {
 function putHttps(url, body, headers, options = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
+    const requestHeaders = {};
+    for (const [name, value] of options.headerEntries || Object.entries(headers)) {
+      if (!Object.hasOwn(requestHeaders, name)) requestHeaders[name] = value;
+      else requestHeaders[name] = Array.isArray(requestHeaders[name]) ? [...requestHeaders[name], value] : [requestHeaders[name], value];
+    }
+    requestHeaders['Content-Type'] = headers['Content-Type'];
+    requestHeaders['Content-Length'] = String(body.length);
     const request = https.request(target, {
       method: 'PUT',
-      headers: { ...headers, 'Content-Length': String(body.length) },
+      headers: requestHeaders,
       timeout: options.timeoutMs || 15000,
       rejectUnauthorized: true,
       ...(options.lookup ? { lookup: options.lookup } : {}),
@@ -269,16 +295,25 @@ function createXmppStickerService(adapter, options = {}) {
     )), 10000, 'TIMEOUT', 'slot timeout');
     current(accountId, session, generation);
     const slot = response?.getChild('slot', UPLOAD_NS);
-    const putElement = slot?.getChild('put', UPLOAD_NS);
-    const getElement = slot?.getChild('get', UPLOAD_NS);
-    const putUrl = putElement?.getText();
-    const getUrl = getElement?.getText();
-    if (response?.attrs?.type !== 'result' || !putUrl || !getUrl) throw stickerError('UNSUPPORTED', 'el slot HTTP Upload no es válido', 'sticker.slot');
+    const puts = slot?.getChildren('put', UPLOAD_NS) || [];
+    const gets = slot?.getChildren('get', UPLOAD_NS) || [];
+    const putElement = puts.length === 1 ? puts[0] : undefined;
+    const getElement = gets.length === 1 ? gets[0] : undefined;
+    const putUrl = putElement?.attrs?.url;
+    const getUrl = getElement?.attrs?.url;
+    if (response?.attrs?.type !== 'result' || puts.length !== 1 || gets.length !== 1 || !putUrl || !getUrl)
+      throw stickerError('UNSUPPORTED', 'el slot HTTP Upload no es válido', 'sticker.slot');
     const headers = {};
+    const headerEntries = [];
     for (const header of putElement.getChildren('header')) {
       const name = String(header.attrs?.name || '').trim();
       const content = String(header.getText() || '').replace(/[\r\n]/g, '');
-      if (['authorization', 'cookie', 'expires'].includes(name.toLowerCase()) && name && content) headers[name] = content;
+      const lowerName = name.toLowerCase();
+      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) ||
+          !['authorization', 'cookie', 'expires'].includes(lowerName) || !content) continue;
+      headerEntries.push([name, content]);
+      if (!Object.hasOwn(headers, name)) headers[name] = content;
+      else headers[name] = Array.isArray(headers[name]) ? [...headers[name], content] : [headers[name], content];
     }
     const normalizedPut = validateHttpsUrl(putUrl);
     const normalizedGet = validateHttpsUrl(getUrl);
@@ -289,6 +324,7 @@ function createXmppStickerService(adapter, options = {}) {
       putUrl: normalizedPut,
       getUrl: normalizedGet,
       headers,
+      headerEntries,
       lookup: (_hostname, _options, callback) => callback(null, selected.address, selected.family),
     };
   }
@@ -299,33 +335,57 @@ function createXmppStickerService(adapter, options = {}) {
       const generation = adapter.sessionGenerations.get(input.accountId) || 0;
       return discover(input.accountId, session, generation);
     },
-    async send(input, resolveSource) {
-      const existing = attempts.get(`${input.accountId}|${input.clientMessageId}`);
+    async send(input, resolveSource, onState = () => undefined) {
+      const attemptKey = `${input.accountId}|${adapter.bareJid(input.conversationId)}|${input.clientMessageId}`;
+      const existing = attempts.get(attemptKey);
       if (existing) return existing;
+      let state;
       const operation = (async () => {
-        const session = adapter.requireConnected(input.accountId);
-        const generation = adapter.sessionGenerations.get(input.accountId) || 0;
-        const source = await resolveSource(input.accountId, input.stickerId);
-        const metadata = validateStickerMetadata({ ...source, hashValue: source.hashValue });
-        if (Number(source.sizeBytes) !== metadata.sizeBytes || Number(source.width) !== metadata.width || Number(source.height) !== metadata.height)
-          throw stickerError('MEDIA_DECODE_FAILED', 'el asset local no coincide con su metadata', 'sticker.source');
-        const service = await discover(input.accountId, session, generation);
-        if (service.maxFileSize !== undefined && metadata.sizeBytes > service.maxFileSize)
-          throw stickerError('MEDIA_SIZE_EXCEEDED', 'el servicio de upload no admite este tamaño', 'sticker.slot');
-        const slot = await requestSlot(input.accountId, session, generation, service, source);
-        const bytes = await readFile(source.path);
-        if (bytes.length !== metadata.sizeBytes) throw stickerError('MEDIA_DECODE_FAILED', 'el asset cambió durante la carga', 'sticker.upload');
-        const actualHash = crypto.createHash('sha256').update(bytes).digest('hex');
-        if (actualHash !== String(source.hashValue).toLowerCase())
-          throw stickerError('MEDIA_DECODE_FAILED', 'la integridad del asset no coincide', 'sticker.upload');
-        const status = await put(slot.putUrl, bytes, { ...slot.headers, 'Content-Type': source.mimeType }, { timeoutMs: 15000, lookup: slot.lookup });
-        if (status !== 201) throw stickerError('TRANSPORT_FAILED', 'HTTP Upload no confirmó el recurso', 'sticker.upload');
-        current(input.accountId, session, generation);
-        const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: slot.getUrl, fallback: source.altText });
-        await session.send(stanza);
-        current(input.accountId, session, generation);
-        const now = new Date().toISOString();
-        return {
+        try {
+          const session = adapter.requireConnected(input.accountId);
+          const generation = adapter.sessionGenerations.get(input.accountId) || 0;
+          const source = await resolveSource(input.accountId, input.stickerId);
+          const metadata = validateStickerMetadata({ ...source, hashValue: source.hashValue });
+          if (Number(source.sizeBytes) !== metadata.sizeBytes || Number(source.width) !== metadata.width || Number(source.height) !== metadata.height)
+            throw stickerError('MEDIA_DECODE_FAILED', 'el asset local no coincide con su metadata', 'sticker.source');
+          const now = new Date().toISOString();
+          state = {
+            refId: refIdFor(input.accountId, input.conversationId, input.clientMessageId),
+            previewStickerId: previewStickerId(refIdFor(input.accountId, input.conversationId, input.clientMessageId)),
+            accountId: input.accountId, conversationId: adapter.bareJid(input.conversationId), clientMessageId: input.clientMessageId,
+            originId: input.clientMessageId, direction: 'outgoing', senderJid: input.accountId,
+            sourceStickerId: input.stickerId, name: source.name, altText: source.altText, mimeType: source.mimeType,
+            sizeBytes: String(metadata.sizeBytes), width: metadata.width, height: metadata.height,
+            hashAlgorithm: 'sha-256', hashValue: source.hashValue, localAssetId: source.assetId,
+            transportStatus: 'uploading', availability: 'available', createdAt: now, updatedAt: now,
+          };
+          await onState(state);
+          current(input.accountId, session, generation);
+          const service = await discover(input.accountId, session, generation);
+          if (service.maxFileSize !== undefined && metadata.sizeBytes > service.maxFileSize)
+            throw stickerError('MEDIA_SIZE_EXCEEDED', 'el servicio de upload no admite este tamaño', 'sticker.slot');
+          const slot = await requestSlot(input.accountId, session, generation, service, source);
+          const bytes = source.bytes ? Buffer.from(source.bytes) : await readFile(source.path);
+          current(input.accountId, session, generation);
+          if (bytes.length !== metadata.sizeBytes) throw stickerError('MEDIA_DECODE_FAILED', 'el asset cambió durante la carga', 'sticker.upload');
+          const actualHash = crypto.createHash('sha256').update(bytes).digest('hex');
+          if (actualHash !== String(source.hashValue).toLowerCase())
+            throw stickerError('MEDIA_DECODE_FAILED', 'la integridad del asset no coincide', 'sticker.upload');
+          const status = await put(slot.putUrl, bytes, { ...slot.headers, 'Content-Type': source.mimeType }, {
+            timeoutMs: 15000,
+            lookup: slot.lookup,
+            headerEntries: slot.headerEntries,
+          });
+          if (status !== 201) throw stickerError('TRANSPORT_FAILED', 'HTTP Upload no confirmó el recurso', 'sticker.upload');
+          current(input.accountId, session, generation);
+          state = { ...state, transportStatus: 'sending', updatedAt: new Date().toISOString(), remoteUrl: slot.getUrl };
+          await onState(state);
+          current(input.accountId, session, generation);
+          const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: slot.getUrl, fallback: source.altText });
+          await session.send(stanza);
+          current(input.accountId, session, generation);
+          const sentAt = new Date().toISOString();
+          return {
           refId: refIdFor(input.accountId, input.conversationId, input.clientMessageId),
           previewStickerId: previewStickerId(refIdFor(input.accountId, input.conversationId, input.clientMessageId)),
           accountId: input.accountId, conversationId: adapter.bareJid(input.conversationId), clientMessageId: input.clientMessageId,
@@ -333,11 +393,15 @@ function createXmppStickerService(adapter, options = {}) {
           name: source.name, altText: source.altText, mimeType: source.mimeType, sizeBytes: String(metadata.sizeBytes), width: metadata.width, height: metadata.height,
           hashAlgorithm: 'sha-256', hashValue: source.hashValue, remoteUrl: slot.getUrl, localAssetId: source.assetId,
           fallbackText: safeText(source.altText, 1024),
-          transportStatus: 'sent', availability: 'available', createdAt: now, updatedAt: now,
-        };
+            transportStatus: 'sent', availability: 'available', createdAt: state.createdAt, updatedAt: sentAt,
+          };
+        } catch (error) {
+          if (state) await onState({ ...state, transportStatus: 'failed', errorCode: error?.code || 'TRANSPORT_FAILED', updatedAt: new Date().toISOString() });
+          throw error;
+        }
       })();
-      attempts.set(`${input.accountId}|${input.clientMessageId}`, operation);
-      try { return await operation; } finally { attempts.delete(`${input.accountId}|${input.clientMessageId}`); }
+      attempts.set(attemptKey, operation);
+      try { return await operation; } finally { attempts.delete(attemptKey); }
     },
     parseMessage(accountId, stanza, direction = 'incoming') { return parseStickerMessage(accountId, stanza, direction); },
     handleMessage(accountId, stanza) {
@@ -360,5 +424,5 @@ function clientMessageIdOrUndefined(stanza) { return stanza?.attrs?.id; }
 module.exports = {
   DATAFORM_NS, DISCO_INFO_NS, DISCO_ITEMS_NS, FALLBACK_NS, FILE_NS, HASHES_NS, MAX_STICKER_BYTES, MAX_DIMENSION,
   SFS_NS, STICKERS_NS, UPLOAD_NS, URL_DATA_NS, buildStickerMessage, createXmppStickerService, hashFromBase64,
-  parseStickerMessage, previewStickerId, refIdFor, validateHttpsUrl,
+  isPrivateAddress, parseStickerMessage, previewStickerId, refIdFor, validateHttpsUrl,
 };

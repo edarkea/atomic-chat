@@ -3,6 +3,7 @@ import {
   Result,
   StickerCapability,
   StickerMessageLoadRequest,
+  StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
 } from './domain';
@@ -56,6 +57,19 @@ export class StickerMessageFacade {
       refId: ref.refId,
     };
     const result = await this.port.load(input);
+    if (!result.ok) this.error.set(this.friendlyError(result.error.code));
+    return result;
+  }
+
+  async save(ref: StickerMessageRef): Promise<Result<StickerMessageRef>> {
+    const input: StickerMessageSaveRequest = {
+      version: 1,
+      requestId: createOpaqueId('sticker-save'),
+      accountId: ref.accountId,
+      conversationId: ref.conversationId,
+      refId: ref.refId,
+    };
+    const result = await this.port.save(input);
     if (!result.ok) this.error.set(this.friendlyError(result.error.code));
     return result;
   }

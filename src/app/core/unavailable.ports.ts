@@ -52,6 +52,7 @@ import {
   StickerCapability,
   StickerCapabilityRequest,
   StickerMessageLoadRequest,
+  StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
   Result,
@@ -339,6 +340,9 @@ export class UnavailableStickerMessagePort implements StickerMessagePort {
     return Promise.resolve(unsupported(input.requestId));
   }
   load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  save(input: StickerMessageSaveRequest): Promise<Result<StickerMessageRef>> {
     return Promise.resolve(unsupported(input.requestId));
   }
   subscribe(_listener: (event: TypedDomainEvent) => void): () => void {

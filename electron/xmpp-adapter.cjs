@@ -147,6 +147,12 @@ class XmppAdapter {
     return this.stickerService.parseMessage(accountId, stanza, direction);
   }
 
+  isStickerSourceAuthorized(accountId, senderJid) {
+    const bareSender = this.bareJid(senderJid || '').toLowerCase();
+    const contact = this.rosters.get(accountId)?.get(bareSender);
+    return Boolean(contact && ['to', 'both'].includes(contact.subscription));
+  }
+
   sendFile(accountId, input) {
     return this.fileService.sendFile(accountId, input);
   }

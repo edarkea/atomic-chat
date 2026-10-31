@@ -89,6 +89,7 @@ export class ConversationViewComponent {
   readonly attach = output<void>();
   readonly stickerSend = output<string>();
   readonly stickerLoad = output<string>();
+  readonly stickerSave = output<string>();
   readonly accept = output<string>();
   readonly reject = output<string>();
   readonly fileCancel = output<string>();

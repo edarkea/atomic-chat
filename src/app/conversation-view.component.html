@@ -54,6 +54,7 @@
           [sticker]="item.sticker"
           [outgoing]="item.outgoing"
           (loadRequested)="stickerLoad.emit($event)"
+          (saveRequested)="stickerSave.emit($event)"
         />
       } @else {
         <app-file-transfer-card

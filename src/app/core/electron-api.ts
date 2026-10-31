@@ -72,6 +72,7 @@ import {
   StickerCapability,
   StickerCapabilityRequest,
   StickerMessageLoadRequest,
+  StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
 } from './domain';
@@ -166,6 +167,7 @@ export interface AtomicChatApi {
       discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>>;
       send(input: StickerSendRequest): Promise<Result<StickerMessageRef>>;
       load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>>;
+      save(input: StickerMessageSaveRequest): Promise<Result<StickerMessageRef>>;
     };
     packs: {
       list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>>;

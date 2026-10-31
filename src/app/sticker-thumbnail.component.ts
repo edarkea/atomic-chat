@@ -52,7 +52,7 @@ const previewLoadLimiter = new PreviewLoadLimiter();
     :host { display: block; min-width: 0; }
     .sticker-thumbnail { align-items: center; background: var(--atomic-surface-raised); border: 1px solid var(--atomic-separator); border-radius: 8px; color: var(--atomic-text); cursor: pointer; display: flex; height: 64px; justify-content: center; overflow: hidden; padding: 5px; width: 64px; }
     .sticker-thumbnail:hover, .sticker-thumbnail:focus-visible { border-color: var(--atomic-green); outline: 2px solid color-mix(in srgb, var(--atomic-green) 45%, transparent); outline-offset: 2px; }
-    .sticker-thumbnail--large { height: 180px; width: 180px; }
+    .sticker-thumbnail--large { height: 160px; width: 160px; }
     img { display: block; height: 100%; object-fit: contain; width: 100%; }
     .sticker-thumbnail__state { color: var(--atomic-green); font-size: 22px; }
   `],

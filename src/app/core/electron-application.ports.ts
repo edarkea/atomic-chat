@@ -54,6 +54,7 @@ import {
   StickerCapability,
   StickerCapabilityRequest,
   StickerMessageLoadRequest,
+  StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
   Result,
@@ -423,6 +424,10 @@ export class ElectronStickerMessagePort implements StickerMessagePort {
   load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>> {
     const api = getAtomicChatApi();
     return api ? api.stickers.messages.load(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  save(input: StickerMessageSaveRequest): Promise<Result<StickerMessageRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.stickers.messages.save(input) : Promise.resolve(unavailable(input.requestId));
   }
   subscribe(listener: (event: TypedDomainEvent) => void): () => void {
     const subscribe = getAtomicChatApi()?.subscribe;

@@ -940,6 +940,20 @@ export class App {
     else this.chat.error.set('No se pudo cargar el sticker.');
   }
 
+  protected async saveSticker(refId: string): Promise<void> {
+    const item = this.chat.timelineItems().find(
+      (candidate): candidate is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
+        candidate.kind === 'sticker' && candidate.sticker.refId === refId,
+    );
+    if (!item) return;
+    const result = await this.stickerMessages.save(item.sticker);
+    if (result.ok) this.chat.upsertStickerMessage(result.value);
+    else {
+      this.chat.upsertStickerMessage({ ...item.sticker, errorCode: 'STORAGE_FAILED', updatedAt: new Date().toISOString() });
+      this.chat.error.set('No se pudo guardar el sticker en Mis stickers.');
+    }
+  }
+
   protected openBroadcast(): void {
     this.broadcastBody.set('');
     this.broadcastMode.set('normal');

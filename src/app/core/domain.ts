@@ -515,6 +515,7 @@ export interface StickerMessageRef {
   readonly direction: ChatMediaDirection;
   readonly senderJid: string;
   readonly sourceStickerId?: string;
+  readonly savedStickerId?: string;
   readonly name?: string;
   readonly altText?: string;
   readonly fallbackText?: string;
@@ -554,6 +555,13 @@ export interface StickerSendRequest {
   readonly stickerId: string;
 }
 export interface StickerMessageLoadRequest {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly refId: string;
+}
+export interface StickerMessageSaveRequest {
   readonly version: 1;
   readonly requestId: RequestId;
   readonly accountId: string;

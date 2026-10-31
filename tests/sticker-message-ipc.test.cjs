@@ -17,8 +17,8 @@ function setup(authorized = true) {
       getStickerMessageRefByClientMessageId: () => null,
       getSticker: () => ({ stickerId: 's1', assetId: 'asset-1', name: 'one.png', altText: 'one' }),
     },
-    stickers: { resolveForPreview: () => ({ path: 'private', assetId: 'asset-1', mimeType: 'image/png', sizeBytes: '4', width: 1, height: 1, hashValue: 'a'.repeat(64) }) },
-    stickerMessages: { save: () => ref, publicRef: (value) => value, load: async () => ref },
+    stickers: { resolveForPreview: () => ({ path: 'private', assetId: 'asset-1', mimeType: 'image/png', sizeBytes: '4', width: 1, height: 1, hashValue: 'a'.repeat(64) }), saveHistoricalMessage: async () => ({ stickerId: 'saved-1' }) },
+    stickerMessages: { save: () => ref, publicRef: (value) => value, load: async () => ref, resolveForPreview: () => ({ path: 'private', assetId: 'asset-1', mimeType: 'image/png', sizeBytes: '4', width: 1, height: 1, hashValue: 'a'.repeat(64) }) },
     xmpp: {
       discoverStickers: async () => ({ serviceJid: 'upload.example.test', maxFileSize: 4 }),
       sendSticker: async () => ref,
@@ -62,4 +62,14 @@ test('E8.5-IPC-003 requires the stored conversation when manually loading a stic
   });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'MEDIA_PREVIEW_UNAVAILABLE');
+});
+
+test('E8.5-IPC-004 saves only an incoming historical reference and returns an idempotent library marker', async () => {
+  const value = setup(true);
+  value.runtime.persistence.getStickerMessageRef = () => ({ ...value.runtime.stickerMessages.save(), direction: 'incoming', conversationId: 'bob@example.test', previewStickerId: 'message:ref-1', refId: 'ref-1' });
+  const result = await value.handlers.get('stickerMessages.save')(value.event, {
+    version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', refId: 'ref-1',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.savedStickerId, 'saved-1');
 });

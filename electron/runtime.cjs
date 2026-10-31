@@ -45,7 +45,7 @@ function createRuntime({
   const fileHistory = new FileHistoryStore(persistence, shell);
   const stickers = new StickerStore(app.getPath('userData'), persistence, nativeImage);
   const stickerPacks = new StickerPackStore(persistence);
-  const stickerMessages = new StickerMessageStore(app.getPath('userData'), persistence, nativeImage);
+  const stickerMessages = new StickerMessageStore(app.getPath('userData'), persistence, nativeImage, { assetStore: stickers, stickerStore: stickers });
   void media.reconcile();
   void stickers.reconcile();
   const secrets = new SecretStore(safeStorage, app.getPath('userData'));

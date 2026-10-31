@@ -53,6 +53,7 @@ import {
   StickerCapability,
   StickerCapabilityRequest,
   StickerMessageLoadRequest,
+  StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
   HistoryPage,
@@ -220,6 +221,7 @@ export interface StickerMessagePort {
   discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>>;
   send(input: StickerSendRequest): Promise<Result<StickerMessageRef>>;
   load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>>;
+  save(input: StickerMessageSaveRequest): Promise<Result<StickerMessageRef>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 

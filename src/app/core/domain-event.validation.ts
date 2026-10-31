@@ -123,7 +123,7 @@ interface EventRecord {
   payload?: unknown;
 }
 
-function isRecord(value: unknown): value is EventRecord {
+function isRecord(value: unknown): value is EventRecord & Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -476,6 +476,7 @@ function isStickerMessageRef(value: unknown): value is StickerMessageRef {
     isOptionalString(value.stanzaId) &&
     isOptionalString(value.originId) &&
     isOptionalString(value.sourceStickerId) &&
+    isOptionalString(value['savedStickerId']) &&
     isOptionalString(value.name) &&
     isOptionalString(value.altText) &&
     isOptionalString(value.fallbackText) &&

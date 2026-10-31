@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { PersistenceStore } = require('../electron/storage.cjs');
 const { StickerMessageStore } = require('../electron/sticker-message-store.cjs');
+const { StickerStore } = require('../electron/sticker-store.cjs');
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const decoder = { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 1, height: 1 }) }) };
@@ -98,5 +99,52 @@ test('E8.5-STORE-003 preserves account isolation and mixed timeline entries', as
   assert.deepEqual(timeline.items.map((item) => item.kind).sort(), ['sticker', 'text']);
   assert.ok(value.persistence.listConversations('alice@example.test').some((item) => item.jid === 'only-stickers@example.test'));
   assert.equal(value.persistence.getStickerMessageRef('bob@example.test', first.refId), null);
+  await close(value);
+});
+
+test('E8.5-STORE-004 keeps equal third-party stanza ids distinct by sender and conversation', async () => {
+  const value = await fixture();
+  const first = value.persistence.upsertStickerMessageRef({ ...reference('alice@example.test', 'contact-a@example.test', 'ref-a'), senderJid: 'contact-a@example.test' });
+  const second = value.persistence.upsertStickerMessageRef({
+    ...reference('alice@example.test', 'contact-b@example.test', 'ref-b'),
+    clientMessageId: first.clientMessageId,
+    senderJid: 'contact-b@example.test',
+  });
+  assert.notEqual(first.refId, second.refId);
+  assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_message_refs WHERE account_id = ?').get('alice@example.test').count, 2);
+  await close(value);
+});
+
+test('E8.5-STORE-005 resolves an outgoing message preview through its original E8.2 asset', async () => {
+  const value = await fixture();
+  const ref = value.persistence.upsertStickerMessageRef({
+    ...reference('alice@example.test', 'bob@example.test', 'ref-outgoing'),
+    direction: 'outgoing', senderJid: 'alice@example.test', availability: 'available', localAssetId: 'asset-e82', storageKey: null,
+  });
+  const store = new StickerMessageStore(value.root, value.persistence, decoder, {
+    assetStore: { resolveAssetForPreview: (accountId, assetId, stickerId) => ({ accountId, assetId, stickerId, path: 'e82-private', mimeType: ref.mimeType, sizeBytes: ref.sizeBytes, width: ref.width, height: ref.height, hashValue: ref.hashValue }) },
+  });
+  assert.equal(store.resolveForPreview('alice@example.test', ref.previewStickerId).assetId, 'asset-e82');
+  await close(value);
+});
+
+test('E8.5-STORE-006 promotes a validated historical asset once and saves it as an individual sticker', async () => {
+  const value = await fixture();
+  const stickers = new StickerStore(value.root, value.persistence, decoder);
+  const messages = new StickerMessageStore(value.root, value.persistence, decoder, {
+    assetStore: stickers,
+    stickerStore: stickers,
+    download: async () => png,
+  });
+  const ref = messages.save(reference('alice@example.test', 'bob@example.test', 'ref-save'));
+  const loaded = await messages.load('alice@example.test', ref.refId);
+  assert.ok(loaded.localAssetId);
+  assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_assets').get().count, 1);
+  const saved = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', ref.previewStickerId), loaded);
+  const repeated = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', ref.previewStickerId), loaded);
+  assert.equal(saved.stickerId, repeated.stickerId);
+  assert.equal(value.persistence.countStickers('alice@example.test'), 1);
+  await stickers.delete('alice@example.test', saved.stickerId);
+  assert.ok(messages.resolveForPreview('alice@example.test', ref.previewStickerId));
   await close(value);
 });

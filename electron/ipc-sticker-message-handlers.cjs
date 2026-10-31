@@ -99,7 +99,9 @@ function registerStickerMessageHandlers({
       const refId = refIdFor(input.accountId, input.conversationId, input.clientMessageId);
       const existing = runtime.persistence.getStickerMessageRef(input.accountId, refId);
       if (existing) return success(input, runtime.stickerMessages.publicRef(existing));
-      const existingClient = runtime.persistence.getStickerMessageRefByClientMessageId(input.accountId, input.clientMessageId);
+      const existingClient = runtime.persistence.getStickerMessageRefByClientMessageId(
+        input.accountId, input.clientMessageId, input.conversationId, 'outgoing', input.accountId,
+      );
       if (existingClient) {
         if (existingClient.conversationId !== input.conversationId) throw new Error('CONFLICT');
         return success(input, runtime.stickerMessages.publicRef(existingClient));
@@ -107,7 +109,9 @@ function registerStickerMessageHandlers({
       const isAuthorized = () => currentAuthorization(event, input.accountId);
       const sticker = runtime.persistence.getSticker(input.accountId, input.stickerId);
       if (!sticker) throw new Error('MEDIA_PREVIEW_UNAVAILABLE');
-      const asset = runtime.stickers.resolveForPreview(input.accountId, input.stickerId);
+      const asset = runtime.stickers.resolveForSend
+        ? await runtime.stickers.resolveForSend(input.accountId, input.stickerId)
+        : runtime.stickers.resolveForPreview(input.accountId, input.stickerId);
       const source = {
         ...asset,
         assetId: sticker.assetId,
@@ -115,7 +119,36 @@ function registerStickerMessageHandlers({
         altText: sticker.altText,
       };
       if (!isAuthorized()) throw new Error('UNAUTHORIZED');
-      const value = await runtime.xmpp.sendSticker(input, async () => source);
+      const publishState = (value) => {
+        const savedState = runtime.stickerMessages.save({ ...value, sourceStickerId: input.stickerId });
+        runtime.xmpp.emit?.({ type: 'sticker.stateChanged', payload: savedState });
+        return savedState;
+      };
+      publishState({
+        refId,
+        previewStickerId: `message:${refId}`,
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        clientMessageId: input.clientMessageId,
+        originId: input.clientMessageId,
+        direction: 'outgoing',
+        senderJid: input.accountId,
+        sourceStickerId: input.stickerId,
+        name: source.name,
+        altText: source.altText,
+        mimeType: source.mimeType,
+        sizeBytes: String(source.sizeBytes),
+        width: source.width,
+        height: source.height,
+        hashAlgorithm: 'sha-256',
+        hashValue: source.hashValue,
+        localAssetId: source.assetId,
+        transportStatus: 'queued',
+        availability: 'available',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      const value = await runtime.xmpp.sendSticker(input, async () => source, publishState);
       if (!isAuthorized()) throw new Error('UNAUTHORIZED');
       const saved = runtime.stickerMessages.save({ ...value, sourceStickerId: input.stickerId });
       return success(input, saved);
@@ -134,6 +167,24 @@ function registerStickerMessageHandlers({
       const value = await runtime.stickerMessages.load(input.accountId, input.refId, isAuthorized);
       if (!isAuthorized()) throw new Error('UNAUTHORIZED');
       return success(input, value);
+    } catch (error) { return failure(error, event, input); }
+  });
+
+  ipcMain.handle('stickerMessages.save', async (event, input) => {
+    try {
+      authorize(event, input, true);
+      if (typeof input.refId !== 'string' || !input.refId.trim() || input.refId.length > 512)
+        throw new Error('INVALID_INPUT');
+      const runtime = getRuntime();
+      const stored = runtime.persistence.getStickerMessageRef(input.accountId, input.refId);
+      if (!stored || stored.conversationId !== input.conversationId || stored.direction !== 'incoming')
+        throw new Error('MEDIA_PREVIEW_UNAVAILABLE');
+      const isAuthorized = () => currentAuthorization(event, input.accountId);
+      if (!isAuthorized()) throw new Error('UNAUTHORIZED');
+      const source = runtime.stickerMessages.resolveForPreview(input.accountId, stored.previewStickerId);
+      const saved = await runtime.stickers.saveHistoricalMessage(input.accountId, source, stored, isAuthorized);
+      if (!isAuthorized()) throw new Error('UNAUTHORIZED');
+      return success(input, { ...runtime.stickerMessages.publicRef(stored), savedStickerId: saved.stickerId });
     } catch (error) { return failure(error, event, input); }
   });
 }
