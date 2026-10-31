@@ -997,6 +997,7 @@ class PersistenceStore {
       record.accountId, record.clientMessageId, record.conversationId, record.direction, senderJid,
     );
     if (existingByIdentity && (
+      existingByIdentity.sourceStickerId !== record.sourceStickerId ||
       String(existingByIdentity.hashValue).toLowerCase() !== String(record.hashValue).toLowerCase() ||
       existingByIdentity.mimeType !== record.mimeType ||
       String(existingByIdentity.sizeBytes) !== String(record.sizeBytes) ||

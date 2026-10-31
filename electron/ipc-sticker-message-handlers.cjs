@@ -100,6 +100,7 @@ function registerStickerMessageHandlers({
   ipcMain.handle('stickerMessages.send', async (event, input) => {
     let runtime;
     let refId;
+    let messageKey;
     let sendGeneration;
     let releasePending;
     let ownedPending;
@@ -112,14 +113,21 @@ function registerStickerMessageHandlers({
       runtime = getRuntime();
       const conversationId = runtime.xmpp.bareJid ? runtime.xmpp.bareJid(input.conversationId) : input.conversationId;
       refId = refIdFor(input.accountId, conversationId, input.clientMessageId, 'outgoing', input.accountId);
-      const activeSend = pendingSends.get(refId);
+      messageKey = JSON.stringify([input.accountId, conversationId, input.clientMessageId]);
+      const activeSend = pendingSends.get(messageKey);
       if (activeSend) {
-        const outcome = await activeSend;
+        if (activeSend.stickerId !== input.stickerId) throw new Error('CONFLICT');
+        const outcome = await activeSend.promise;
+        if (!currentAuthorization(event, input.accountId)) throw new Error('UNAUTHORIZED');
+        if (outcome.value && activeSend.generation !== undefined &&
+            (runtime.xmpp.sessionGenerations.get(input.accountId) || 0) !== activeSend.generation)
+          throw new Error('SEND_RESULT_UNKNOWN');
         if (outcome.error) throw outcome.error;
         return success(input, runtime.stickerMessages.publicRef(outcome.value));
       }
       const existing = runtime.persistence.getStickerMessageRef(input.accountId, refId);
       if (existing) {
+        if (existing.sourceStickerId !== input.stickerId) throw new Error('CONFLICT');
         rejectUnconfirmedSend(existing);
         return success(input, runtime.stickerMessages.publicRef(existing));
       }
@@ -128,12 +136,13 @@ function registerStickerMessageHandlers({
       );
       if (existingClient) {
         if (existingClient.conversationId !== conversationId) throw new Error('CONFLICT');
+        if (existingClient.sourceStickerId !== input.stickerId) throw new Error('CONFLICT');
         rejectUnconfirmedSend(existingClient);
         return success(input, runtime.stickerMessages.publicRef(existingClient));
       }
       const pendingResult = new Promise((resolve) => { releasePending = resolve; });
-      pendingSends.set(refId, pendingResult);
-      ownedPending = pendingResult;
+      ownedPending = { promise: pendingResult, stickerId: input.stickerId, generation: undefined };
+      pendingSends.set(messageKey, ownedPending);
       const isAuthorized = () => currentAuthorization(event, input.accountId);
       const sticker = runtime.persistence.getSticker(input.accountId, input.stickerId);
       if (!sticker) throw new Error('MEDIA_PREVIEW_UNAVAILABLE');
@@ -148,6 +157,7 @@ function registerStickerMessageHandlers({
       };
       if (!isAuthorized()) throw new Error('UNAUTHORIZED');
       sendGeneration = runtime.xmpp.sessionGenerations.get(input.accountId) || 0;
+      ownedPending.generation = sendGeneration;
       const publishState = (value) => {
         if ((runtime.xmpp.sessionGenerations.get(input.accountId) || 0) !== sendGeneration) return value;
         const savedState = runtime.stickerMessages.save({ ...value, sourceStickerId: input.stickerId });
@@ -181,7 +191,11 @@ function registerStickerMessageHandlers({
       const value = await runtime.xmpp.sendSticker(input, async () => source, publishState);
       sendConfirmed = value.transportStatus === 'sent';
       if (!isAuthorized()) throw new Error('UNAUTHORIZED');
+      if (sendGeneration !== undefined && (runtime.xmpp.sessionGenerations.get(input.accountId) || 0) !== sendGeneration)
+        throw new Error(sendConfirmed ? 'SEND_RESULT_UNKNOWN' : 'NOT_CONNECTED');
       const saved = runtime.stickerMessages.save({ ...value, sourceStickerId: input.stickerId });
+      if (sendGeneration !== undefined && (runtime.xmpp.sessionGenerations.get(input.accountId) || 0) !== sendGeneration)
+        throw new Error(sendConfirmed ? 'SEND_RESULT_UNKNOWN' : 'NOT_CONNECTED');
       releasePending?.({ value: saved });
       return success(input, saved);
     } catch (error) {
@@ -190,7 +204,7 @@ function registerStickerMessageHandlers({
       const isCurrentSession = sendGeneration === undefined ||
         (runtime?.xmpp.sessionGenerations.get(input.accountId) || 0) === sendGeneration;
       if (releasePending) releasePending({ error });
-      if (runtime && refId) {
+      if (ownedPending && runtime && refId) {
         const failed = !confirmed && isCurrentSession && current?.transportStatus !== 'failed'
           ? runtime.persistence.markStickerMessageFailed?.(
             input.accountId, refId, error?.code || 'TRANSPORT_FAILED', new Date().toISOString(),
@@ -201,7 +215,7 @@ function registerStickerMessageHandlers({
       }
       return failure(error, event, input);
     } finally {
-      if (ownedPending && pendingSends.get(refId) === ownedPending) pendingSends.delete(refId);
+      if (ownedPending && pendingSends.get(messageKey) === ownedPending) pendingSends.delete(messageKey);
     }
   });
 

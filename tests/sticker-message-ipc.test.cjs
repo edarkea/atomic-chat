@@ -4,10 +4,11 @@ const { registerStickerMessageHandlers } = require('../electron/ipc-sticker-mess
 
 function setup(authorized = true) {
   const handlers = new Map();
+  let authorizedState = authorized;
   const ref = {
     refId: 'ref-1', previewStickerId: 'message:ref-1', accountId: 'alice@example.test',
     conversationId: 'bob@example.test', clientMessageId: 'client-1', direction: 'outgoing',
-    senderJid: 'alice@example.test', mimeType: 'image/png', sizeBytes: '4', width: 1, height: 1,
+    senderJid: 'alice@example.test', sourceStickerId: 's1', mimeType: 'image/png', sizeBytes: '4', width: 1, height: 1,
     hashAlgorithm: 'sha-256', hashValue: 'a'.repeat(64), transportStatus: 'sent', availability: 'available',
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   };
@@ -29,10 +30,10 @@ function setup(authorized = true) {
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     assertSender: () => undefined,
     getRuntime: () => runtime,
-    historySecurity: { authorize: () => authorized },
+    historySecurity: { authorize: () => authorizedState },
     helpers: { validVersion: (input) => input?.version === 1, requestId: (_event, input) => input?.requestId || 'generated' },
   });
-  return { handlers, runtime, event: { sender: { id: 7 } } };
+  return { handlers, runtime, event: { sender: { id: 7 } }, setAuthorized: (value) => { authorizedState = value; } };
 }
 
 test('E8.5-IPC-001 rejects account access from an unauthorized window', async () => {
@@ -143,6 +144,72 @@ test('E8.5-IPC-010 single-flights concurrent identical sends without changing th
   release();
   const results = await Promise.all([first, second]);
   assert.deepEqual(results.map((item) => item.ok), [true, true]);
+});
+
+test('E8.5-IPC-011 rejects a different sticker for an active or confirmed message identity', async () => {
+  const active = setup(true);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let sends = 0;
+  active.runtime.xmpp.sendSticker = async () => {
+    sends += 1;
+    await gate;
+    return active.runtime.stickerMessages.save();
+  };
+  const input = { version: 1, requestId: 'owner', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'same-message', stickerId: 's1' };
+  const owner = active.handlers.get('stickerMessages.send')(active.event, input);
+  await new Promise((resolve) => setImmediate(resolve));
+  const conflict = await active.handlers.get('stickerMessages.send')(active.event, { ...input, requestId: 'conflict', stickerId: 's2' });
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.error.code, 'CONFLICT');
+  assert.equal(sends, 1);
+  release();
+  assert.equal((await owner).ok, true);
+
+  const sent = setup(true);
+  sent.runtime.persistence.getStickerMessageRef = () => sent.runtime.stickerMessages.save();
+  const sentConflict = await sent.handlers.get('stickerMessages.send')(sent.event, { ...input, requestId: 'sent-conflict', stickerId: 's2' });
+  assert.equal(sentConflict.ok, false);
+  assert.equal(sentConflict.error.code, 'CONFLICT');
+});
+
+test('E8.5-IPC-012 revalidates authorization for a secondary waiter without letting it mark failure', async () => {
+  const value = setup(true);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const failures = [];
+  value.runtime.persistence.markStickerMessageFailed = (...args) => { failures.push(args); return value.runtime.stickerMessages.save(); };
+  value.runtime.xmpp.sendSticker = async () => { await gate; return value.runtime.stickerMessages.save(); };
+  const input = { version: 1, requestId: 'owner-auth', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'auth-wait', stickerId: 's1' };
+  const owner = value.handlers.get('stickerMessages.send')(value.event, input);
+  await new Promise((resolve) => setImmediate(resolve));
+  const secondary = value.handlers.get('stickerMessages.send')(value.event, { ...input, requestId: 'secondary-auth' });
+  value.setAuthorized(false);
+  release();
+  const results = await Promise.all([owner, secondary]);
+  assert.deepEqual(results.map((item) => item.error?.code), ['UNAUTHORIZED', 'UNAUTHORIZED']);
+  assert.equal(failures.length, 0);
+});
+
+test('E8.5-IPC-013 rejects a secondary response after generation changes without degrading the owner', async () => {
+  const value = setup(true);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const failures = [];
+  value.runtime.persistence.markStickerMessageFailed = (...args) => { failures.push(args); return value.runtime.stickerMessages.save(); };
+  value.runtime.xmpp.sendSticker = async () => { await gate; return value.runtime.stickerMessages.save(); };
+  const input = { version: 1, requestId: 'owner-generation', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'generation-wait', stickerId: 's1' };
+  const owner = value.handlers.get('stickerMessages.send')(value.event, input);
+  await new Promise((resolve) => setImmediate(resolve));
+  const secondary = value.handlers.get('stickerMessages.send')(value.event, { ...input, requestId: 'secondary-generation' });
+  value.runtime.xmpp.sessionGenerations.set('alice@example.test', 2);
+  release();
+  const results = await Promise.all([owner, secondary]);
+  assert.equal(results[0].ok, false);
+  assert.equal(results[0].error.code, 'SEND_RESULT_UNKNOWN');
+  assert.equal(results[1].ok, false);
+  assert.equal(results[1].error.code, 'SEND_RESULT_UNKNOWN');
+  assert.equal(failures.length, 0);
 });
 
 test('E8.5-IPC-006 finalizes queued state as failed when the XMPP operation rejects', async () => {
