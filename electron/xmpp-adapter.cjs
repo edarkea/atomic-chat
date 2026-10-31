@@ -140,8 +140,8 @@ class XmppAdapter {
   discoverStickers(input) {
     return this.stickerService.discover(input);
   }
-  sendSticker(input, resolveSource) {
-    return this.stickerService.send(input, resolveSource);
+  sendSticker(input, resolveSource, onState) {
+    return this.stickerService.send(input, resolveSource, onState);
   }
   parseStickerMessage(accountId, stanza, direction) {
     return this.stickerService.parseMessage(accountId, stanza, direction);

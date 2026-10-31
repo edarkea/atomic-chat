@@ -169,6 +169,7 @@ class StickerMessageStore {
   }
 
   publicRef(ref) {
+    const savedStickerId = ref.savedStickerId || this.stickerStore?.savedStickerIdForMessage(ref.accountId, ref.refId);
     return {
       refId: ref.refId,
       previewStickerId: ref.previewStickerId,
@@ -180,6 +181,7 @@ class StickerMessageStore {
       direction: ref.direction,
       ...(ref.senderJid ? { senderJid: ref.senderJid } : {}),
       ...(ref.sourceStickerId ? { sourceStickerId: ref.sourceStickerId } : {}),
+      ...(savedStickerId ? { savedStickerId } : {}),
       ...(ref.name ? { name: ref.name } : {}),
       ...(ref.altText ? { altText: ref.altText } : {}),
       ...(ref.fallbackText ? { fallbackText: ref.fallbackText } : {}),

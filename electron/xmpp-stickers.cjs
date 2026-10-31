@@ -20,11 +20,12 @@ const MAX_STICKER_BYTES = 2 * 1024 * 1024;
 const MAX_DIMENSION = 1024;
 const DISCOVERY_TTL_MS = 5 * 60 * 1000;
 
-function stickerError(code, message, phase) {
-  const cause = new Error(message);
-  cause.code = code;
-  cause.phase = phase;
-  return cause;
+function stickerError(code, message, phase, originalCause) {
+  const error = new Error(message);
+  error.code = code;
+  error.phase = phase;
+  if (originalCause) error.cause = originalCause;
+  return error;
 }
 
 function hashToBase64(hashValue) {
@@ -52,8 +53,8 @@ function messageIdentity(accountId, conversationId, clientMessageId) {
   return crypto.createHash('sha256').update(`${accountId}|${conversationId}|${clientMessageId}`).digest('hex').slice(0, 32);
 }
 
-function refIdFor(accountId, conversationId, clientMessageId) {
-  return `sticker_message_${messageIdentity(accountId, conversationId, clientMessageId)}`;
+function refIdFor(accountId, conversationId, clientMessageId, direction = 'outgoing', senderJid = accountId) {
+  return `sticker_message_${messageIdentity(accountId, conversationId, `${direction}|${senderJid}|${clientMessageId}`)}`;
 }
 
 function previewStickerId(refId) {
@@ -137,9 +138,10 @@ function parseStickerMessage(accountId, stanza, direction = 'incoming') {
   if (!clientMessageId || !conversationId || !senderJid) throw stickerError('INVALID_INPUT', 'sticker sin identidad XMPP', 'sticker.parse');
   const metadata = validateStickerMetadata({ mimeType, sizeBytes, ...dimensions, hashValue: hashFromBase64(hash.getText()), });
   const remoteUrl = validateHttpsUrl(source);
+  const refId = refIdFor(accountId, conversationId, clientMessageId, direction, senderJid);
   return {
-    refId: refIdFor(accountId, conversationId, clientMessageId),
-    previewStickerId: previewStickerId(refIdFor(accountId, conversationId, clientMessageId)),
+    refId,
+    previewStickerId: previewStickerId(refId),
     accountId,
     conversationId,
     clientMessageId,
@@ -349,9 +351,10 @@ function createXmppStickerService(adapter, options = {}) {
           if (Number(source.sizeBytes) !== metadata.sizeBytes || Number(source.width) !== metadata.width || Number(source.height) !== metadata.height)
             throw stickerError('MEDIA_DECODE_FAILED', 'el asset local no coincide con su metadata', 'sticker.source');
           const now = new Date().toISOString();
+          const refId = refIdFor(input.accountId, input.conversationId, input.clientMessageId, 'outgoing', input.accountId);
           state = {
-            refId: refIdFor(input.accountId, input.conversationId, input.clientMessageId),
-            previewStickerId: previewStickerId(refIdFor(input.accountId, input.conversationId, input.clientMessageId)),
+            refId,
+            previewStickerId: previewStickerId(refId),
             accountId: input.accountId, conversationId: adapter.bareJid(input.conversationId), clientMessageId: input.clientMessageId,
             originId: input.clientMessageId, direction: 'outgoing', senderJid: input.accountId,
             sourceStickerId: input.stickerId, name: source.name, altText: source.altText, mimeType: source.mimeType,
@@ -382,19 +385,24 @@ function createXmppStickerService(adapter, options = {}) {
           await onState(state);
           current(input.accountId, session, generation);
           const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: slot.getUrl, fallback: source.altText });
-          await session.send(stanza);
+          try {
+            await session.send(stanza);
+          } catch (cause) {
+            throw stickerError('SEND_RESULT_UNKNOWN', 'el resultado del envío XMPP es incierto', 'sticker.send', cause);
+          }
           current(input.accountId, session, generation);
           const sentAt = new Date().toISOString();
-          return {
-          refId: refIdFor(input.accountId, input.conversationId, input.clientMessageId),
-          previewStickerId: previewStickerId(refIdFor(input.accountId, input.conversationId, input.clientMessageId)),
-          accountId: input.accountId, conversationId: adapter.bareJid(input.conversationId), clientMessageId: input.clientMessageId,
-          stanzaId: clientMessageIdOrUndefined(stanza), originId: input.clientMessageId, direction: 'outgoing', senderJid: input.accountId,
-          name: source.name, altText: source.altText, mimeType: source.mimeType, sizeBytes: String(metadata.sizeBytes), width: metadata.width, height: metadata.height,
-          hashAlgorithm: 'sha-256', hashValue: source.hashValue, remoteUrl: slot.getUrl, localAssetId: source.assetId,
-          fallbackText: safeText(source.altText, 1024),
-            transportStatus: 'sent', availability: 'available', createdAt: state.createdAt, updatedAt: sentAt,
+          state = {
+            ...state,
+            stanzaId: clientMessageIdOrUndefined(stanza),
+            remoteUrl: slot.getUrl,
+            fallbackText: safeText(source.altText, 1024),
+            transportStatus: 'sent',
+            updatedAt: sentAt,
           };
+          await onState(state);
+          current(input.accountId, session, generation);
+          return state;
         } catch (error) {
           if (state) await onState({ ...state, transportStatus: 'failed', errorCode: error?.code || 'TRANSPORT_FAILED', updatedAt: new Date().toISOString() });
           throw error;

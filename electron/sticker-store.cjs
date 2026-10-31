@@ -17,6 +17,10 @@ function error(code, message) {
   return cause;
 }
 
+function historicalStickerId(refId) {
+  return `sticker_saved_${crypto.createHash('sha256').update(refId).digest('hex').slice(0, 32)}`;
+}
+
 function metadata(stats) {
   return {
     dev: String(stats.dev),
@@ -271,9 +275,11 @@ class StickerStore {
     return this.withAccountLock(accountId, async () => {
       if (!source?.path || source.accountId !== accountId || !message?.refId)
         throw error('INVALID_INPUT', 'la referencia histórica no es válida');
-      const stickerId = `sticker_saved_${crypto.createHash('sha256').update(message.refId).digest('hex').slice(0, 32)}`;
+      const stickerId = historicalStickerId(message.refId);
       const existingSticker = this.persistence.getSticker(accountId, stickerId);
       if (existingSticker) return this.publicSticker(existingSticker);
+      if (this.persistence.countStickers(accountId) >= MAX_STICKERS_PER_ACCOUNT)
+        throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
       if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
       const inspected = await this.readAndInspect(source.path);
       const hashValue = crypto.createHash('sha256').update(inspected.data).digest('hex');
@@ -285,10 +291,12 @@ class StickerStore {
       const now = new Date().toISOString();
       let asset = this.persistence.getStickerAssetByHash(accountId, hashValue);
       let published;
+      let createdAsset = false;
       if (!asset || asset.availability !== 'available') {
         if (!asset && this.persistence.sumStickerStorage(accountId) + inspected.data.length > MAX_STORAGE_BYTES_PER_ACCOUNT)
           throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de almacenamiento de stickers');
         const assetId = asset?.assetId || `sticker_asset_${crypto.randomUUID()}`;
+        createdAsset = !asset;
         published = await this.publishBytes(assetId, inspected.data);
         try {
           if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
@@ -308,7 +316,10 @@ class StickerStore {
           availability: 'available', createdAt: now, updatedAt: now,
         }));
       } catch (cause) {
-        if (published) await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+        if (published && createdAsset) {
+          this.persistence.deleteStickerAsset(accountId, asset.assetId);
+          await fsp.rm(published.targetPath, { force: true }).catch(() => undefined);
+        }
         throw cause?.code ? cause : error('STORAGE_FAILED', 'no se pudo guardar el sticker histórico');
       }
     });
@@ -371,6 +382,11 @@ class StickerStore {
       accountId, stickerId, assetId: asset.assetId, path: path.join(this.directory, asset.storageKey),
       mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height, hashValue: asset.hashValue,
     };
+  }
+
+  savedStickerIdForMessage(accountId, refId) {
+    const stickerId = historicalStickerId(refId);
+    return this.persistence.getSticker(accountId, stickerId) ? stickerId : undefined;
   }
 
   async reconcile() {

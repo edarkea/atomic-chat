@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, OnChanges, output, signal, SimpleChanges } from '@angular/core';
 import { StickerMessageRef, StickerRecord } from './core/domain';
 import { StickerThumbnailComponent } from './sticker-thumbnail.component';
 
@@ -23,7 +23,7 @@ import { StickerThumbnailComponent } from './sticker-thumbnail.component';
       }
       @if (!outgoing() && available()) {
         <button type="button" class="sticker-save" [disabled]="saving() || saved()" (click)="requestSave()">
-          {{ saved() ? 'Ya está guardado' : saving() ? 'Guardando…' : 'Guardar en Mis stickers' }}
+          {{ saved() ? 'Ya está guardado' : saving() ? 'Guardando…' : sticker().errorCode ? 'Error · Reintentar' : 'Guardar en Mis stickers' }}
         </button>
       }
     </article>
@@ -42,7 +42,7 @@ import { StickerThumbnailComponent } from './sticker-thumbnail.component';
   `],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class StickerMessageCardComponent {
+export class StickerMessageCardComponent implements OnChanges {
   readonly accountId = input.required<string>();
   readonly sticker = input.required<StickerMessageRef>();
   readonly outgoing = input(false);
@@ -70,5 +70,9 @@ export class StickerMessageCardComponent {
     if (this.saved() || this.saving()) return;
     this.saving.set(true);
     this.saveRequested.emit(this.sticker().refId);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['sticker']) this.saving.set(false);
   }
 }

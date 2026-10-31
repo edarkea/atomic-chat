@@ -167,7 +167,8 @@ export type AppErrorCode =
   | 'MEDIA_SIZE_EXCEEDED'
   | 'MEDIA_DIMENSIONS_INVALID'
   | 'MEDIA_DECODE_FAILED'
-  | 'MEDIA_REFERENCE_REVOKED';
+  | 'MEDIA_REFERENCE_REVOKED'
+  | 'SEND_RESULT_UNKNOWN';
 export interface AppError {
   code: AppErrorCode;
   retryable: boolean;

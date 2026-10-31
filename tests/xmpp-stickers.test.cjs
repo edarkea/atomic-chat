@@ -15,6 +15,7 @@ const {
   DATAFORM_NS,
   HASHES_NS,
 } = require('../electron/xmpp-stickers.cjs');
+const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
 
 const hashValue = crypto.createHash('sha256').update('data').digest('hex');
 
@@ -96,6 +97,34 @@ test('E8.5-XMPP-004 rejects a slot with duplicate put/get elements instead of gu
   ), { code: 'UNSUPPORTED' });
 });
 
+test('E8.5-XMPP-005 forwards progress callbacks through the real adapter boundary', async () => {
+  const adapter = new XmppAdapter();
+  const input = { version: 1, requestId: 'r-progress', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-progress', stickerId: 's1' };
+  const states = [];
+  adapter.stickerService = {
+    send: async (value, resolveSource, onState) => {
+      assert.equal(value, input);
+      assert.equal(typeof resolveSource, 'function');
+      onState({ transportStatus: 'uploading' });
+      onState({ transportStatus: 'sending' });
+      return { transportStatus: 'sent' };
+    },
+  };
+  const result = await adapter.sendSticker(input, async () => ({}), (state) => states.push(state.transportStatus));
+  assert.equal(result.transportStatus, 'sent');
+  assert.deepEqual(states, ['uploading', 'sending']);
+});
+
+test('E8.5-XMPP-006 keeps incoming and outgoing identities distinct for the same conversation id', () => {
+  const incoming = buildStickerMessage({ to: 'alice@example.test', clientMessageId: 'same-id', sticker: sticker(), sourceUrl: 'https://cdn.example.test/a.png' });
+  incoming.attrs.from = 'bob@example.test/resource';
+  const outgoing = buildStickerMessage({ to: 'bob@example.test', clientMessageId: 'same-id', sticker: sticker(), sourceUrl: 'https://cdn.example.test/a.png' });
+  outgoing.attrs.from = 'alice@example.test/resource';
+  const incomingRef = parseStickerMessage('alice@example.test', incoming, 'incoming');
+  const outgoingRef = parseStickerMessage('alice@example.test', outgoing, 'outgoing');
+  assert.notEqual(incomingRef.refId, outgoingRef.refId);
+});
+
 function mockAdapter() {
   const requests = [];
   const sent = [];
@@ -151,9 +180,35 @@ test('E8.5-XMPP-003 discovers HTTP Upload, validates the slot and sends one mess
   const states = [];
   const result = await service.send(input, async () => ({ ...sticker(), path: 'private', assetId: 'a1' }), (state) => states.push(state.transportStatus));
   assert.equal(result.transportStatus, 'sent');
-  assert.deepEqual(states, ['uploading', 'sending']);
+  assert.deepEqual(states, ['uploading', 'sending', 'sent']);
   assert.equal(putBody.body.toString(), 'data');
   assert.equal(putBody.headers.Authorization, 'Bearer test');
   assert.deepEqual(putOptions.headerEntries, [['Authorization', 'Bearer test'], ['Expires', 'one'], ['Expires', 'two']]);
   assert.equal(adapter.sent.length, 1);
+});
+
+test('E8.5-XMPP-007 reports failed states for discovery, PUT and uncertain XMPP send errors', async () => {
+  const input = { version: 1, requestId: 'r-failure', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-failure', stickerId: 's1' };
+  const run = async (configure, putStatus = 201) => {
+    const adapter = mockAdapter();
+    configure(adapter);
+    const states = [];
+    const service = createXmppStickerService(adapter, {
+      lookup: async () => [{ address: '203.0.113.10', family: 4 }],
+      readFile: async () => Buffer.from('data'),
+      put: async () => putStatus,
+    });
+    await assert.rejects(() => service.send(input, async () => ({ ...sticker(), path: 'private', assetId: 'a1' }), (state) => states.push(state)));
+    return states;
+  };
+  const discoveryStates = await run((adapter) => {
+    adapter.session.iqCaller.request = async () => { throw new Error('discovery failed'); };
+  });
+  assert.deepEqual(discoveryStates.map((state) => state.transportStatus), ['uploading', 'failed']);
+  const putStates = await run(() => undefined, 500);
+  assert.deepEqual(putStates.map((state) => state.transportStatus), ['uploading', 'failed']);
+  const sendStates = await run((adapter) => {
+    adapter.session.send = async () => { throw new Error('send uncertain'); };
+  });
+  assert.equal(sendStates.at(-1).errorCode, 'SEND_RESULT_UNKNOWN');
 });

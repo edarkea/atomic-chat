@@ -73,3 +73,44 @@ test('E8.5-IPC-004 saves only an incoming historical reference and returns an id
   assert.equal(result.ok, true);
   assert.equal(result.value.savedStickerId, 'saved-1');
 });
+
+test('E8.5-IPC-005 does not report a failed reference as successfully sent', async () => {
+  const value = setup(true);
+  value.runtime.persistence.getStickerMessageRef = () => ({ ...value.runtime.stickerMessages.save(), transportStatus: 'failed', errorCode: 'TRANSPORT_FAILED' });
+  const result = await value.handlers.get('stickerMessages.send')(value.event, {
+    version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'TRANSPORT_FAILED');
+});
+
+test('E8.5-IPC-006 finalizes queued state as failed when the XMPP operation rejects', async () => {
+  const value = setup(true);
+  const failed = [];
+  value.runtime.persistence.markStickerMessageFailed = (...args) => { failed.push(args); return value.runtime.stickerMessages.save(); };
+  value.runtime.xmpp.sendSticker = async () => { throw Object.assign(new Error('upload failed'), { code: 'TRANSPORT_FAILED' }); };
+  const result = await value.handlers.get('stickerMessages.send')(value.event, {
+    version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'TRANSPORT_FAILED');
+  assert.equal(failed.length, 1);
+});
+
+test('E8.5-IPC-007 does not emit a late failure into a replacement session', async () => {
+  const value = setup(true);
+  const events = [];
+  value.runtime.xmpp.emit = (event) => events.push(event);
+  value.runtime.persistence.markStickerMessageFailed = () => ({
+    ...value.runtime.stickerMessages.save(), transportStatus: 'failed', errorCode: 'NOT_CONNECTED',
+  });
+  value.runtime.xmpp.sendSticker = async () => {
+    value.runtime.xmpp.sessionGenerations.set('alice@example.test', 2);
+    throw Object.assign(new Error('session replaced'), { code: 'NOT_CONNECTED' });
+  };
+  const result = await value.handlers.get('stickerMessages.send')(value.event, {
+    version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(events.length, 1);
+});

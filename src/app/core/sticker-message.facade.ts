@@ -13,6 +13,7 @@ import { STICKER_MESSAGE_PORT, StickerMessagePort } from './ports';
 @Injectable({ providedIn: 'root' })
 export class StickerMessageFacade {
   private readonly port = inject<StickerMessagePort>(STICKER_MESSAGE_PORT);
+  private readonly pendingSaves = new Map<string, Promise<Result<StickerMessageRef>>>();
   readonly capability = signal<StickerCapability | undefined>(undefined);
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
@@ -62,6 +63,19 @@ export class StickerMessageFacade {
   }
 
   async save(ref: StickerMessageRef): Promise<Result<StickerMessageRef>> {
+    const pending = this.pendingSaves.get(ref.refId);
+    if (pending) return pending;
+    const operation = this.saveOnce(ref);
+    this.pendingSaves.set(ref.refId, operation);
+    void operation.then(() => {
+      if (this.pendingSaves.get(ref.refId) === operation) this.pendingSaves.delete(ref.refId);
+    }, () => {
+      if (this.pendingSaves.get(ref.refId) === operation) this.pendingSaves.delete(ref.refId);
+    });
+    return operation;
+  }
+
+  private async saveOnce(ref: StickerMessageRef): Promise<Result<StickerMessageRef>> {
     const input: StickerMessageSaveRequest = {
       version: 1,
       requestId: createOpaqueId('sticker-save'),

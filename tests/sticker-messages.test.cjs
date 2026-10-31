@@ -112,6 +112,9 @@ test('E8.5-STORE-004 keeps equal third-party stanza ids distinct by sender and c
   });
   assert.notEqual(first.refId, second.refId);
   assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_message_refs WHERE account_id = ?').get('alice@example.test').count, 2);
+  const preserved = value.persistence.upsertStickerMessageRef({ ...first, refId: 'legacy-v12-ref' });
+  assert.equal(preserved.refId, first.refId);
+  assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_message_refs WHERE account_id = ?').get('alice@example.test').count, 2);
   await close(value);
 });
 
@@ -144,7 +147,31 @@ test('E8.5-STORE-006 promotes a validated historical asset once and saves it as 
   const repeated = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', ref.previewStickerId), loaded);
   assert.equal(saved.stickerId, repeated.stickerId);
   assert.equal(value.persistence.countStickers('alice@example.test'), 1);
+  const secondRef = messages.save(reference('alice@example.test', 'bob@example.test', 'ref-save-2'));
+  const secondLoaded = await messages.load('alice@example.test', secondRef.refId);
+  const secondSaved = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', secondRef.previewStickerId), secondLoaded);
+  assert.notEqual(saved.stickerId, secondSaved.stickerId);
+  assert.equal(value.persistence.countStickers('alice@example.test'), 2);
+  assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_assets').get().count, 1);
+  assert.equal(messages.get('alice@example.test', ref.refId).savedStickerId, saved.stickerId);
   await stickers.delete('alice@example.test', saved.stickerId);
+  assert.equal(messages.get('alice@example.test', ref.refId).savedStickerId, undefined);
+  const savedAgain = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', ref.previewStickerId), loaded);
+  assert.equal(savedAgain.stickerId, saved.stickerId);
   assert.ok(messages.resolveForPreview('alice@example.test', ref.previewStickerId));
+  await close(value);
+});
+
+test('E8.5-STORE-007 enforces the 250 visible-entry quota under the account lock', async () => {
+  const value = await fixture();
+  const stickers = new StickerStore(value.root, value.persistence, decoder);
+  const now = new Date().toISOString();
+  for (let index = 0; index < 250; index += 1) {
+    const assetId = `quota-asset-${index}`;
+    value.persistence.insertStickerAsset({ accountId: 'alice@example.test', assetId, hashValue: `${String(index).padStart(64, '0')}`, mimeType: 'image/png', sizeBytes: '1', width: 1, height: 1, storageKey: `${assetId}.bin`, availability: 'available', createdAt: now, updatedAt: now });
+    value.persistence.insertSticker({ stickerId: `quota-sticker-${index}`, accountId: 'alice@example.test', assetId, name: 'quota', altText: 'quota', sortKey: `${now}-${index}`, availability: 'available', createdAt: now, updatedAt: now });
+  }
+  await assert.rejects(() => stickers.saveHistoricalMessage('alice@example.test', { accountId: 'alice@example.test', path: 'unused' }, { refId: 'quota-ref', hashValue: 'a'.repeat(64) }), { code: 'RESOURCE_CONSTRAINT' });
+  assert.equal(value.persistence.countStickers('alice@example.test'), 250);
   await close(value);
 });

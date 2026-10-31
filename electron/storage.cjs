@@ -1,11 +1,16 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const Database = require('better-sqlite3');
 
 function persistenceError(code, message = code) {
   const cause = new Error(message);
   cause.code = code;
   return cause;
+}
+
+function savedStickerIdForMessage(refId) {
+  return `sticker_saved_${crypto.createHash('sha256').update(refId).digest('hex').slice(0, 32)}`;
 }
 
 class PersistenceStore {
@@ -913,6 +918,7 @@ class PersistenceStore {
 
   stickerMessageFromRow(row) {
     if (!row) return null;
+    const savedStickerId = this.getSavedStickerIdForMessage(row.accountId, row.refId);
     return {
       refId: row.refId,
       previewStickerId: row.previewStickerId,
@@ -924,6 +930,7 @@ class PersistenceStore {
       direction: row.direction,
       senderJid: row.senderJid,
       ...(row.sourceStickerId ? { sourceStickerId: row.sourceStickerId } : {}),
+      ...(savedStickerId ? { savedStickerId } : {}),
       ...(row.name ? { name: row.name } : {}),
       ...(row.altText ? { altText: row.altText } : {}),
       ...(row.fallbackText ? { fallbackText: row.fallbackText } : {}),
@@ -974,6 +981,18 @@ class PersistenceStore {
   upsertStickerMessageRef(record) {
     if (!record?.refId || !record.accountId || !record.conversationId || !record.clientMessageId || !record.previewStickerId)
       throw persistenceError('INVALID_INPUT', 'referencia de sticker incompleta');
+    const existingIdentity = this.getStickerMessageRef(record.accountId, record.refId);
+    const senderJid = record.senderJid || record.accountId;
+    if (existingIdentity && (
+      existingIdentity.conversationId !== record.conversationId ||
+      existingIdentity.clientMessageId !== record.clientMessageId ||
+      existingIdentity.direction !== record.direction ||
+      existingIdentity.senderJid !== senderJid
+    )) throw persistenceError('CONFLICT', 'la referencia de sticker pertenece a otra identidad');
+    const existingByIdentity = this.getStickerMessageRefByClientMessageId(
+      record.accountId, record.clientMessageId, record.conversationId, record.direction, senderJid,
+    );
+    const targetRefId = existingByIdentity?.refId || record.refId;
     this.database.prepare(
       `INSERT INTO sticker_message_refs(
         ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
@@ -1009,9 +1028,9 @@ class PersistenceStore {
         error_code = excluded.error_code,
         updated_at = excluded.updated_at`,
     ).run({
-      refId: record.refId, accountId: record.accountId, conversationId: record.conversationId,
+      refId: targetRefId, accountId: record.accountId, conversationId: record.conversationId,
       clientMessageId: record.clientMessageId, stanzaId: record.stanzaId || null, originId: record.originId || null,
-      direction: record.direction, senderJid: record.senderJid || record.accountId, sourceStickerId: record.sourceStickerId || null,
+      direction: record.direction, senderJid, sourceStickerId: record.sourceStickerId || null,
       previewStickerId: record.previewStickerId, name: record.name || null, altText: record.altText || null, fallbackText: record.fallbackText || null,
       mimeType: record.mimeType, sizeBytes: String(record.sizeBytes), width: record.width, height: record.height,
       hashAlgorithm: 'sha-256', hashValue: record.hashValue, remoteUrl: record.remoteUrl || null,
@@ -1019,9 +1038,8 @@ class PersistenceStore {
       transportStatus: record.transportStatus, availability: record.availability, errorCode: record.errorCode || null,
       createdAt: record.createdAt, updatedAt: record.updatedAt,
     });
-    return this.getStickerMessageRef(record.accountId, record.refId) || this.database.prepare(
-      'SELECT ref_id AS refId FROM sticker_message_refs WHERE account_id = ? AND client_message_id = ?',
-    ).get(record.accountId, record.clientMessageId);
+    return this.getStickerMessageRef(record.accountId, targetRefId) ||
+      this.getStickerMessageRefByClientMessageId(record.accountId, record.clientMessageId, record.conversationId, record.direction, senderJid);
   }
 
   markStickerMessageAvailable(accountId, refId, changes) {
@@ -1108,6 +1126,11 @@ class PersistenceStore {
         name, alt_text AS altText, sort_key AS sortKey, availability, created_at AS createdAt, updated_at AS updatedAt
        FROM stickers WHERE account_id = ? AND sticker_id = ?`,
     ).get(accountId, stickerId) || null;
+  }
+
+  getSavedStickerIdForMessage(accountId, refId) {
+    const stickerId = savedStickerIdForMessage(refId);
+    return this.getSticker(accountId, stickerId) ? stickerId : undefined;
   }
 
   listStickers(accountId, query = '', limit = 250, packId) {
@@ -1451,7 +1474,8 @@ class PersistenceStore {
             availability: row.availability,
           },
         };
-      if (row.kind === 'sticker')
+      if (row.kind === 'sticker') {
+        const savedStickerId = this.getSavedStickerIdForMessage(row.account_id, row.transfer_id);
         return {
           kind: 'sticker',
           id: row.id,
@@ -1467,6 +1491,7 @@ class PersistenceStore {
             ...(row.stanza_id ? { stanzaId: row.stanza_id } : {}),
             ...(row.origin_id ? { originId: row.origin_id } : {}),
             ...(row.source_sticker_id ? { sourceStickerId: row.source_sticker_id } : {}),
+            ...(savedStickerId ? { savedStickerId } : {}),
             ...(row.original_name ? { name: row.original_name } : {}),
             ...(row.alt_text ? { altText: row.alt_text } : {}),
             ...(row.fallback_text ? { fallbackText: row.fallback_text } : {}),
@@ -1484,6 +1509,7 @@ class PersistenceStore {
             updatedAt: row.sort_at,
           },
         };
+      }
       return {
         kind: 'image',
         id: row.media_id,
