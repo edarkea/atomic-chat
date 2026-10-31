@@ -12,6 +12,7 @@ const FILE_NS = 'urn:xmpp:file:metadata:0';
 const HASHES_NS = 'urn:xmpp:hashes:2';
 const URL_DATA_NS = 'http://jabber.org/protocol/url-data';
 const FALLBACK_NS = 'urn:xmpp:fallback:0';
+const STORAGE_NS = 'urn:atomic:sticker-storage:0';
 const UPLOAD_NS = 'urn:xmpp:http:upload:0';
 const DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info';
 const DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items';
@@ -81,7 +82,7 @@ function validateStickerMetadata(sticker) {
   return { sizeBytes, ...dimensions };
 }
 
-function buildStickerMessage({ to, clientMessageId, sticker, sourceUrl, fallback, packId }) {
+function buildStickerMessage({ to, clientMessageId, sticker, sourceUrl, fallback, packId, storageProviderId, storageOrigin }) {
   if (!safeText(to, 512) || !safeText(clientMessageId, 512)) throw stickerError('INVALID_INPUT', 'destinatario o correlación inválidos', 'sticker.serialize');
   const metadata = validateStickerMetadata(sticker);
   const target = validateHttpsUrl(sourceUrl);
@@ -95,16 +96,17 @@ function buildStickerMessage({ to, clientMessageId, sticker, sourceUrl, fallback
   ];
   const description = safeText(sticker.altText, 1024);
   if (description) fileChildren.push(xml('desc', {}, description));
+  const sharingChildren = [
+    xml('file', { xmlns: FILE_NS }, ...fileChildren),
+    xml('sources', {}, xml('url-data', { xmlns: URL_DATA_NS, target })),
+  ];
+  if (safeText(storageProviderId, 128) && safeText(storageOrigin, 512))
+    sharingChildren.push(xml('provider', { xmlns: STORAGE_NS, id: storageProviderId, origin: storageOrigin }));
   return xml(
     'message',
     { type: 'chat', to: to.trim(), id: clientMessageId.trim() },
     xml('sticker', { xmlns: STICKERS_NS, ...(packId ? { pack: safeText(packId, 512) } : {}) }),
-    xml(
-      'file-sharing',
-      { xmlns: SFS_NS, disposition: 'inline', id: `sticker-${clientMessageId}` },
-      xml('file', { xmlns: FILE_NS }, ...fileChildren),
-      xml('sources', {}, xml('url-data', { xmlns: URL_DATA_NS, target })),
-    ),
+    xml('file-sharing', { xmlns: SFS_NS, disposition: 'inline', id: `sticker-${clientMessageId}` }, ...sharingChildren),
     xml('fallback', { xmlns: FALLBACK_NS, for: SFS_NS }, xml('body')),
     xml('body', {}, safeText(fallback, 1024) || description || 'Sticker'),
     xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: clientMessageId.trim() }),
@@ -129,6 +131,7 @@ function parseStickerMessage(accountId, stanza, direction = 'incoming') {
   const sizeBytes = file?.getChildText('size');
   const hash = file?.getChild('hash', HASHES_NS);
   const source = sharing.getChild('sources')?.getChild('url-data', URL_DATA_NS)?.attrs?.target;
+  const provider = sharing.getChild('provider', STORAGE_NS);
   if (!file || !mimeType || !sizeBytes || !hash || hash.attrs?.algo !== 'sha-256' || !source)
     throw stickerError('INVALID_INPUT', 'metadata de sticker incompleta', 'sticker.parse');
   const dimensions = parseDimensions(file);
@@ -159,6 +162,8 @@ function parseStickerMessage(accountId, stanza, direction = 'incoming') {
     hashAlgorithm: 'sha-256',
     hashValue: hashFromBase64(hash.getText()),
     remoteUrl,
+    ...(safeText(provider?.attrs?.id, 128) ? { storageProviderId: safeText(provider.attrs.id, 128) } : {}),
+    ...(safeText(provider?.attrs?.origin, 512) ? { storageOrigin: safeText(provider.attrs.origin, 512) } : {}),
     transportStatus: 'sent',
     availability: 'missing',
     createdAt: new Date().toISOString(),
@@ -248,9 +253,24 @@ function createXmppStickerService(adapter, options = {}) {
   const put = options.put || putHttps;
   const readFile = options.readFile || ((filePath) => fsp.readFile(filePath));
   const storageProvider = options.storageProvider;
+  const storageConfiguration = options.storageConfiguration || { alternativeAvailable: false };
 
   function current(accountId, session, generation) {
     adapter.assertSessionCurrent(accountId, session, generation, adapter.sessionDomains.get(accountId) || '');
+  }
+
+  function parseWithProvider(accountId, stanza, direction = 'incoming') {
+    const parsed = parseStickerMessage(accountId, stanza, direction);
+    if (!parsed || !storageProvider) return parsed;
+    if (!storageProvider.ownsReference?.(parsed)) {
+      const { storageProviderId: _providerId, storageOrigin: _origin, ...unlinked } = parsed;
+      return unlinked;
+    }
+    return {
+      ...parsed,
+      storageProviderId: storageProvider.providerId,
+      storageOrigin: parsed.storageOrigin,
+    };
   }
 
   async function requestDisco(session, to, child) {
@@ -334,9 +354,24 @@ function createXmppStickerService(adapter, options = {}) {
 
   return {
     async discover(input) {
+      if (storageProvider) {
+        const value = await storageProvider.getCapabilities({ accountId: input.accountId });
+        return {
+          transportMode: 'PERSISTENT_HTTPS',
+          persistentHttpsAvailable: true,
+          providerId: value.providerId,
+          storageOrigins: value.storageOrigins,
+          maxFileSize: value.maxFileSize === undefined ? undefined : Number(value.maxFileSize),
+        };
+      }
       const session = adapter.requireConnected(input.accountId);
       const generation = adapter.sessionGenerations.get(input.accountId) || 0;
-      return discover(input.accountId, session, generation);
+      const value = await discover(input.accountId, session, generation);
+      return {
+        ...value,
+        transportMode: 'HTTP_UPLOAD_XEP0363',
+        persistentHttpsAvailable: storageConfiguration.alternativeAvailable === true,
+      };
     },
     async send(input, resolveSource, onState = () => undefined) {
       const attemptKey = `${input.accountId}|${adapter.bareJid(input.conversationId)}|${input.clientMessageId}`;
@@ -388,6 +423,7 @@ function createXmppStickerService(adapter, options = {}) {
             hashValue: String(source.hashValue).toLowerCase(),
           };
           let remoteUrl;
+          let resolvedAsset;
           if (storageProvider) {
             const capabilities = await storageProvider.getCapabilities({ accountId: input.accountId });
             if (capabilities.maxFileSize !== undefined && metadata.sizeBytes > Number(capabilities.maxFileSize))
@@ -398,15 +434,15 @@ function createXmppStickerService(adapter, options = {}) {
               metadata: storageMetadata,
               bytes,
             });
-            const resolved = await storageProvider.resolveSticker({
+            resolvedAsset = await storageProvider.resolveSticker({
               accountId: input.accountId,
               assetId: uploaded.assetId,
               remoteUrl: uploaded.remoteUrl,
               expected: storageMetadata,
             });
-            if (resolved.availability !== 'available')
+            if (resolvedAsset.availability !== 'available')
               throw stickerError('MEDIA_PREVIEW_UNAVAILABLE', 'el asset no está disponible para descarga', 'sticker.storage');
-            remoteUrl = resolved.remoteUrl;
+            remoteUrl = resolvedAsset.remoteUrl;
           } else {
             const status = await put(slot.putUrl, bytes, { ...slot.headers, 'Content-Type': source.mimeType }, {
               timeoutMs: 15000,
@@ -417,10 +453,29 @@ function createXmppStickerService(adapter, options = {}) {
             remoteUrl = slot.getUrl;
           }
           current(input.accountId, session, generation);
-          state = { ...state, transportStatus: 'sending', updatedAt: new Date().toISOString(), remoteUrl };
+          state = {
+            ...state,
+            transportStatus: 'sending',
+            updatedAt: new Date().toISOString(),
+            remoteUrl,
+            ...(storageProvider ? {
+              storageProviderId: resolvedAsset.providerId,
+              storageOrigin: resolvedAsset.storageOrigin,
+            } : {}),
+          };
           await onState(state);
           current(input.accountId, session, generation);
-          const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: remoteUrl, fallback: source.altText });
+          const stanza = buildStickerMessage({
+            to: input.conversationId,
+            clientMessageId: input.clientMessageId,
+            sticker: source,
+            sourceUrl: remoteUrl,
+            fallback: source.altText,
+            ...(storageProvider ? {
+              storageProviderId: resolvedAsset.providerId,
+              storageOrigin: resolvedAsset.storageOrigin,
+            } : {}),
+          });
           try {
             await session.send(stanza);
             sendConfirmed = true;
@@ -458,10 +513,12 @@ function createXmppStickerService(adapter, options = {}) {
       attempts.set(attemptKey, operation);
       try { return await operation; } finally { attempts.delete(attemptKey); }
     },
-    parseMessage(accountId, stanza, direction = 'incoming') { return parseStickerMessage(accountId, stanza, direction); },
+    parseMessage(accountId, stanza, direction = 'incoming') {
+      return parseWithProvider(accountId, stanza, direction);
+    },
     handleMessage(accountId, stanza) {
       try {
-        const parsed = parseStickerMessage(accountId, stanza, 'incoming');
+        const parsed = parseWithProvider(accountId, stanza, 'incoming');
         if (!parsed) return false;
         adapter.emit({ type: 'sticker.messageReceived', payload: parsed });
       } catch (error) {
@@ -478,6 +535,6 @@ function clientMessageIdOrUndefined(stanza) { return stanza?.attrs?.id; }
 
 module.exports = {
   DATAFORM_NS, DISCO_INFO_NS, DISCO_ITEMS_NS, FALLBACK_NS, FILE_NS, HASHES_NS, MAX_STICKER_BYTES, MAX_DIMENSION,
-  SFS_NS, STICKERS_NS, UPLOAD_NS, URL_DATA_NS, buildStickerMessage, createXmppStickerService, hashFromBase64,
+  SFS_NS, STORAGE_NS, STICKERS_NS, UPLOAD_NS, URL_DATA_NS, buildStickerMessage, createXmppStickerService, hashFromBase64,
   isPrivateAddress, parseStickerMessage, previewStickerId, refIdFor, validateHttpsUrl,
 };

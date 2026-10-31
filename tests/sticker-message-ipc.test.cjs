@@ -45,6 +45,29 @@ test('E8.5-IPC-001 rejects account access from an unauthorized window', async ()
   assert.equal(result.error.code, 'UNAUTHORIZED');
 });
 
+test('E8.5-ALT-IPC-001 reports the selected persistent provider without XEP-0363 fields', async () => {
+  const value = setup(true);
+  let calls = 0;
+  value.runtime.xmpp.discoverStickers = async () => {
+    calls += 1;
+    return {
+      transportMode: 'PERSISTENT_HTTPS',
+      providerId: 'test-storage',
+      storageOrigins: ['https://storage.example.test'],
+      maxFileSize: 4,
+    };
+  };
+  const result = await value.handlers.get('stickerMessages.discover')(value.event, {
+    version: 1, requestId: 'discover-alt', accountId: 'alice@example.test',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.transportMode, 'PERSISTENT_HTTPS');
+  assert.equal(result.value.persistentHttpsAvailable, true);
+  assert.equal(result.value.providerId, 'test-storage');
+  assert.equal(result.value.uploadService, undefined);
+  assert.equal(calls, 1);
+});
+
 test('E8.5-IPC-002 sends only through an owned sticker id and returns a metadata ref', async () => {
   const value = setup(true);
   const result = await value.handlers.get('stickerMessages.send')(value.event, {

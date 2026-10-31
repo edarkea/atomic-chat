@@ -38,6 +38,7 @@ const { StickerStore } = require('./sticker-store.cjs');
 const { StickerPackStore } = require('./sticker-pack-store.cjs');
 const { StickerMessageStore } = require('./sticker-message-store.cjs');
 const { StickerGrantRegistry } = require('./sticker-grants.cjs');
+const { activateStickerStorage } = require('./sticker-storage-activation.cjs');
 const { persistCompletedTransfer } = require('./media-transfer-persistence.cjs');
 const { normalizeTransferTimeout } = require('./transfer-timeout.cjs');
 const {
@@ -58,6 +59,7 @@ const defaultDownloadDirectory = path.join(
 fs.mkdirSync(atomicDataPath, { recursive: true });
 app.setPath('userData', atomicDataPath);
 const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
+const stickerStorageActivation = activateStickerStorage({ environment: process.env });
 const fileResourceLimiter = new TransferResourceLimiter();
 const {
   selectFileDestination,
@@ -252,6 +254,8 @@ function initializeRuntime() {
     fileTransfers,
     outgoingFileTransfers,
     shell,
+    stickerStorageProvider: stickerStorageActivation.provider,
+    stickerStorageConfiguration: stickerStorageActivation.configuration,
   });
   runtime.stickers.setActiveGrantChecker((accountId, assetId) => stickerGrants.hasActiveAsset(accountId, assetId));
   attachEventSources();

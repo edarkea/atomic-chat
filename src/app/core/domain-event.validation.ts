@@ -489,6 +489,8 @@ function isStickerMessageRef(value: unknown): value is StickerMessageRef {
     value.hashAlgorithm === 'sha-256' &&
     isString(value.hashValue) &&
     isOptionalString(value.remoteUrl) &&
+    isOptionalString(value['storageProviderId']) &&
+    isOptionalString(value['storageOrigin']) &&
     isOptionalString(value.localAssetId) &&
     isOneOf(value.transportStatus, ['queued', 'uploading', 'sending', 'sent', 'failed']) &&
     isOneOf(value.availability, ['available', 'missing', 'invalid', 'blocked']) &&
@@ -502,7 +504,11 @@ function isStickerCapability(value: unknown): value is StickerCapability {
   if (!isRecord(value)) return false;
   return (
     isString(value.accountId) &&
+    isOneOf(value['transportMode'], ['HTTP_UPLOAD_XEP0363', 'PERSISTENT_HTTPS']) &&
     isBoolean(value.supported) &&
+    isBoolean(value['persistentHttpsAvailable']) &&
+    isOptionalString(value['providerId']) &&
+    (value['storageOrigins'] === undefined || (isArray(value['storageOrigins']) && value['storageOrigins'].every(isString))) &&
     isOptionalString(value.uploadService) &&
     isOptionalString(value.maxFileSize) &&
     isPositiveInteger(value.sessionGeneration) &&

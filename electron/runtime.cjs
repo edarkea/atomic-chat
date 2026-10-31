@@ -39,6 +39,7 @@ function createRuntime({
   outgoingFileTransfers,
   shell,
   stickerStorageProvider = null,
+  stickerStorageConfiguration = null,
   environment = process.env,
 }) {
   const persistence = new PersistenceStore(app.getPath('userData'));
@@ -61,6 +62,7 @@ function createRuntime({
     fileTransfers,
     outgoingFileTransfers,
     stickerStorageProvider,
+    stickerStorageConfiguration,
   );
   return { persistence, media, fileHistory, stickers, stickerPacks, stickerMessages, secrets, xmpp };
 }

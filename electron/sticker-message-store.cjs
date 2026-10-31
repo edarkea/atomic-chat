@@ -109,7 +109,8 @@ class StickerMessageStore {
         hashAlgorithm: 'sha-256',
         hashValue: current.hashValue,
       };
-      const persistentSource = this.storageProvider && this.isPersistentProviderUrl(current.remoteUrl)
+      const persistentSource = this.storageProvider &&
+        this.storageProvider.ownsReference?.(current)
         ? await this.storageProvider.resolveSticker({
           accountId,
           remoteUrl: current.remoteUrl,
@@ -122,6 +123,7 @@ class StickerMessageStore {
           assetId: persistentSource.assetId,
           remoteUrl: persistentSource.remoteUrl,
           expected,
+          maxBytes: String(MAX_BYTES),
         })
         : await this.download(current.remoteUrl);
       if (!isAuthorized()) throw storeError('UNAUTHORIZED', 'la operación ya no está autorizada');
@@ -191,15 +193,6 @@ class StickerMessageStore {
     };
   }
 
-  isPersistentProviderUrl(value) {
-    try {
-      const url = new URL(value);
-      return url.protocol === 'https:' && !url.search && !url.hash && !url.username && !url.password;
-    } catch {
-      return false;
-    }
-  }
-
   publicRef(ref) {
     const savedStickerId = ref.savedStickerId || this.stickerStore?.savedStickerIdForMessage(ref.accountId, ref.refId);
     return {
@@ -223,6 +216,8 @@ class StickerMessageStore {
       height: ref.height,
       hashAlgorithm: 'sha-256',
       hashValue: ref.hashValue,
+      ...(ref.storageProviderId ? { storageProviderId: ref.storageProviderId } : {}),
+      ...(ref.storageOrigin ? { storageOrigin: ref.storageOrigin } : {}),
       ...(ref.localAssetId ? { localAssetId: ref.localAssetId } : {}),
       transportStatus: ref.transportStatus,
       availability: ref.availability,

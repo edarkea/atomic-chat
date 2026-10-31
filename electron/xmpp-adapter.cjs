@@ -14,6 +14,7 @@ class XmppAdapter {
     fileTransfers = null,
     outgoingTransfers = null,
     stickerStorageProvider = null,
+    stickerStorageConfiguration = null,
   ) {
     this.packaged = packaged;
     this.trustStore = trustStore;
@@ -47,7 +48,10 @@ class XmppAdapter {
     this.carbons = createXmppCarbons(this);
     this.mucService = createMucService(this);
     this.fileService = createFileService(this);
-    this.stickerService = createXmppStickerService(this, { storageProvider: stickerStorageProvider });
+    this.stickerService = createXmppStickerService(this, {
+      storageProvider: stickerStorageProvider,
+      storageConfiguration: stickerStorageConfiguration,
+    });
     if (this.fileTransfers)
       this.fileTransfers.onEvent((event) => {
         if (!event.type.endsWith('stateChanged')) return;

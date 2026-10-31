@@ -528,6 +528,8 @@ export interface StickerMessageRef {
   readonly hashAlgorithm: 'sha-256';
   readonly hashValue: string;
   readonly remoteUrl?: string;
+  readonly storageProviderId?: string;
+  readonly storageOrigin?: string;
   readonly localAssetId?: string;
   readonly transportStatus: StickerMessageTransportStatus;
   readonly availability: StickerMessageAvailability;
@@ -537,7 +539,11 @@ export interface StickerMessageRef {
 }
 export interface StickerCapability {
   readonly accountId: string;
+  readonly transportMode: 'HTTP_UPLOAD_XEP0363' | 'PERSISTENT_HTTPS';
   readonly supported: boolean;
+  readonly persistentHttpsAvailable: boolean;
+  readonly providerId?: string;
+  readonly storageOrigins?: readonly string[];
   readonly uploadService?: string;
   readonly maxFileSize?: DecimalByteCount;
   readonly sessionGeneration: number;
@@ -560,6 +566,7 @@ export interface StickerStorageMetadata {
 }
 export interface StickerStorageCapabilities {
   readonly providerId: string;
+  readonly storageOrigins: readonly string[];
   readonly uploadSupported: boolean;
   readonly downloadSupported: boolean;
   readonly maxFileSize?: DecimalByteCount;
@@ -572,6 +579,8 @@ export interface StickerStorageUploadRequest {
   readonly bytes: Uint8Array;
 }
 export interface StickerStorageAssetRef extends StickerStorageMetadata {
+  readonly providerId: string;
+  readonly storageOrigin: string;
   readonly assetId: string;
   readonly remoteUrl: string;
   readonly availability: StickerStorageAvailability;
@@ -583,7 +592,9 @@ export interface StickerStorageResolveRequest {
   readonly remoteUrl: string;
   readonly expected: StickerStorageMetadata;
 }
-export interface StickerStorageDownloadRequest extends StickerStorageResolveRequest {}
+export interface StickerStorageDownloadRequest extends StickerStorageResolveRequest {
+  readonly maxBytes: DecimalByteCount;
+}
 export interface StickerSendRequest {
   readonly version: 1;
   readonly requestId: RequestId;

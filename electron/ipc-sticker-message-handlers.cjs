@@ -88,7 +88,11 @@ function registerStickerMessageHandlers({
       if (!currentAuthorization(event, input.accountId)) throw new Error('UNAUTHORIZED');
       return success(input, {
         accountId: input.accountId,
+        transportMode: value.transportMode || 'HTTP_UPLOAD_XEP0363',
         supported: true,
+        persistentHttpsAvailable: value.transportMode === 'PERSISTENT_HTTPS',
+        ...(value.providerId ? { providerId: value.providerId } : {}),
+        ...(value.storageOrigins ? { storageOrigins: value.storageOrigins } : {}),
         ...(value.serviceJid ? { uploadService: value.serviceJid } : {}),
         ...(value.maxFileSize !== undefined ? { maxFileSize: String(value.maxFileSize) } : {}),
         sessionGeneration: runtime.xmpp.sessionGenerations.get(input.accountId) || 0,

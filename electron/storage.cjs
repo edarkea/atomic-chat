@@ -379,6 +379,8 @@ class PersistenceStore {
             hash_algorithm TEXT NOT NULL CHECK (hash_algorithm IN ('sha-256')),
             hash_value TEXT NOT NULL,
             remote_url TEXT,
+            storage_provider_id TEXT,
+            storage_origin TEXT,
             local_asset_id TEXT,
             storage_key TEXT,
             transport_status TEXT NOT NULL CHECK (transport_status IN ('queued', 'uploading', 'sending', 'sent', 'failed')),
@@ -399,6 +401,11 @@ class PersistenceStore {
       const fallbackColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
       if (fallbackColumns.length && !fallbackColumns.some((column) => column.name === 'fallback_text'))
         this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN fallback_text TEXT');
+      const preMigrationProviderColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
+      if (preMigrationProviderColumns.length && !preMigrationProviderColumns.some((column) => column.name === 'storage_provider_id'))
+        this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN storage_provider_id TEXT');
+      if (preMigrationProviderColumns.length && !preMigrationProviderColumns.some((column) => column.name === 'storage_origin'))
+        this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN storage_origin TEXT');
       const schemaAfterStickerMessages = this.database.prepare('SELECT version FROM schema_meta').get().version;
       if (schemaAfterStickerMessages < 13) {
         this.database.exec(`
@@ -423,6 +430,8 @@ class PersistenceStore {
             hash_algorithm TEXT NOT NULL CHECK (hash_algorithm IN ('sha-256')),
             hash_value TEXT NOT NULL,
             remote_url TEXT,
+            storage_provider_id TEXT,
+            storage_origin TEXT,
             local_asset_id TEXT,
             storage_key TEXT,
             transport_status TEXT NOT NULL CHECK (transport_status IN ('queued', 'uploading', 'sending', 'sent', 'failed')),
@@ -436,12 +445,12 @@ class PersistenceStore {
           INSERT INTO sticker_message_refs_v13(
             ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
             sender_jid, source_sticker_id, preview_sticker_id, name, alt_text, fallback_text, mime_type,
-            size_bytes, width, height, hash_algorithm, hash_value, remote_url, local_asset_id, storage_key,
+            size_bytes, width, height, hash_algorithm, hash_value, remote_url, storage_provider_id, storage_origin, local_asset_id, storage_key,
             transport_status, availability, error_code, created_at, updated_at
           ) SELECT
             ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
             sender_jid, source_sticker_id, preview_sticker_id, name, alt_text, fallback_text, mime_type,
-            size_bytes, width, height, hash_algorithm, hash_value, remote_url, local_asset_id, storage_key,
+            size_bytes, width, height, hash_algorithm, hash_value, remote_url, storage_provider_id, storage_origin, local_asset_id, storage_key,
             transport_status, availability, error_code, created_at, updated_at
           FROM sticker_message_refs;
           DROP INDEX IF EXISTS idx_sticker_messages_account_conversation_created;
@@ -458,6 +467,12 @@ class PersistenceStore {
       const stickerMessageColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
       if (stickerMessageColumns.length && !stickerMessageColumns.some((column) => column.name === 'fallback_text'))
         this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN fallback_text TEXT');
+      const providerColumns = this.database.prepare('PRAGMA table_info(sticker_message_refs)').all();
+      if (providerColumns.length && !providerColumns.some((column) => column.name === 'storage_provider_id'))
+        this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN storage_provider_id TEXT');
+      if (providerColumns.length && !providerColumns.some((column) => column.name === 'storage_origin'))
+        this.database.exec('ALTER TABLE sticker_message_refs ADD COLUMN storage_origin TEXT');
+      this.database.prepare('UPDATE schema_meta SET version = 14 WHERE version < 14').run();
     });
     migrate();
   }
@@ -945,6 +960,8 @@ class PersistenceStore {
       hashAlgorithm: row.hashAlgorithm,
       hashValue: row.hashValue,
       ...(row.remoteUrl ? { remoteUrl: row.remoteUrl } : {}),
+      ...(row.storageProviderId ? { storageProviderId: row.storageProviderId } : {}),
+      ...(row.storageOrigin ? { storageOrigin: row.storageOrigin } : {}),
       ...(row.localAssetId ? { localAssetId: row.localAssetId } : {}),
       ...(row.storageKey ? { storageKey: row.storageKey } : {}),
       transportStatus: row.transportStatus,
@@ -962,6 +979,7 @@ class PersistenceStore {
         origin_id AS originId, direction, sender_jid AS senderJid, source_sticker_id AS sourceStickerId,
         name, alt_text AS altText, fallback_text AS fallbackText, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
         hash_algorithm AS hashAlgorithm, hash_value AS hashValue, remote_url AS remoteUrl,
+        storage_provider_id AS storageProviderId, storage_origin AS storageOrigin,
         local_asset_id AS localAssetId, storage_key AS storageKey, transport_status AS transportStatus,
         availability, error_code AS errorCode, created_at AS createdAt, updated_at AS updatedAt
        FROM sticker_message_refs WHERE account_id = ? AND ref_id = ?`,
@@ -975,6 +993,7 @@ class PersistenceStore {
         origin_id AS originId, direction, sender_jid AS senderJid, source_sticker_id AS sourceStickerId,
         name, alt_text AS altText, fallback_text AS fallbackText, mime_type AS mimeType, size_bytes AS sizeBytes, width, height,
         hash_algorithm AS hashAlgorithm, hash_value AS hashValue, remote_url AS remoteUrl,
+        storage_provider_id AS storageProviderId, storage_origin AS storageOrigin,
         local_asset_id AS localAssetId, storage_key AS storageKey, transport_status AS transportStatus,
         availability, error_code AS errorCode, created_at AS createdAt, updated_at AS updatedAt
        FROM sticker_message_refs WHERE account_id = ? AND client_message_id = ? AND direction = ?
@@ -1002,7 +1021,9 @@ class PersistenceStore {
       existingByIdentity.mimeType !== record.mimeType ||
       String(existingByIdentity.sizeBytes) !== String(record.sizeBytes) ||
       existingByIdentity.width !== record.width ||
-      existingByIdentity.height !== record.height
+      existingByIdentity.height !== record.height ||
+      (existingByIdentity.storageProviderId && record.storageProviderId && existingByIdentity.storageProviderId !== record.storageProviderId) ||
+      (existingByIdentity.storageOrigin && record.storageOrigin && existingByIdentity.storageOrigin !== record.storageOrigin)
     )) throw persistenceError('CONFLICT', 'la identidad de sticker ya tiene otro contenido');
     const targetRefId = existingByIdentity?.refId || record.refId;
     const previewStickerId = previewStickerIdForMessage(targetRefId);
@@ -1010,12 +1031,12 @@ class PersistenceStore {
       `INSERT INTO sticker_message_refs(
         ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
         sender_jid, source_sticker_id, preview_sticker_id, name, alt_text, fallback_text, mime_type, size_bytes,
-        width, height, hash_algorithm, hash_value, remote_url, local_asset_id, storage_key,
+        width, height, hash_algorithm, hash_value, remote_url, storage_provider_id, storage_origin, local_asset_id, storage_key,
         transport_status, availability, error_code, created_at, updated_at
       ) VALUES (
         @refId, @accountId, @conversationId, @clientMessageId, @stanzaId, @originId, @direction,
         @senderJid, @sourceStickerId, @previewStickerId, @name, @altText, @fallbackText, @mimeType, @sizeBytes,
-        @width, @height, @hashAlgorithm, @hashValue, @remoteUrl, @localAssetId, @storageKey,
+        @width, @height, @hashAlgorithm, @hashValue, @remoteUrl, @storageProviderId, @storageOrigin, @localAssetId, @storageKey,
         @transportStatus, @availability, @errorCode, @createdAt, @updatedAt
       ) ON CONFLICT(ref_id) DO UPDATE SET
         stanza_id = excluded.stanza_id,
@@ -1034,6 +1055,8 @@ class PersistenceStore {
         hash_algorithm = excluded.hash_algorithm,
         hash_value = sticker_message_refs.hash_value,
         remote_url = COALESCE(excluded.remote_url, sticker_message_refs.remote_url),
+        storage_provider_id = COALESCE(excluded.storage_provider_id, sticker_message_refs.storage_provider_id),
+        storage_origin = COALESCE(excluded.storage_origin, sticker_message_refs.storage_origin),
         local_asset_id = CASE WHEN sticker_message_refs.availability = 'available'
           THEN COALESCE(sticker_message_refs.local_asset_id, excluded.local_asset_id)
           ELSE COALESCE(excluded.local_asset_id, sticker_message_refs.local_asset_id) END,
@@ -1062,6 +1085,7 @@ class PersistenceStore {
       previewStickerId, name: record.name || null, altText: record.altText || null, fallbackText: record.fallbackText || null,
       mimeType: record.mimeType, sizeBytes: String(record.sizeBytes), width: record.width, height: record.height,
       hashAlgorithm: 'sha-256', hashValue: record.hashValue, remoteUrl: record.remoteUrl || null,
+      storageProviderId: record.storageProviderId || null, storageOrigin: record.storageOrigin || null,
       localAssetId: record.localAssetId || null, storageKey: record.storageKey || null,
       transportStatus: record.transportStatus, availability: record.availability, errorCode: record.errorCode || null,
       createdAt: record.createdAt, updatedAt: record.updatedAt,
