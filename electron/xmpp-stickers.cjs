@@ -342,6 +342,7 @@ function createXmppStickerService(adapter, options = {}) {
       const existing = attempts.get(attemptKey);
       if (existing) return existing;
       let state;
+      let sendConfirmed = false;
       const operation = (async () => {
         try {
           const session = adapter.requireConnected(input.accountId);
@@ -387,6 +388,7 @@ function createXmppStickerService(adapter, options = {}) {
           const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: slot.getUrl, fallback: source.altText });
           try {
             await session.send(stanza);
+            sendConfirmed = true;
           } catch (cause) {
             throw stickerError('SEND_RESULT_UNKNOWN', 'el resultado del envío XMPP es incierto', 'sticker.send', cause);
           }
@@ -404,7 +406,17 @@ function createXmppStickerService(adapter, options = {}) {
           current(input.accountId, session, generation);
           return state;
         } catch (error) {
-          if (state) await onState({ ...state, transportStatus: 'failed', errorCode: error?.code || 'TRANSPORT_FAILED', updatedAt: new Date().toISOString() });
+          if (sendConfirmed && error?.code === 'NOT_CONNECTED') {
+            error = stickerError('SEND_RESULT_UNKNOWN', 'el envío se completó antes del cambio de sesión', 'sticker.session', error);
+          }
+          if (sendConfirmed) error.sendConfirmed = true;
+          if (state && !sendConfirmed) {
+            try {
+              await onState({ ...state, transportStatus: 'failed', errorCode: error?.code || 'TRANSPORT_FAILED', updatedAt: new Date().toISOString() });
+            } catch (stateError) {
+              error.stateError = stateError;
+            }
+          }
           throw error;
         }
       })();

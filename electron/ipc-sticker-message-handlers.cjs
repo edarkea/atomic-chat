@@ -12,7 +12,7 @@ function registerStickerMessageHandlers({
     'INVALID_INPUT', 'UNAUTHORIZED', 'NOT_CONNECTED', 'TIMEOUT', 'UNSUPPORTED',
     'TRANSPORT_FAILED', 'MEDIA_PREVIEW_UNAVAILABLE', 'MEDIA_TYPE_UNSUPPORTED',
     'MEDIA_SIZE_EXCEEDED', 'MEDIA_DIMENSIONS_INVALID', 'MEDIA_DECODE_FAILED',
-    'STORAGE_FAILED', 'RESOURCE_CONSTRAINT', 'CONFLICT', 'SEND_RESULT_UNKNOWN', 'INTERNAL',
+    'STORAGE_FAILED', 'RESOURCE_CONSTRAINT', 'CONFLICT', 'SEND_IN_PROGRESS', 'SEND_RESULT_UNKNOWN', 'INTERNAL',
   ]);
   const messages = {
     INVALID_INPUT: 'La solicitud de sticker no es válida.',
@@ -29,9 +29,16 @@ function registerStickerMessageHandlers({
     STORAGE_FAILED: 'No fue posible guardar el sticker.',
     RESOURCE_CONSTRAINT: 'Se alcanzó un límite de recursos.',
     CONFLICT: 'El sticker cambió durante la operación.',
+    SEND_IN_PROGRESS: 'El envío del sticker sigue pendiente; no se repetirá automáticamente.',
     SEND_RESULT_UNKNOWN: 'El servidor no confirmó si el sticker fue enviado; no se repetirá automáticamente.',
     INTERNAL: 'No fue posible completar la operación de sticker.',
   };
+  const pendingSends = new Map();
+
+  function rejectUnconfirmedSend(ref) {
+    if (ref.transportStatus === 'failed') throw new Error(ref.errorCode || 'TRANSPORT_FAILED');
+    if (ref.transportStatus !== 'sent') throw new Error('SEND_IN_PROGRESS');
+  }
 
   function authorize(event, input, requireConversation = false) {
     assertSender(event);
@@ -94,25 +101,39 @@ function registerStickerMessageHandlers({
     let runtime;
     let refId;
     let sendGeneration;
+    let releasePending;
+    let ownedPending;
+    let sendConfirmed = false;
     try {
       authorize(event, input, true);
       if (typeof input.clientMessageId !== 'string' || !input.clientMessageId.trim() || input.clientMessageId.length > 512 ||
           typeof input.stickerId !== 'string' || !input.stickerId.trim() || input.stickerId.length > 512)
         throw new Error('INVALID_INPUT');
       runtime = getRuntime();
-      refId = refIdFor(input.accountId, input.conversationId, input.clientMessageId, 'outgoing', input.accountId);
+      const conversationId = runtime.xmpp.bareJid ? runtime.xmpp.bareJid(input.conversationId) : input.conversationId;
+      refId = refIdFor(input.accountId, conversationId, input.clientMessageId, 'outgoing', input.accountId);
+      const activeSend = pendingSends.get(refId);
+      if (activeSend) {
+        const outcome = await activeSend;
+        if (outcome.error) throw outcome.error;
+        return success(input, runtime.stickerMessages.publicRef(outcome.value));
+      }
       const existing = runtime.persistence.getStickerMessageRef(input.accountId, refId);
       if (existing) {
-        if (existing.transportStatus === 'failed') throw new Error(existing.errorCode || 'TRANSPORT_FAILED');
+        rejectUnconfirmedSend(existing);
         return success(input, runtime.stickerMessages.publicRef(existing));
       }
       const existingClient = runtime.persistence.getStickerMessageRefByClientMessageId(
-        input.accountId, input.clientMessageId, input.conversationId, 'outgoing', input.accountId,
+        input.accountId, input.clientMessageId, conversationId, 'outgoing', input.accountId,
       );
       if (existingClient) {
-        if (existingClient.conversationId !== input.conversationId) throw new Error('CONFLICT');
+        if (existingClient.conversationId !== conversationId) throw new Error('CONFLICT');
+        rejectUnconfirmedSend(existingClient);
         return success(input, runtime.stickerMessages.publicRef(existingClient));
       }
+      const pendingResult = new Promise((resolve) => { releasePending = resolve; });
+      pendingSends.set(refId, pendingResult);
+      ownedPending = pendingResult;
       const isAuthorized = () => currentAuthorization(event, input.accountId);
       const sticker = runtime.persistence.getSticker(input.accountId, input.stickerId);
       if (!sticker) throw new Error('MEDIA_PREVIEW_UNAVAILABLE');
@@ -137,7 +158,7 @@ function registerStickerMessageHandlers({
         refId,
         previewStickerId: `message:${refId}`,
         accountId: input.accountId,
-        conversationId: input.conversationId,
+        conversationId,
         clientMessageId: input.clientMessageId,
         originId: input.clientMessageId,
         direction: 'outgoing',
@@ -158,23 +179,29 @@ function registerStickerMessageHandlers({
         updatedAt: new Date().toISOString(),
       });
       const value = await runtime.xmpp.sendSticker(input, async () => source, publishState);
+      sendConfirmed = value.transportStatus === 'sent';
       if (!isAuthorized()) throw new Error('UNAUTHORIZED');
       const saved = runtime.stickerMessages.save({ ...value, sourceStickerId: input.stickerId });
+      releasePending?.({ value: saved });
       return success(input, saved);
     } catch (error) {
+      const current = runtime && refId ? runtime.persistence.getStickerMessageRef?.(input.accountId, refId) : undefined;
+      const confirmed = sendConfirmed || error?.sendConfirmed === true || current?.transportStatus === 'sent';
+      const isCurrentSession = sendGeneration === undefined ||
+        (runtime?.xmpp.sessionGenerations.get(input.accountId) || 0) === sendGeneration;
+      if (releasePending) releasePending({ error });
       if (runtime && refId) {
-        const current = runtime.persistence.getStickerMessageRef?.(input.accountId, refId);
-        const failed = current?.transportStatus === 'failed'
-          ? current
-          : runtime.persistence.markStickerMessageFailed?.(
+        const failed = !confirmed && isCurrentSession && current?.transportStatus !== 'failed'
+          ? runtime.persistence.markStickerMessageFailed?.(
             input.accountId, refId, error?.code || 'TRANSPORT_FAILED', new Date().toISOString(),
-          );
-        const isCurrentSession = sendGeneration === undefined ||
-          (runtime.xmpp.sessionGenerations.get(input.accountId) || 0) === sendGeneration;
-        if (failed && isCurrentSession && current?.transportStatus !== 'failed')
+          )
+          : current;
+        if (failed && !confirmed && isCurrentSession && current?.transportStatus !== 'failed')
           runtime.xmpp.emit?.({ type: 'sticker.stateChanged', payload: runtime.stickerMessages.publicRef(failed) });
       }
       return failure(error, event, input);
+    } finally {
+      if (ownedPending && pendingSends.get(refId) === ownedPending) pendingSends.delete(refId);
     }
   });
 

@@ -212,3 +212,53 @@ test('E8.5-XMPP-007 reports failed states for discovery, PUT and uncertain XMPP 
   });
   assert.equal(sendStates.at(-1).errorCode, 'SEND_RESULT_UNKNOWN');
 });
+
+test('E8.5-XMPP-008 preserves confirmed send when the sent-state callback fails', async () => {
+  const adapter = mockAdapter();
+  const states = [];
+  const service = createXmppStickerService(adapter, {
+    lookup: async () => [{ address: '203.0.113.10', family: 4 }],
+    readFile: async () => Buffer.from('data'),
+    put: async () => 201,
+  });
+  await assert.rejects(
+    () => service.send(
+      { version: 1, requestId: 'r-confirmed', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-confirmed', stickerId: 's1' },
+      async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+      (state) => {
+        states.push(state.transportStatus);
+        if (state.transportStatus === 'sent') throw Object.assign(new Error('event publication failed'), { code: 'STORAGE_FAILED' });
+      },
+    ),
+    (error) => error.sendConfirmed === true && error.code === 'STORAGE_FAILED',
+  );
+  assert.deepEqual(states, ['uploading', 'sending', 'sent']);
+  assert.equal(adapter.sent.length, 1);
+});
+
+test('E8.5-XMPP-009 does not emit a failed transition after the session changes post-send', async () => {
+  const adapter = mockAdapter();
+  adapter.assertSessionCurrent = (accountId, _session, generation) => {
+    if (adapter.sessionGenerations.get(accountId) !== generation) throw Object.assign(new Error('session replaced'), { code: 'NOT_CONNECTED' });
+  };
+  adapter.session.send = async (stanza) => {
+    adapter.sent.push(stanza);
+    adapter.sessionGenerations.set('alice@example.test', 2);
+  };
+  const states = [];
+  const service = createXmppStickerService(adapter, {
+    lookup: async () => [{ address: '203.0.113.10', family: 4 }],
+    readFile: async () => Buffer.from('data'),
+    put: async () => 201,
+  });
+  await assert.rejects(
+    () => service.send(
+      { version: 1, requestId: 'r-generation', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-generation', stickerId: 's1' },
+      async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+      (state) => states.push(state.transportStatus),
+    ),
+    (error) => error.sendConfirmed === true && error.code === 'SEND_RESULT_UNKNOWN',
+  );
+  assert.deepEqual(states, ['uploading', 'sending']);
+  assert.equal(adapter.sent.length, 1);
+});

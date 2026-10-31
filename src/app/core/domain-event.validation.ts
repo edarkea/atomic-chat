@@ -188,6 +188,7 @@ const appErrorCodes: readonly AppErrorCode[] = [
   'MEDIA_DIMENSIONS_INVALID',
   'MEDIA_DECODE_FAILED',
   'MEDIA_REFERENCE_REVOKED',
+  'SEND_IN_PROGRESS',
   'SEND_RESULT_UNKNOWN',
 ];
 const certificateVerificationErrorCodes: readonly CertificateVerificationErrorCode[] = [

@@ -278,8 +278,6 @@ class StickerStore {
       const stickerId = historicalStickerId(message.refId);
       const existingSticker = this.persistence.getSticker(accountId, stickerId);
       if (existingSticker) return this.publicSticker(existingSticker);
-      if (this.persistence.countStickers(accountId) >= MAX_STICKERS_PER_ACCOUNT)
-        throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
       if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
       const inspected = await this.readAndInspect(source.path);
       const hashValue = crypto.createHash('sha256').update(inspected.data).digest('hex');
@@ -288,6 +286,10 @@ class StickerStore {
           inspected.image.height !== Number(message.height))
         throw error('MEDIA_DECODE_FAILED', 'el contenido histórico no coincide con su metadata');
       if (!isAuthorized()) throw error('UNAUTHORIZED', 'la cuenta o ventana ya no está autorizada');
+      const existingByHash = this.persistence.getStickerByHash(accountId, hashValue);
+      if (existingByHash) return this.publicSticker(existingByHash);
+      if (this.persistence.countStickers(accountId) >= MAX_STICKERS_PER_ACCOUNT)
+        throw error('RESOURCE_CONSTRAINT', 'se alcanzó el límite de stickers');
       const now = new Date().toISOString();
       let asset = this.persistence.getStickerAssetByHash(accountId, hashValue);
       let published;
@@ -385,6 +387,8 @@ class StickerStore {
   }
 
   savedStickerIdForMessage(accountId, refId) {
+    if (typeof this.persistence.getSavedStickerIdForMessage === 'function')
+      return this.persistence.getSavedStickerIdForMessage(accountId, refId);
     const stickerId = historicalStickerId(refId);
     return this.persistence.getSticker(accountId, stickerId) ? stickerId : undefined;
   }

@@ -114,6 +114,12 @@ test('E8.5-STORE-004 keeps equal third-party stanza ids distinct by sender and c
   assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_message_refs WHERE account_id = ?').get('alice@example.test').count, 2);
   const preserved = value.persistence.upsertStickerMessageRef({ ...first, refId: 'legacy-v12-ref' });
   assert.equal(preserved.refId, first.refId);
+  assert.equal(preserved.previewStickerId, `message:${first.refId}`);
+  assert.equal(value.persistence.getStickerMessageRef('alice@example.test', first.refId).previewStickerId, `message:${first.refId}`);
+  assert.throws(() => value.persistence.upsertStickerMessageRef({ ...first, refId: 'different-content-ref', hashValue: 'b'.repeat(64) }), { code: 'CONFLICT' });
+  const lateFailure = value.persistence.markStickerMessageFailed('alice@example.test', first.refId, 'TRANSPORT_FAILED', new Date().toISOString());
+  assert.equal(lateFailure.transportStatus, 'sent');
+  assert.equal(value.persistence.getStickerMessageRef('alice@example.test', first.refId).transportStatus, 'sent');
   assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_message_refs WHERE account_id = ?').get('alice@example.test').count, 2);
   await close(value);
 });
@@ -150,10 +156,11 @@ test('E8.5-STORE-006 promotes a validated historical asset once and saves it as 
   const secondRef = messages.save(reference('alice@example.test', 'bob@example.test', 'ref-save-2'));
   const secondLoaded = await messages.load('alice@example.test', secondRef.refId);
   const secondSaved = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', secondRef.previewStickerId), secondLoaded);
-  assert.notEqual(saved.stickerId, secondSaved.stickerId);
-  assert.equal(value.persistence.countStickers('alice@example.test'), 2);
+  assert.equal(saved.stickerId, secondSaved.stickerId);
+  assert.equal(value.persistence.countStickers('alice@example.test'), 1);
   assert.equal(value.persistence.database.prepare('SELECT COUNT(*) AS count FROM sticker_assets').get().count, 1);
   assert.equal(messages.get('alice@example.test', ref.refId).savedStickerId, saved.stickerId);
+  assert.equal(messages.get('alice@example.test', secondRef.refId).savedStickerId, saved.stickerId);
   await stickers.delete('alice@example.test', saved.stickerId);
   assert.equal(messages.get('alice@example.test', ref.refId).savedStickerId, undefined);
   const savedAgain = await stickers.saveHistoricalMessage('alice@example.test', messages.resolveForPreview('alice@example.test', ref.previewStickerId), loaded);
@@ -165,13 +172,35 @@ test('E8.5-STORE-006 promotes a validated historical asset once and saves it as 
 test('E8.5-STORE-007 enforces the 250 visible-entry quota under the account lock', async () => {
   const value = await fixture();
   const stickers = new StickerStore(value.root, value.persistence, decoder);
+  const sourcePath = path.join(value.root, 'quota.png');
+  await fs.writeFile(sourcePath, png);
   const now = new Date().toISOString();
+  const hashValue = crypto.createHash('sha256').update(png).digest('hex');
   for (let index = 0; index < 250; index += 1) {
     const assetId = `quota-asset-${index}`;
-    value.persistence.insertStickerAsset({ accountId: 'alice@example.test', assetId, hashValue: `${String(index).padStart(64, '0')}`, mimeType: 'image/png', sizeBytes: '1', width: 1, height: 1, storageKey: `${assetId}.bin`, availability: 'available', createdAt: now, updatedAt: now });
+    value.persistence.insertStickerAsset({ accountId: 'alice@example.test', assetId, hashValue: index === 0 ? hashValue : `${String(index).padStart(64, '0')}`, mimeType: 'image/png', sizeBytes: index === 0 ? String(png.length) : '1', width: 1, height: 1, storageKey: `${assetId}.bin`, availability: 'available', createdAt: now, updatedAt: now });
     value.persistence.insertSticker({ stickerId: `quota-sticker-${index}`, accountId: 'alice@example.test', assetId, name: 'quota', altText: 'quota', sortKey: `${now}-${index}`, availability: 'available', createdAt: now, updatedAt: now });
   }
-  await assert.rejects(() => stickers.saveHistoricalMessage('alice@example.test', { accountId: 'alice@example.test', path: 'unused' }, { refId: 'quota-ref', hashValue: 'a'.repeat(64) }), { code: 'RESOURCE_CONSTRAINT' });
+  const existing = await stickers.saveHistoricalMessage('alice@example.test', { accountId: 'alice@example.test', path: sourcePath }, { refId: 'quota-existing', hashValue: hashValue, mimeType: 'image/png', sizeBytes: String(png.length), width: 1, height: 1 });
+  assert.equal(existing.stickerId, 'quota-sticker-0');
+  const newPath = path.join(value.root, 'quota-new.png');
+  const newBytes = Buffer.concat([png, Buffer.from('new quota content')]);
+  await fs.writeFile(newPath, newBytes);
+  const newHash = crypto.createHash('sha256').update(newBytes).digest('hex');
+  await assert.rejects(() => stickers.saveHistoricalMessage('alice@example.test', { accountId: 'alice@example.test', path: newPath }, { refId: 'quota-new', hashValue: newHash, mimeType: 'image/png', sizeBytes: String(newBytes.length), width: 1, height: 1 }), { code: 'RESOURCE_CONSTRAINT' });
   assert.equal(value.persistence.countStickers('alice@example.test'), 250);
+  await close(value);
+});
+
+test('E8.5-STORE-008 reuses an available E8.2 library entry by hash without merging it retroactively', async () => {
+  const value = await fixture();
+  const stickers = new StickerStore(value.root, value.persistence, decoder);
+  const sourcePath = path.join(value.root, 'imported.png');
+  await fs.writeFile(sourcePath, png);
+  const imported = await stickers.importFile('alice@example.test', sourcePath);
+  const source = stickers.resolveForPreview('alice@example.test', imported.sticker.stickerId);
+  const saved = await stickers.saveHistoricalMessage('alice@example.test', source, reference('alice@example.test', 'bob@example.test', 'ref-imported'));
+  assert.equal(saved.stickerId, imported.sticker.stickerId);
+  assert.equal(value.persistence.countStickers('alice@example.test'), 1);
   await close(value);
 });

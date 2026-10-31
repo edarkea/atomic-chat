@@ -13,6 +13,10 @@ function savedStickerIdForMessage(refId) {
   return `sticker_saved_${crypto.createHash('sha256').update(refId).digest('hex').slice(0, 32)}`;
 }
 
+function previewStickerIdForMessage(refId) {
+  return `message:${refId}`;
+}
+
 class PersistenceStore {
   constructor(userDataPath) {
     const directory = path.join(userDataPath, 'data');
@@ -921,7 +925,7 @@ class PersistenceStore {
     const savedStickerId = this.getSavedStickerIdForMessage(row.accountId, row.refId);
     return {
       refId: row.refId,
-      previewStickerId: row.previewStickerId,
+      previewStickerId: previewStickerIdForMessage(row.refId),
       accountId: row.accountId,
       conversationId: row.conversationId,
       clientMessageId: row.clientMessageId,
@@ -992,7 +996,15 @@ class PersistenceStore {
     const existingByIdentity = this.getStickerMessageRefByClientMessageId(
       record.accountId, record.clientMessageId, record.conversationId, record.direction, senderJid,
     );
+    if (existingByIdentity && (
+      String(existingByIdentity.hashValue).toLowerCase() !== String(record.hashValue).toLowerCase() ||
+      existingByIdentity.mimeType !== record.mimeType ||
+      String(existingByIdentity.sizeBytes) !== String(record.sizeBytes) ||
+      existingByIdentity.width !== record.width ||
+      existingByIdentity.height !== record.height
+    )) throw persistenceError('CONFLICT', 'la identidad de sticker ya tiene otro contenido');
     const targetRefId = existingByIdentity?.refId || record.refId;
+    const previewStickerId = previewStickerIdForMessage(targetRefId);
     this.database.prepare(
       `INSERT INTO sticker_message_refs(
         ref_id, account_id, conversation_id, client_message_id, stanza_id, origin_id, direction,
@@ -1019,19 +1031,34 @@ class PersistenceStore {
         width = excluded.width,
         height = excluded.height,
         hash_algorithm = excluded.hash_algorithm,
-        hash_value = excluded.hash_value,
+        hash_value = sticker_message_refs.hash_value,
         remote_url = COALESCE(excluded.remote_url, sticker_message_refs.remote_url),
-        local_asset_id = COALESCE(excluded.local_asset_id, sticker_message_refs.local_asset_id),
-        storage_key = COALESCE(excluded.storage_key, sticker_message_refs.storage_key),
-        transport_status = excluded.transport_status,
+        local_asset_id = CASE WHEN sticker_message_refs.availability = 'available'
+          THEN COALESCE(sticker_message_refs.local_asset_id, excluded.local_asset_id)
+          ELSE COALESCE(excluded.local_asset_id, sticker_message_refs.local_asset_id) END,
+        storage_key = CASE WHEN sticker_message_refs.availability = 'available'
+          THEN COALESCE(sticker_message_refs.storage_key, excluded.storage_key)
+          ELSE COALESCE(excluded.storage_key, sticker_message_refs.storage_key) END,
+        transport_status = CASE
+          WHEN sticker_message_refs.transport_status IN ('sent', 'failed') THEN sticker_message_refs.transport_status
+          WHEN sticker_message_refs.transport_status = 'sending' AND excluded.transport_status IN ('queued', 'uploading') THEN 'sending'
+          WHEN sticker_message_refs.transport_status = 'uploading' AND excluded.transport_status = 'queued' THEN 'uploading'
+          ELSE excluded.transport_status END,
         availability = CASE WHEN sticker_message_refs.availability = 'available' AND excluded.availability = 'missing' THEN 'available' ELSE excluded.availability END,
-        error_code = excluded.error_code,
-        updated_at = excluded.updated_at`,
+        error_code = CASE
+          WHEN sticker_message_refs.transport_status = 'sent' THEN sticker_message_refs.error_code
+          WHEN sticker_message_refs.transport_status = 'failed' THEN COALESCE(sticker_message_refs.error_code, excluded.error_code)
+          ELSE excluded.error_code END,
+        updated_at = CASE
+          WHEN sticker_message_refs.transport_status IN ('sent', 'failed') THEN sticker_message_refs.updated_at
+          WHEN sticker_message_refs.transport_status = 'sending' AND excluded.transport_status IN ('queued', 'uploading') THEN sticker_message_refs.updated_at
+          WHEN sticker_message_refs.transport_status = 'uploading' AND excluded.transport_status = 'queued' THEN sticker_message_refs.updated_at
+          ELSE excluded.updated_at END`,
     ).run({
       refId: targetRefId, accountId: record.accountId, conversationId: record.conversationId,
       clientMessageId: record.clientMessageId, stanzaId: record.stanzaId || null, originId: record.originId || null,
       direction: record.direction, senderJid, sourceStickerId: record.sourceStickerId || null,
-      previewStickerId: record.previewStickerId, name: record.name || null, altText: record.altText || null, fallbackText: record.fallbackText || null,
+      previewStickerId, name: record.name || null, altText: record.altText || null, fallbackText: record.fallbackText || null,
       mimeType: record.mimeType, sizeBytes: String(record.sizeBytes), width: record.width, height: record.height,
       hashAlgorithm: 'sha-256', hashValue: record.hashValue, remoteUrl: record.remoteUrl || null,
       localAssetId: record.localAssetId || null, storageKey: record.storageKey || null,
@@ -1053,7 +1080,7 @@ class PersistenceStore {
   markStickerMessageFailed(accountId, refId, errorCode, updatedAt) {
     this.database.prepare(
       `UPDATE sticker_message_refs SET transport_status = 'failed', error_code = ?, updated_at = ?
-       WHERE account_id = ? AND ref_id = ?`,
+       WHERE account_id = ? AND ref_id = ? AND transport_status IN ('queued', 'uploading', 'sending')`,
     ).run(errorCode || 'STORAGE_FAILED', updatedAt, accountId, refId);
     return this.getStickerMessageRef(accountId, refId);
   }
@@ -1128,9 +1155,27 @@ class PersistenceStore {
     ).get(accountId, stickerId) || null;
   }
 
+  getStickerByHash(accountId, hashValue) {
+    return this.database.prepare(
+      `SELECT s.sticker_id AS stickerId, s.account_id AS accountId, s.asset_id AS assetId,
+        s.name, s.alt_text AS altText, s.sort_key AS sortKey, s.availability,
+        s.created_at AS createdAt, s.updated_at AS updatedAt
+       FROM stickers s JOIN sticker_assets a
+         ON a.account_id = s.account_id AND a.asset_id = s.asset_id
+       WHERE s.account_id = ? AND s.availability = 'available'
+         AND a.availability = 'available' AND a.hash_algorithm = 'sha-256' AND a.hash_value = ?
+       ORDER BY s.sort_key ASC, s.sticker_id ASC LIMIT 1`,
+    ).get(accountId, hashValue) || null;
+  }
+
   getSavedStickerIdForMessage(accountId, refId) {
     const stickerId = savedStickerIdForMessage(refId);
-    return this.getSticker(accountId, stickerId) ? stickerId : undefined;
+    const exact = this.getSticker(accountId, stickerId);
+    if (exact) return exact.stickerId;
+    const message = this.database.prepare(
+      'SELECT hash_value AS hashValue FROM sticker_message_refs WHERE account_id = ? AND ref_id = ?',
+    ).get(accountId, refId);
+    return message ? this.getStickerByHash(accountId, message.hashValue)?.stickerId : undefined;
   }
 
   listStickers(accountId, query = '', limit = 250, packId) {
@@ -1482,7 +1527,7 @@ class PersistenceStore {
           sortAt: row.sort_at,
           sticker: {
             refId: row.transfer_id,
-            previewStickerId: row.media_id,
+            previewStickerId: previewStickerIdForMessage(row.transfer_id),
             accountId: row.account_id,
             conversationId: row.conversation_id,
             clientMessageId: row.client_message_id,

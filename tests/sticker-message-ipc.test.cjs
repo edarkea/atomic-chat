@@ -84,6 +84,67 @@ test('E8.5-IPC-005 does not report a failed reference as successfully sent', asy
   assert.equal(result.error.code, 'TRANSPORT_FAILED');
 });
 
+test('E8.5-IPC-008 only returns sent references as confirmed and keeps persisted pending states pending', async () => {
+  for (const transportStatus of ['queued', 'uploading', 'sending']) {
+    const value = setup(true);
+    value.runtime.persistence.getStickerMessageRef = () => ({ ...value.runtime.stickerMessages.save(), transportStatus });
+    const result = await value.handlers.get('stickerMessages.send')(value.event, {
+      version: 1, requestId: `pending-${transportStatus}`, accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'SEND_IN_PROGRESS');
+  }
+  const sent = setup(true);
+  sent.runtime.persistence.getStickerMessageRef = () => ({ ...sent.runtime.stickerMessages.save(), transportStatus: 'sent' });
+  const result = await sent.handlers.get('stickerMessages.send')(sent.event, {
+    version: 1, requestId: 'sent', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.transportStatus, 'sent');
+});
+
+test('E8.5-IPC-009 applies pending and failed rules through the historical identity lookup', async () => {
+  const pending = setup(true);
+  pending.runtime.persistence.getStickerMessageRefByClientMessageId = () => ({
+    ...pending.runtime.stickerMessages.save(), conversationId: 'bob@example.test', transportStatus: 'sending',
+  });
+  const pendingResult = await pending.handlers.get('stickerMessages.send')(pending.event, {
+    version: 1, requestId: 'pending-compat', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(pendingResult.ok, false);
+  assert.equal(pendingResult.error.code, 'SEND_IN_PROGRESS');
+
+  const failed = setup(true);
+  failed.runtime.persistence.getStickerMessageRefByClientMessageId = () => ({
+    ...failed.runtime.stickerMessages.save(), conversationId: 'bob@example.test', transportStatus: 'failed', errorCode: 'SEND_RESULT_UNKNOWN',
+  });
+  const failedResult = await failed.handlers.get('stickerMessages.send')(failed.event, {
+    version: 1, requestId: 'failed-compat', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(failedResult.ok, false);
+  assert.equal(failedResult.error.code, 'SEND_RESULT_UNKNOWN');
+});
+
+test('E8.5-IPC-010 single-flights concurrent identical sends without changing the client message id', async () => {
+  const value = setup(true);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  value.runtime.xmpp.sendSticker = async () => {
+    calls += 1;
+    await gate;
+    return value.runtime.stickerMessages.save();
+  };
+  const input = { version: 1, requestId: 'concurrent-1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'same-client-id', stickerId: 's1' };
+  const first = value.handlers.get('stickerMessages.send')(value.event, input);
+  const second = value.handlers.get('stickerMessages.send')(value.event, { ...input, requestId: 'concurrent-2' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  release();
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results.map((item) => item.ok), [true, true]);
+});
+
 test('E8.5-IPC-006 finalizes queued state as failed when the XMPP operation rejects', async () => {
   const value = setup(true);
   const failed = [];
