@@ -56,6 +56,11 @@ import {
   StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
+  StickerStorageAssetRef,
+  StickerStorageCapabilities,
+  StickerStorageDownloadRequest,
+  StickerStorageResolveRequest,
+  StickerStorageUploadRequest,
   HistoryPage,
   HistoryPageInput,
   MediaListInput,
@@ -223,6 +228,13 @@ export interface StickerMessagePort {
   load(input: StickerMessageLoadRequest): Promise<Result<StickerMessageRef>>;
   save(input: StickerMessageSaveRequest): Promise<Result<StickerMessageRef>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
+}
+
+export interface StickerStorageProviderPort {
+  getCapabilities(input: { readonly accountId: string }): Promise<StickerStorageCapabilities>;
+  uploadSticker(input: StickerStorageUploadRequest): Promise<StickerStorageAssetRef>;
+  resolveSticker(input: StickerStorageResolveRequest): Promise<StickerStorageAssetRef>;
+  downloadSticker(input: StickerStorageDownloadRequest): Promise<Uint8Array>;
 }
 
 export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');

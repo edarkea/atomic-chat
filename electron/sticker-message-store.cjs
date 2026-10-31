@@ -69,6 +69,7 @@ class StickerMessageStore {
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     try { fs.chmodSync(this.directory, 0o700); } catch { /* Windows ACLs are inherited. */ }
     this.download = options.download || downloadHttps;
+    this.storageProvider = options.storageProvider;
     this.assetStore = options.assetStore;
     this.stickerStore = options.stickerStore;
     this.locks = new Map();
@@ -100,7 +101,29 @@ class StickerMessageStore {
       if (current.availability === 'available' && current.storageKey) return this.publicRef(current);
       if (!current.remoteUrl) throw storeError('MEDIA_PREVIEW_UNAVAILABLE', 'el sticker no tiene una fuente disponible');
       if (!isAuthorized()) throw storeError('UNAUTHORIZED', 'la operación ya no está autorizada');
-      const bytes = await this.download(current.remoteUrl);
+      const expected = {
+        mimeType: current.mimeType,
+        sizeBytes: String(current.sizeBytes),
+        width: current.width,
+        height: current.height,
+        hashAlgorithm: 'sha-256',
+        hashValue: current.hashValue,
+      };
+      const persistentSource = this.storageProvider && this.isPersistentProviderUrl(current.remoteUrl)
+        ? await this.storageProvider.resolveSticker({
+          accountId,
+          remoteUrl: current.remoteUrl,
+          expected,
+        })
+        : null;
+      const bytes = persistentSource
+        ? await this.storageProvider.downloadSticker({
+          accountId,
+          assetId: persistentSource.assetId,
+          remoteUrl: persistentSource.remoteUrl,
+          expected,
+        })
+        : await this.download(current.remoteUrl);
       if (!isAuthorized()) throw storeError('UNAUTHORIZED', 'la operación ya no está autorizada');
       const image = inspectStaticImage(bytes, this.nativeImage);
       const hashValue = crypto.createHash('sha256').update(bytes).digest('hex');
@@ -166,6 +189,15 @@ class StickerMessageStore {
       height: ref.height,
       hashValue: ref.hashValue,
     };
+  }
+
+  isPersistentProviderUrl(value) {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.search && !url.hash && !url.username && !url.password;
+    } catch {
+      return false;
+    }
   }
 
   publicRef(ref) {

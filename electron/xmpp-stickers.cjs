@@ -247,6 +247,7 @@ function createXmppStickerService(adapter, options = {}) {
   const lookup = options.lookup || dns.lookup;
   const put = options.put || putHttps;
   const readFile = options.readFile || ((filePath) => fsp.readFile(filePath));
+  const storageProvider = options.storageProvider;
 
   function current(accountId, session, generation) {
     adapter.assertSessionCurrent(accountId, session, generation, adapter.sessionDomains.get(accountId) || '');
@@ -365,27 +366,61 @@ function createXmppStickerService(adapter, options = {}) {
           };
           await onState(state);
           current(input.accountId, session, generation);
-          const service = await discover(input.accountId, session, generation);
-          if (service.maxFileSize !== undefined && metadata.sizeBytes > service.maxFileSize)
-            throw stickerError('MEDIA_SIZE_EXCEEDED', 'el servicio de upload no admite este tamaño', 'sticker.slot');
-          const slot = await requestSlot(input.accountId, session, generation, service, source);
+          let slot;
+          if (!storageProvider) {
+            const service = await discover(input.accountId, session, generation);
+            if (service.maxFileSize !== undefined && metadata.sizeBytes > service.maxFileSize)
+              throw stickerError('MEDIA_SIZE_EXCEEDED', 'el servicio de upload no admite este tamaño', 'sticker.slot');
+            slot = await requestSlot(input.accountId, session, generation, service, source);
+          }
           const bytes = source.bytes ? Buffer.from(source.bytes) : await readFile(source.path);
           current(input.accountId, session, generation);
           if (bytes.length !== metadata.sizeBytes) throw stickerError('MEDIA_DECODE_FAILED', 'el asset cambió durante la carga', 'sticker.upload');
           const actualHash = crypto.createHash('sha256').update(bytes).digest('hex');
           if (actualHash !== String(source.hashValue).toLowerCase())
             throw stickerError('MEDIA_DECODE_FAILED', 'la integridad del asset no coincide', 'sticker.upload');
-          const status = await put(slot.putUrl, bytes, { ...slot.headers, 'Content-Type': source.mimeType }, {
-            timeoutMs: 15000,
-            lookup: slot.lookup,
-            headerEntries: slot.headerEntries,
-          });
-          if (status !== 201) throw stickerError('TRANSPORT_FAILED', 'HTTP Upload no confirmó el recurso', 'sticker.upload');
+          const storageMetadata = {
+            mimeType: source.mimeType,
+            sizeBytes: String(metadata.sizeBytes),
+            width: metadata.width,
+            height: metadata.height,
+            hashAlgorithm: 'sha-256',
+            hashValue: String(source.hashValue).toLowerCase(),
+          };
+          let remoteUrl;
+          if (storageProvider) {
+            const capabilities = await storageProvider.getCapabilities({ accountId: input.accountId });
+            if (capabilities.maxFileSize !== undefined && metadata.sizeBytes > Number(capabilities.maxFileSize))
+              throw stickerError('MEDIA_SIZE_EXCEEDED', 'el proveedor no admite este tamaño', 'sticker.storage');
+            const uploaded = await storageProvider.uploadSticker({
+              accountId: input.accountId,
+              idempotencyKey: input.clientMessageId,
+              metadata: storageMetadata,
+              bytes,
+            });
+            const resolved = await storageProvider.resolveSticker({
+              accountId: input.accountId,
+              assetId: uploaded.assetId,
+              remoteUrl: uploaded.remoteUrl,
+              expected: storageMetadata,
+            });
+            if (resolved.availability !== 'available')
+              throw stickerError('MEDIA_PREVIEW_UNAVAILABLE', 'el asset no está disponible para descarga', 'sticker.storage');
+            remoteUrl = resolved.remoteUrl;
+          } else {
+            const status = await put(slot.putUrl, bytes, { ...slot.headers, 'Content-Type': source.mimeType }, {
+              timeoutMs: 15000,
+              lookup: slot.lookup,
+              headerEntries: slot.headerEntries,
+            });
+            if (status !== 201) throw stickerError('TRANSPORT_FAILED', 'HTTP Upload no confirmó el recurso', 'sticker.upload');
+            remoteUrl = slot.getUrl;
+          }
           current(input.accountId, session, generation);
-          state = { ...state, transportStatus: 'sending', updatedAt: new Date().toISOString(), remoteUrl: slot.getUrl };
+          state = { ...state, transportStatus: 'sending', updatedAt: new Date().toISOString(), remoteUrl };
           await onState(state);
           current(input.accountId, session, generation);
-          const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: slot.getUrl, fallback: source.altText });
+          const stanza = buildStickerMessage({ to: input.conversationId, clientMessageId: input.clientMessageId, sticker: source, sourceUrl: remoteUrl, fallback: source.altText });
           try {
             await session.send(stanza);
             sendConfirmed = true;
@@ -397,7 +432,7 @@ function createXmppStickerService(adapter, options = {}) {
           state = {
             ...state,
             stanzaId: clientMessageIdOrUndefined(stanza),
-            remoteUrl: slot.getUrl,
+            remoteUrl,
             fallbackText: safeText(source.altText, 1024),
             transportStatus: 'sent',
             updatedAt: sentAt,

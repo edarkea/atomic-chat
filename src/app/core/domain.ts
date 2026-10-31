@@ -548,6 +548,42 @@ export interface StickerCapabilityRequest {
   readonly requestId: RequestId;
   readonly accountId: string;
 }
+
+export type StickerStorageAvailability = 'available' | 'missing' | 'expired' | 'blocked';
+export interface StickerStorageMetadata {
+  readonly mimeType: StaticImageMimeType;
+  readonly sizeBytes: DecimalByteCount;
+  readonly width: number;
+  readonly height: number;
+  readonly hashAlgorithm: 'sha-256';
+  readonly hashValue: string;
+}
+export interface StickerStorageCapabilities {
+  readonly providerId: string;
+  readonly uploadSupported: boolean;
+  readonly downloadSupported: boolean;
+  readonly maxFileSize?: DecimalByteCount;
+  readonly retentionSeconds?: number;
+}
+export interface StickerStorageUploadRequest {
+  readonly accountId: string;
+  readonly idempotencyKey: string;
+  readonly metadata: StickerStorageMetadata;
+  readonly bytes: Uint8Array;
+}
+export interface StickerStorageAssetRef extends StickerStorageMetadata {
+  readonly assetId: string;
+  readonly remoteUrl: string;
+  readonly availability: StickerStorageAvailability;
+  readonly expiresAt?: string;
+}
+export interface StickerStorageResolveRequest {
+  readonly accountId: string;
+  readonly assetId?: string;
+  readonly remoteUrl: string;
+  readonly expected: StickerStorageMetadata;
+}
+export interface StickerStorageDownloadRequest extends StickerStorageResolveRequest {}
 export interface StickerSendRequest {
   readonly version: 1;
   readonly requestId: RequestId;
