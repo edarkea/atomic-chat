@@ -36,7 +36,6 @@
         <app-sticker-thumbnail [accountId]="accountId()" [sticker]="selected" [large]="true" />
         <span>{{ selected.name || selected.altText || 'Sticker seleccionado' }}</span>
       </div>
-      <button type="button" class="send-sticker" (click)="sendSelected()" [disabled]="stickerSendingDisabled || disabled()">Enviar sticker</button>
     }
     <small class="sticker-hint">{{ stickerSendingDisabled ? 'El envío de stickers está temporalmente deshabilitado' : 'Selecciona un sticker y confirma el envío.' }}</small>
   </section>

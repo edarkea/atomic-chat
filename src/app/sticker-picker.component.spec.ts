@@ -55,8 +55,7 @@ describe('StickerPickerComponent', () => {
     fixture.componentInstance.sendSelected();
     expect(emitted).toEqual([]);
     fixture.detectChanges();
-    const sendButton = fixture.nativeElement.querySelector('.send-sticker') as HTMLButtonElement;
-    expect(sendButton.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('.send-sticker')).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('El envío de stickers está temporalmente deshabilitado');
   });
 
