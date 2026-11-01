@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { registerStickerMessageHandlers } = require('../electron/ipc-sticker-message-handlers.cjs');
 
-function setup(authorized = true) {
+function setup(authorized = true, stickerSendingEnabled = false) {
   const handlers = new Map();
   let authorizedState = authorized;
   const ref = {
@@ -32,6 +32,7 @@ function setup(authorized = true) {
     getRuntime: () => runtime,
     historySecurity: { authorize: () => authorizedState },
     helpers: { validVersion: (input) => input?.version === 1, requestId: (_event, input) => input?.requestId || 'generated' },
+    stickerSendingEnabled,
   });
   return { handlers, runtime, event: { sender: { id: 7 } }, setAuthorized: (value) => { authorizedState = value; } };
 }
@@ -43,6 +44,30 @@ test('E8.5-IPC-001 rejects account access from an unauthorized window', async ()
   });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'UNAUTHORIZED');
+});
+
+test('E8.5-DISABLE-IPC-001 rejects sticker sending before persistence or XMPP transport', async () => {
+  const value = setup(true);
+  let persistenceReads = 0;
+  let sends = 0;
+  const getSticker = value.runtime.persistence.getSticker;
+  value.runtime.persistence.getSticker = (...args) => {
+    persistenceReads += 1;
+    return getSticker(...args);
+  };
+  value.runtime.xmpp.sendSticker = async () => {
+    sends += 1;
+    return value.runtime.stickerMessages.save();
+  };
+  const result = await value.handlers.get('stickerMessages.send')(value.event, {
+    version: 1, requestId: 'disabled', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'UNSUPPORTED');
+  assert.equal(result.error.retryable, false);
+  assert.equal(result.error.message, 'El envío de stickers está temporalmente deshabilitado');
+  assert.equal(persistenceReads, 0);
+  assert.equal(sends, 0);
 });
 
 test('E8.5-ALT-IPC-001 reports the selected persistent provider without XEP-0363 fields', async () => {
@@ -69,7 +94,7 @@ test('E8.5-ALT-IPC-001 reports the selected persistent provider without XEP-0363
 });
 
 test('E8.5-IPC-002 sends only through an owned sticker id and returns a metadata ref', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   const result = await value.handlers.get('stickerMessages.send')(value.event, {
     version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
   });
@@ -99,7 +124,7 @@ test('E8.5-IPC-004 saves only an incoming historical reference and returns an id
 });
 
 test('E8.5-IPC-005 does not report a failed reference as successfully sent', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   value.runtime.persistence.getStickerMessageRef = () => ({ ...value.runtime.stickerMessages.save(), transportStatus: 'failed', errorCode: 'TRANSPORT_FAILED' });
   const result = await value.handlers.get('stickerMessages.send')(value.event, {
     version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
@@ -110,7 +135,7 @@ test('E8.5-IPC-005 does not report a failed reference as successfully sent', asy
 
 test('E8.5-IPC-008 only returns sent references as confirmed and keeps persisted pending states pending', async () => {
   for (const transportStatus of ['queued', 'uploading', 'sending']) {
-    const value = setup(true);
+    const value = setup(true, true);
     value.runtime.persistence.getStickerMessageRef = () => ({ ...value.runtime.stickerMessages.save(), transportStatus });
     const result = await value.handlers.get('stickerMessages.send')(value.event, {
       version: 1, requestId: `pending-${transportStatus}`, accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
@@ -118,7 +143,7 @@ test('E8.5-IPC-008 only returns sent references as confirmed and keeps persisted
     assert.equal(result.ok, false);
     assert.equal(result.error.code, 'SEND_IN_PROGRESS');
   }
-  const sent = setup(true);
+  const sent = setup(true, true);
   sent.runtime.persistence.getStickerMessageRef = () => ({ ...sent.runtime.stickerMessages.save(), transportStatus: 'sent' });
   const result = await sent.handlers.get('stickerMessages.send')(sent.event, {
     version: 1, requestId: 'sent', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1',
@@ -128,7 +153,7 @@ test('E8.5-IPC-008 only returns sent references as confirmed and keeps persisted
 });
 
 test('E8.5-IPC-009 applies pending and failed rules through the historical identity lookup', async () => {
-  const pending = setup(true);
+  const pending = setup(true, true);
   pending.runtime.persistence.getStickerMessageRefByClientMessageId = () => ({
     ...pending.runtime.stickerMessages.save(), conversationId: 'bob@example.test', transportStatus: 'sending',
   });
@@ -138,7 +163,7 @@ test('E8.5-IPC-009 applies pending and failed rules through the historical ident
   assert.equal(pendingResult.ok, false);
   assert.equal(pendingResult.error.code, 'SEND_IN_PROGRESS');
 
-  const failed = setup(true);
+  const failed = setup(true, true);
   failed.runtime.persistence.getStickerMessageRefByClientMessageId = () => ({
     ...failed.runtime.stickerMessages.save(), conversationId: 'bob@example.test', transportStatus: 'failed', errorCode: 'SEND_RESULT_UNKNOWN',
   });
@@ -150,7 +175,7 @@ test('E8.5-IPC-009 applies pending and failed rules through the historical ident
 });
 
 test('E8.5-IPC-010 single-flights concurrent identical sends without changing the client message id', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   let calls = 0;
@@ -170,7 +195,7 @@ test('E8.5-IPC-010 single-flights concurrent identical sends without changing th
 });
 
 test('E8.5-IPC-011 rejects a different sticker for an active or confirmed message identity', async () => {
-  const active = setup(true);
+  const active = setup(true, true);
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   let sends = 0;
@@ -189,7 +214,7 @@ test('E8.5-IPC-011 rejects a different sticker for an active or confirmed messag
   release();
   assert.equal((await owner).ok, true);
 
-  const sent = setup(true);
+  const sent = setup(true, true);
   sent.runtime.persistence.getStickerMessageRef = () => sent.runtime.stickerMessages.save();
   const sentConflict = await sent.handlers.get('stickerMessages.send')(sent.event, { ...input, requestId: 'sent-conflict', stickerId: 's2' });
   assert.equal(sentConflict.ok, false);
@@ -197,7 +222,7 @@ test('E8.5-IPC-011 rejects a different sticker for an active or confirmed messag
 });
 
 test('E8.5-IPC-012 revalidates authorization for a secondary waiter without letting it mark failure', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const failures = [];
@@ -215,7 +240,7 @@ test('E8.5-IPC-012 revalidates authorization for a secondary waiter without lett
 });
 
 test('E8.5-IPC-013 rejects a secondary response after generation changes without degrading the owner', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const failures = [];
@@ -236,7 +261,7 @@ test('E8.5-IPC-013 rejects a secondary response after generation changes without
 });
 
 test('E8.5-IPC-006 finalizes queued state as failed when the XMPP operation rejects', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   const failed = [];
   value.runtime.persistence.markStickerMessageFailed = (...args) => { failed.push(args); return value.runtime.stickerMessages.save(); };
   value.runtime.xmpp.sendSticker = async () => { throw Object.assign(new Error('upload failed'), { code: 'TRANSPORT_FAILED' }); };
@@ -249,7 +274,7 @@ test('E8.5-IPC-006 finalizes queued state as failed when the XMPP operation reje
 });
 
 test('E8.5-IPC-007 does not emit a late failure into a replacement session', async () => {
-  const value = setup(true);
+  const value = setup(true, true);
   const events = [];
   value.runtime.xmpp.emit = (event) => events.push(event);
   value.runtime.persistence.markStickerMessageFailed = () => ({

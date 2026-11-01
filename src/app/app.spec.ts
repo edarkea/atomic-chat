@@ -20,6 +20,8 @@ function fakeFacade() {
     }),
     contacts: signal([]),
     messages: signal([]),
+    timelineItems: vi.fn(() => []),
+    timelineSupported: vi.fn(() => true),
     presence: signal({ jid: 'a@example.invalid', availability: 'available' }),
     preferences: signal({
       theme: 'atomic',
@@ -667,6 +669,13 @@ describe('App composer integration', () => {
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
     fixture.detectChanges();
     expect((fixture.componentInstance as any).draft()).toBe('');
+  });
+  it('does not invoke the sticker service while sticker sending is disabled', async () => {
+    const stickerSend = vi.fn();
+    (fixture.componentInstance as any).stickerMessages.send = stickerSend;
+    await (fixture.componentInstance as any).sendSticker('s1');
+    expect(stickerSend).not.toHaveBeenCalled();
+    expect(facade.error()).toBe('El envío de stickers está temporalmente deshabilitado');
   });
   it('closes the active conversation without leaving a MUC or preserving its draft', () => {
     const app = fixture.componentInstance as any;

@@ -57,6 +57,8 @@ import {
 import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
 import { StickerMessageFacade } from './core/sticker-message.facade';
 
+export const STICKER_SENDING_DISABLED_MESSAGE = 'El envío de stickers está temporalmente deshabilitado';
+
 const STICKER_SEND_ERROR_MESSAGES: Readonly<Partial<Record<AppErrorCode, string>>> = {
   INVALID_INPUT: 'La solicitud del sticker no es válida.',
   UNAUTHORIZED: 'La ventana o la cuenta ya no están autorizadas para enviar este sticker.',
@@ -78,6 +80,8 @@ const STICKER_SEND_ERROR_MESSAGES: Readonly<Partial<Record<AppErrorCode, string>
 };
 
 export function stickerSendErrorMessage(error: Pick<AppError, 'code' | 'message'>): string {
+  if (error.code === 'UNSUPPORTED' && error.message === STICKER_SENDING_DISABLED_MESSAGE)
+    return STICKER_SENDING_DISABLED_MESSAGE;
   return STICKER_SEND_ERROR_MESSAGES[error.code] || 'No fue posible completar el envío del sticker.';
 }
 
@@ -113,6 +117,7 @@ export class App {
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly stickerMessages = inject(StickerMessageFacade);
+  private readonly stickerSendingDisabled = true;
   protected readonly theme = inject(ThemeService);
   private readonly broadcast = inject(BroadcastFacade);
   protected readonly fileActionPending = (transferId: string): boolean =>
@@ -947,6 +952,10 @@ export class App {
   }
 
   protected async sendSticker(stickerId: string): Promise<void> {
+    if (this.stickerSendingDisabled) {
+      this.chat.error.set(STICKER_SENDING_DISABLED_MESSAGE);
+      return;
+    }
     const conversationId = this.selectedJid();
     const accountId = this.chat.accountId();
     if (!accountId || !conversationId || !this.chat.isConnected()) return;

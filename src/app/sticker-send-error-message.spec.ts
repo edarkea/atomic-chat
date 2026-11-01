@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stickerSendErrorMessage } from './app';
+import { STICKER_SENDING_DISABLED_MESSAGE, stickerSendErrorMessage } from './app';
 
 describe('sticker send error presentation', () => {
   it('preserves safe, specific messages for typed transport errors', () => {
@@ -10,5 +10,10 @@ describe('sticker send error presentation', () => {
     expect(stickerSendErrorMessage({ code: 'SEND_RESULT_UNKNOWN', message: 'secret-url-token' })).toContain('no confirmó');
     expect(stickerSendErrorMessage({ code: 'CONFLICT', message: 'secret-url-token' })).toContain('conflicto');
     expect(stickerSendErrorMessage({ code: 'INTERNAL', message: 'secret-url-token' })).not.toContain('secret-url-token');
+  });
+
+  it('preserves the explicit disabled-send message for UNSUPPORTED', () => {
+    expect(stickerSendErrorMessage({ code: 'UNSUPPORTED', message: STICKER_SENDING_DISABLED_MESSAGE }))
+      .toBe(STICKER_SENDING_DISABLED_MESSAGE);
   });
 });

@@ -33,7 +33,7 @@ describe('StickerPickerComponent', () => {
     expect(library.list).toHaveBeenCalled();
   });
 
-  it('emits the selected sticker only after explicit confirmation', async () => {
+  it('keeps sticker sending disabled while preserving selection controls', async () => {
     await TestBed.configureTestingModule({
       imports: [StickerPickerComponent],
       providers: [
@@ -43,7 +43,9 @@ describe('StickerPickerComponent', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(StickerPickerComponent);
     fixture.componentRef.setInput('accountId', 'alice@example.test');
+    fixture.componentInstance.open.set(true);
     fixture.detectChanges();
+    await fixture.whenStable();
     fixture.componentInstance.facade.selectSticker({
       stickerId: 's1', accountId: 'alice@example.test', assetId: 'a1', name: 'one.png',
       sortKey: '1', availability: 'available', createdAt: '2026-01-01', updatedAt: '2026-01-01',
@@ -51,7 +53,11 @@ describe('StickerPickerComponent', () => {
     const emitted: string[] = [];
     fixture.componentInstance.stickerSend.subscribe((value) => emitted.push(value));
     fixture.componentInstance.sendSelected();
-    expect(emitted).toEqual(['s1']);
+    expect(emitted).toEqual([]);
+    fixture.detectChanges();
+    const sendButton = fixture.nativeElement.querySelector('.send-sticker') as HTMLButtonElement;
+    expect(sendButton.disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('El envío de stickers está temporalmente deshabilitado');
   });
 
   it('does not expose library deletion while a package is selected', async () => {

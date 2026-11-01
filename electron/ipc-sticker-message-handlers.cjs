@@ -6,6 +6,7 @@ function registerStickerMessageHandlers({
   getRuntime,
   historySecurity,
   helpers,
+  stickerSendingEnabled = false,
 }) {
   const { requestId, validVersion } = helpers;
   const known = new Set([
@@ -71,7 +72,14 @@ function registerStickerMessageHandlers({
     return {
       ok: false,
       version: 1,
-      error: { code, retryable: ['TIMEOUT', 'TRANSPORT_FAILED'].includes(code), requestId: requestId(event, input), message: messages[code] },
+      error: {
+        code,
+        retryable: ['TIMEOUT', 'TRANSPORT_FAILED'].includes(code),
+        requestId: requestId(event, input),
+        message: error?.stickerSendingDisabled === true
+          ? 'El envío de stickers está temporalmente deshabilitado'
+          : messages[code],
+      },
     };
   }
 
@@ -111,6 +119,11 @@ function registerStickerMessageHandlers({
     let sendConfirmed = false;
     try {
       authorize(event, input, true);
+      if (!stickerSendingEnabled) {
+        const error = new Error('UNSUPPORTED');
+        error.stickerSendingDisabled = true;
+        throw error;
+      }
       if (typeof input.clientMessageId !== 'string' || !input.clientMessageId.trim() || input.clientMessageId.length > 512 ||
           typeof input.stickerId !== 'string' || !input.stickerId.trim() || input.stickerId.length > 512)
         throw new Error('INVALID_INPUT');

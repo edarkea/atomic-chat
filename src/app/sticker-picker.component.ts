@@ -15,6 +15,7 @@ import { StickerStudioComponent } from './sticker-studio.component';
 export class StickerPickerComponent {
   readonly accountId = input.required<string>();
   readonly disabled = input(false);
+  readonly stickerSendingDisabled = true;
   readonly stickerSend = output<string>();
   readonly open = signal(false);
   readonly facade = inject(StickerLibraryFacade);
@@ -34,7 +35,7 @@ export class StickerPickerComponent {
   close(): void { this.open.set(false); }
   sendSelected(): void {
     const selected = this.facade.selectedSticker();
-    if (!selected || this.disabled() || !this.accountId()) return;
+    if (this.stickerSendingDisabled || !selected || this.disabled() || !this.accountId()) return;
     this.stickerSend.emit(selected.stickerId);
     this.close();
   }
