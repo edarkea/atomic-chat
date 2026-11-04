@@ -7,6 +7,9 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const { normalizeChecksumText, prepareReleaseStaging, verifyChecksumManifest } = require(
+  path.join(root, 'scripts', 'prepare-release-staging.cjs'),
+);
 
 test('CI workflow is read-only and focused', () => {
   const workflow = read('.github/workflows/ci-tests.yml');
@@ -41,6 +44,7 @@ test('manual build workflow never publishes and has no write permission', () => 
 
 test('release workflow derives the tag from package version and requires protection', () => {
   const workflow = read('.github/workflows/publish-release.yml');
+  const stagingScript = read('scripts/prepare-release-staging.cjs');
   const packageJson = JSON.parse(read('package.json'));
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /^\s+(push|pull_request):/m);
@@ -60,12 +64,12 @@ test('release workflow derives the tag from package version and requires protect
   assert.match(workflow, /release\/publish/);
   assert.match(workflow, /cd release\/windows && sha256sum -c SHA256SUMS\.txt/);
   assert.match(workflow, /cd release\/linux && sha256sum -c SHA256SUMS\.txt/);
-  assert.match(workflow, /artifact name collision/);
-  assert.match(workflow, /builder-debug\.yml/);
-  assert.match(workflow, /win-unpacked/);
-  assert.match(workflow, /linux-unpacked/);
-  assert.match(workflow, /verify_update_manifest/);
-  assert.match(workflow, /global_manifest/);
+  assert.match(stagingScript, /artifact name collision/);
+  assert.match(stagingScript, /builder-debug/);
+  assert.match(stagingScript, /win-unpacked/);
+  assert.match(stagingScript, /linux-unpacked/);
+  assert.match(stagingScript, /verifyUpdateManifest/);
+  assert.match(stagingScript, /globalManifest/);
   assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.match(workflow, /gh release view "\$RELEASE_TAG" --repo "\$GITHUB_REPOSITORY"/);
   assert.match(workflow, /gh release create "\$RELEASE_TAG" "\$\{release_files\[@\]\}"/);
@@ -75,9 +79,13 @@ test('release workflow derives the tag from package version and requires protect
   assert.doesNotMatch(workflow, /tag_sha/);
   assert.match(workflow, /\[System\.IO\.File\]::WriteAllText/);
   assert.match(workflow, /\[System\.Text\.UTF8Encoding\]::new\(\$false\)/);
-  assert.match(workflow, /normalize_windows_manifest/);
-  assert.match(workflow, /perl -0pe/);
+  assert.match(stagingScript, /normalizeChecksumManifest/);
+  assert.match(stagingScript, /normalizeChecksumText/);
   assert.match(workflow, /release_status/);
+  assert.match(workflow, /node scripts\/prepare-release-staging\.cjs/);
+  assert.match(stagingScript, /copyOptionalPattern\(linuxDirectory, \/\\\.blockmap\$\//);
+  assert.match(stagingScript, /copyRequiredPattern\(linuxDirectory, \/\\\.deb\$\//);
+  assert.match(stagingScript, /copyRequiredPattern\(linuxDirectory, \/\\\.AppImage\$\//);
   assert.equal(packageJson.version, '0.0.1');
 });
 
@@ -95,8 +103,6 @@ test('Windows checksum normalization accepts line endings and rejects bad or mis
   const hash = crypto.createHash('sha256').update(artifactContents).digest('hex');
   const checksumLine = `${hash}  ${artifactName}`;
 
-  const normalizeManifest = (contents) =>
-    contents.replace(/\r+(?:\n|$)/g, '\n').replace(/\r+(?=[0-9A-Fa-f]{64}  )/g, '\n');
   const verifyManifest = (manifestPath, baseDirectory) => {
     const lines = fs
       .readFileSync(manifestPath, 'utf8')
@@ -122,7 +128,7 @@ test('Windows checksum normalization accepts line endings and rejects bad or mis
       fs.writeFileSync(sourceManifest, `${checksumLine}${lineEnding}`, 'utf8');
       fs.writeFileSync(
         normalizedManifest,
-        normalizeManifest(fs.readFileSync(sourceManifest, 'utf8')),
+        normalizeChecksumText(fs.readFileSync(sourceManifest, 'utf8')),
         'utf8',
       );
       assert.doesNotThrow(() => verifyManifest(normalizedManifest, releaseDirectory));
@@ -163,6 +169,138 @@ test('Windows checksum normalization accepts line endings and rejects bad or mis
     assert.equal(fs.existsSync(stagedArtifact), true);
     assert.equal(fs.existsSync(path.join(stagingDirectory, 'builder-debug.yml')), false);
     assert.equal(fs.existsSync(path.join(stagingDirectory, 'win-unpacked')), false);
+  } finally {
+    fs.rmSync(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('release staging accepts optional Linux blockmaps and rejects invalid inputs', () => {
+  const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-staging-'));
+  const sha256 = (filePath) =>
+    crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  const writeSampleRelease = (name, includeLinuxBlockmap) => {
+    const baseDirectory = path.join(rootDirectory, name);
+    const windowsDirectory = path.join(baseDirectory, 'windows');
+    const linuxDirectory = path.join(baseDirectory, 'linux');
+    const stagingDirectory = path.join(baseDirectory, 'publish');
+    fs.mkdirSync(windowsDirectory, { recursive: true });
+    fs.mkdirSync(linuxDirectory, { recursive: true });
+    const write = (directory, fileName, contents) =>
+      fs.writeFileSync(path.join(directory, fileName), contents);
+
+    write(windowsDirectory, 'Atomic Chat Setup 0.0.1.exe', 'windows installer');
+    write(windowsDirectory, 'Atomic Chat Setup 0.0.1.exe.blockmap', 'windows blockmap');
+    write(
+      windowsDirectory,
+      'latest.yml',
+      'version: 0.0.1\nfiles:\n  - url: Atomic Chat Setup 0.0.1.exe\npath: Atomic Chat Setup 0.0.1.exe\n',
+    );
+    write(windowsDirectory, 'builder-debug.yml', 'debug');
+    fs.mkdirSync(path.join(windowsDirectory, 'win-unpacked'));
+
+    write(linuxDirectory, 'atomic-chat-0.0.1.AppImage', 'linux appimage');
+    write(linuxDirectory, 'atomic-chat_0.0.1_amd64.deb', 'linux deb');
+    write(
+      linuxDirectory,
+      'latest-linux.yml',
+      'version: 0.0.1\nfiles:\n  - url: atomic-chat-0.0.1.AppImage\npath: atomic-chat-0.0.1.AppImage\n',
+    );
+    if (includeLinuxBlockmap) {
+      write(linuxDirectory, 'atomic-chat-0.0.1.AppImage.blockmap', 'linux blockmap');
+    }
+    write(linuxDirectory, 'builder-debug.yml', 'debug');
+    fs.mkdirSync(path.join(linuxDirectory, 'linux-unpacked'));
+
+    for (const directory of [windowsDirectory, linuxDirectory]) {
+      const lines = fs
+        .readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name !== 'SHA256SUMS.txt')
+        .map((entry) => `${sha256(path.join(directory, entry.name))}  ${entry.name}`)
+        .sort();
+      write(directory, 'SHA256SUMS.txt', `${lines.join('\n')}\n`);
+    }
+    return { windowsDirectory, linuxDirectory, stagingDirectory };
+  };
+
+  try {
+    const withoutLinuxBlockmap = writeSampleRelease('without-blockmap', false);
+    const resultWithoutBlockmap = prepareReleaseStaging({
+      ...withoutLinuxBlockmap,
+      version: '0.0.1',
+    });
+    assert.equal(
+      resultWithoutBlockmap.linuxArtifacts.includes('atomic-chat-0.0.1.AppImage.blockmap'),
+      false,
+    );
+    assert.equal(
+      fs.existsSync(path.join(withoutLinuxBlockmap.stagingDirectory, 'atomic-chat-0.0.1.AppImage')),
+      true,
+    );
+    assert.equal(
+      fs.existsSync(
+        path.join(withoutLinuxBlockmap.stagingDirectory, 'atomic-chat_0.0.1_amd64.deb'),
+      ),
+      true,
+    );
+    assert.equal(
+      fs.existsSync(path.join(withoutLinuxBlockmap.stagingDirectory, 'latest-linux.yml')),
+      true,
+    );
+    assert.equal(
+      fs.existsSync(path.join(withoutLinuxBlockmap.stagingDirectory, 'builder-debug.yml')),
+      false,
+    );
+    assert.equal(
+      fs.existsSync(path.join(withoutLinuxBlockmap.stagingDirectory, 'linux-unpacked')),
+      false,
+    );
+    verifyChecksumManifest(
+      path.join(withoutLinuxBlockmap.stagingDirectory, 'SHA256SUMS-0.0.1.txt'),
+      withoutLinuxBlockmap.stagingDirectory,
+    );
+
+    const withLinuxBlockmap = writeSampleRelease('with-blockmap', true);
+    const resultWithBlockmap = prepareReleaseStaging({ ...withLinuxBlockmap, version: '0.0.1' });
+    assert.equal(
+      resultWithBlockmap.linuxArtifacts.includes('atomic-chat-0.0.1.AppImage.blockmap'),
+      true,
+    );
+
+    const altered = writeSampleRelease('altered', false);
+    fs.writeFileSync(path.join(altered.linuxDirectory, 'atomic-chat-0.0.1.AppImage'), 'altered');
+    assert.throws(
+      () => prepareReleaseStaging({ ...altered, version: '0.0.1' }),
+      /checksum mismatch/,
+    );
+
+    const missing = writeSampleRelease('missing', false);
+    fs.unlinkSync(path.join(missing.linuxDirectory, 'atomic-chat_0.0.1_amd64.deb'));
+    assert.throws(
+      () => prepareReleaseStaging({ ...missing, version: '0.0.1' }),
+      /missing checksum artifact/,
+    );
+
+    const invalidReference = writeSampleRelease('invalid-reference', false);
+    fs.writeFileSync(
+      path.join(invalidReference.linuxDirectory, 'latest-linux.yml'),
+      'version: 0.0.1\nfiles:\n  - url: missing.AppImage\npath: missing.AppImage\n',
+    );
+    const invalidManifestLines = fs
+      .readdirSync(invalidReference.linuxDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name !== 'SHA256SUMS.txt')
+      .map(
+        (entry) =>
+          `${sha256(path.join(invalidReference.linuxDirectory, entry.name))}  ${entry.name}`,
+      )
+      .sort();
+    fs.writeFileSync(
+      path.join(invalidReference.linuxDirectory, 'SHA256SUMS.txt'),
+      `${invalidManifestLines.join('\n')}\n`,
+    );
+    assert.throws(
+      () => prepareReleaseStaging({ ...invalidReference, version: '0.0.1' }),
+      /update manifest references a missing artifact/,
+    );
   } finally {
     fs.rmSync(rootDirectory, { recursive: true, force: true });
   }

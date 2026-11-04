@@ -181,24 +181,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          export LC_ALL=C
-          checked_sha="$(git rev-parse HEAD)"
-          test "$checked_sha" = "$RELEASE_SHA"
-          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
-          test "$RELEASE_TAG" = "v$RELEASE_VERSION"
-          test -s release/windows/SHA256SUMS.txt
-          test -s release/linux/SHA256SUMS.txt
-          normalize_windows_manifest() {
-            local manifest="release/windows/SHA256SUMS.txt"
-            local normalized
-            normalized="$(mktemp)"
-            perl -0pe 's/\r+(?:\n|\z)/\n/g; s/\r+(?=[0-9A-Fa-f]{64}  )/\n/g' "$manifest" > "$normalized"
-            mv -- "$normalized" "$manifest"
-          }
-          normalize_windows_manifest
-          (cd release/windows && sha256sum -c SHA256SUMS.txt)
-          (cd release/linux && sha256sum -c SHA256SUMS.txt)
-
           release_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer $GH_TOKEN" \
@@ -222,112 +204,15 @@ jobs:
               exit 1
               ;;
           esac
-
-          rm -rf release/publish
-          mkdir -p release/publish
-          windows_artifacts=()
-          linux_artifacts=()
-
-          copy_one() {
-            local source="$1"
-            local platform="$2"
-            local base
-            test -f "$source"
-            base="$(basename -- "$source")"
-            if [[ -e "release/publish/$base" ]]; then
-              echo "artifact name collision: $base" >&2
-              exit 1
-            fi
-            cp -- "$source" release/publish/
-            if [[ "$platform" == windows ]]; then
-              windows_artifacts+=("$base")
-            else
-              linux_artifacts+=("$base")
-            fi
-          }
-
-          copy_pattern() {
-            local source_dir="$1"
-            local pattern="$2"
-            local platform="$3"
-            local file
-            local -a matches=()
-            mapfile -d '' -t matches < <(find "$source_dir" -maxdepth 1 -type f -name "$pattern" -print0 | sort -z)
-            if ((${#matches[@]} == 0)); then
-              echo "no $pattern artifact found in $source_dir" >&2
-              exit 1
-            fi
-            for file in "${matches[@]}"; do
-              copy_one "$file" "$platform"
-            done
-          }
-
-          copy_one release/windows/latest.yml windows
-          copy_pattern release/windows '*.exe' windows
-          copy_pattern release/windows '*.blockmap' windows
-          copy_one release/linux/latest-linux.yml linux
-          copy_pattern release/linux '*.deb' linux
-          copy_pattern release/linux '*.AppImage' linux
-          copy_pattern release/linux '*.blockmap' linux
-
-          if find release/publish -maxdepth 1 \( -name 'builder-debug.yml' -o -name 'win-unpacked' -o -name 'linux-unpacked' \) -print -quit | grep -q .; then
-            echo 'debug files or unpacked directories must not enter release staging' >&2
-            exit 1
-          fi
-
-          verify_update_manifest() {
-            local manifest="$1"
-            local reference
-            local references=0
-            while IFS= read -r reference; do
-              reference="${reference%$'\r'}"
-              [[ -n "$reference" ]] || continue
-              references=$((references + 1))
-              if [[ "$reference" == /* || "$reference" == *'/'* || "$reference" == .* ]]; then
-                echo "manifest contains an invalid staged path: $reference" >&2
-                exit 1
-              fi
-              test -f "release/publish/$reference"
-            done < <(grep -E '^[[:space:]]*(url|path):[[:space:]]*' "$manifest" | sed -E 's/^[[:space:]]*(url|path):[[:space:]]*//; s/^"//; s/"$//')
-            if ((references == 0)); then
-              echo "manifest has no artifact references: $manifest" >&2
-              exit 1
-            fi
-          }
-
-          verify_update_manifest release/publish/latest.yml
-          verify_update_manifest release/publish/latest-linux.yml
-
-          write_manifest() {
-            local manifest_name="$1"
-            shift
-            local -a files=("$@")
-            if ((${#files[@]} == 0)); then
-              echo "cannot create empty manifest: $manifest_name" >&2
-              exit 1
-            fi
-            (
-              cd release/publish
-              printf '%s\0' "${files[@]}" | sort -z | xargs -0 -r sha256sum > "$manifest_name"
-              test -s "$manifest_name"
-              sha256sum -c "$manifest_name"
-            )
-          }
-
-          write_manifest SHA256SUMS-windows-x64.txt "${windows_artifacts[@]}"
-          write_manifest SHA256SUMS-linux-x64.txt "${linux_artifacts[@]}"
-
-          global_manifest="SHA256SUMS-${RELEASE_VERSION}.txt"
+          node scripts/prepare-release-staging.cjs \
+            release/windows release/linux release/publish "$RELEASE_VERSION"
+          (cd release/windows && sha256sum -c SHA256SUMS.txt)
+          (cd release/linux && sha256sum -c SHA256SUMS.txt)
           (
             cd release/publish
-            mapfile -d '' -t final_artifacts < <(find . -maxdepth 1 -type f ! -name "$global_manifest" -printf '%f\0' | sort -z)
-            if ((${#final_artifacts[@]} == 0)); then
-              echo 'final release staging contains no artifacts' >&2
-              exit 1
-            fi
-            printf '%s\0' "${final_artifacts[@]}" | xargs -0 -r sha256sum > "$global_manifest"
-            test -s "$global_manifest"
-            sha256sum -c "$global_manifest"
+            sha256sum -c SHA256SUMS-windows-x64.txt
+            sha256sum -c SHA256SUMS-linux-x64.txt
+            sha256sum -c "SHA256SUMS-${RELEASE_VERSION}.txt"
           )
       - name: Create the release tag from package.json
         env:
