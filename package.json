@@ -13,6 +13,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:angular": "ng test --no-watch --no-progress",
+    "test:ci:focused": "ng test --no-watch --no-progress --include src/app/message-composer.spec.ts --include src/app/message-date-time.spec.ts && node --test tests/message-search.test.cjs tests/sticker-message-ipc.test.cjs tests/update-service.test.cjs tests/ci-cd-contract.test.cjs",
     "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\"",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && npm run typecheck:electron",
     "typecheck:electron": "tsc -p tsconfig.electron-checkjs.json --noEmit",
@@ -31,6 +32,7 @@
     "@angular/router": "^21.2.0",
     "@xmpp/client": "^0.14.0",
     "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.12",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -55,6 +57,15 @@
     "directories": {
       "output": "release"
     },
+    "artifactName": "AtomicChat-${version}-${os}-${arch}.${ext}",
+    "electronUpdaterCompatibility": ">=6.8",
+    "npmRebuild": true,
+    "publish": {
+      "provider": "github",
+      "owner": "edarkea",
+      "repo": "atomic-chat",
+      "releaseType": "release"
+    },
     "files": [
       "electron/**/*",
       "dist/atomic-chat/browser/**/*",
@@ -64,12 +75,36 @@
       "node_modules/better-sqlite3/**"
     ],
     "win": {
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AtomicChat-${version}-windows-x64.${ext}"
     },
     "linux": {
       "category": "Network",
       "maintainer": "Steeven Ayui <edison.ayui@gmail.com>",
-      "icon": "build/icons"
+      "icon": "build/icons",
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AtomicChat-${version}-linux-x64.${ext}"
     }
   },
   "description": "Atomic Chat Desktop",

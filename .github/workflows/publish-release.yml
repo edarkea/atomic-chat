@@ -1,0 +1,147 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable semver without the v prefix, for example 1.2.3
+        required: true
+        type: string
+      tag:
+        description: Existing protected tag linked to the approved commit, for example v1.2.3
+        required: true
+        type: string
+      ref:
+        description: Branch or commit to build; it must be main or the approved tag
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - name: Verify stable version and approved commit
+        shell: pwsh
+        run: |
+          if ('${{ inputs.version }}' -notmatch '^\d+\.\d+\.\d+$') { throw 'version must be stable semver' }
+          if ('${{ inputs.tag }}' -ne "v${{ inputs.version }}") { throw 'tag must equal v<version>' }
+          $packageVersion = node -p "require('./package.json').version"
+          if ($packageVersion -ne '${{ inputs.version }}') { throw "package.json version $packageVersion does not match input" }
+          if ('${{ inputs.ref }}' -ne 'main' -and '${{ inputs.ref }}' -ne '${{ inputs.tag }}') { throw 'ref must be main or the approved tag' }
+          git fetch origin main --tags
+          $tagSha = git rev-list -n 1 "refs/tags/${{ inputs.tag }}"
+          $mainSha = git rev-parse origin/main
+          git merge-base --is-ancestor $tagSha $mainSha
+          if ($LASTEXITCODE -ne 0) { throw 'approved tag must point to a commit on main' }
+      - run: npm ci
+      - run: npx electron-builder install-app-deps
+      - run: npm run build
+      - run: npx electron-builder --win nsis --x64 --publish never
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path release -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), $_.Path.Substring((Resolve-Path release).Path.Length + 1) } |
+            Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ inputs.version }}-windows-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 3
+
+  build-linux:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - name: Verify stable version and approved commit
+        run: |
+          test "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$
+          test "${{ inputs.tag }}" = "v${{ inputs.version }}"
+          test "$(node -p "require('./package.json').version")" = "${{ inputs.version }}"
+          test "${{ inputs.ref }}" = main || test "${{ inputs.ref }}" = "${{ inputs.tag }}"
+          git fetch origin main --tags
+          tag_sha="$(git rev-list -n 1 "refs/tags/${{ inputs.tag }}")"
+          git merge-base --is-ancestor "$tag_sha" origin/main
+      - run: npm ci
+      - run: npx electron-builder install-app-deps
+      - run: npm run build
+      - run: npx electron-builder --linux deb AppImage --x64 --publish never
+      - name: Generate checksums
+        run: |
+          find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ inputs.version }}-linux-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    environment:
+      name: production-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ inputs.version }}-windows-x64
+          path: release/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ inputs.version }}-linux-x64
+          path: release/linux
+      - name: Verify release metadata and combine checksums
+        run: |
+          test -f release/windows/latest.yml
+          test -f release/linux/latest-linux.yml
+          test -f release/windows/SHA256SUMS.txt
+          test -f release/linux/SHA256SUMS.txt
+          cp release/windows/SHA256SUMS.txt release/SHA256SUMS-windows-x64.txt
+          cp release/linux/SHA256SUMS.txt release/SHA256SUMS-linux-x64.txt
+          find release/windows release/linux -maxdepth 1 -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.yml' \) -print0 |
+            sort -z | xargs -0 sha256sum > "release/SHA256SUMS-${{ inputs.version }}.txt"
+          cp release/windows/* release/linux/* release/
+          rm -rf release/windows release/linux
+          if gh release view "${{ inputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo 'release already exists; stable releases are never overwritten' >&2
+            exit 1
+          fi
+      - name: Create the approved stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git show-ref --verify --quiet "refs/tags/${{ inputs.tag }}"
+          gh release create "${{ inputs.tag }}" release/* \
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --title "Atomic Chat ${{ inputs.version }}" \
+            --notes "Built from ${{ github.sha }} by ${{ github.actor }}."

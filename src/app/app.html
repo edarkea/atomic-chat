@@ -165,6 +165,19 @@
       @if (totalUnread() > 0) {
         <span class="global-unread" aria-label="Mensajes no leídos">{{ totalUnread() }}</span>
       }
+      @if (updates.status().state === 'available') {
+        <button class="update-action" type="button" (click)="updates.download()">
+          Descargar actualización {{ updates.status().availableVersion || '' }}
+        </button>
+      } @else if (updates.status().state === 'downloading') {
+        <span class="update-status" role="status">
+          Actualizando {{ updates.status().progressPercent || 0 }}%
+        </span>
+      } @else if (updates.status().state === 'downloaded') {
+        <button class="update-action" type="button" (click)="updates.install()">
+          Reiniciar para actualizar
+        </button>
+      }
     </header>
     <section class="workspace">
       <app-sidebar

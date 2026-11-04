@@ -149,6 +149,17 @@ contextBridge.exposeInMainWorld(
       reset: (input) => invoke('preferences.reset', input),
       selectDownloadDirectory: () => invoke('preferences.selectDownloadDirectory'),
     }),
+    updates: Object.freeze({
+      getStatus: (input) => invoke('updates.getStatus', input),
+      check: (input) => invoke('updates.check', input),
+      download: (input) => invoke('updates.download', input),
+      install: (input) => invoke('updates.install', input),
+      subscribe: (listener) => {
+        const handler = (_event, value) => listener(value);
+        ipcRenderer.on('update.status', handler);
+        return () => ipcRenderer.removeListener('update.status', handler);
+      },
+    }),
     subscribe: (listener) => {
       const handler = (_event, value) => listener(value);
       ipcRenderer.on('domain.event', handler);

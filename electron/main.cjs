@@ -28,6 +28,7 @@ const { createFileDialogs } = require('./file-dialog.cjs');
 const { createMainWindow } = require('./main-window.cjs');
 const { createRuntime } = require('./runtime.cjs');
 const { registerIpcHandlers } = require('./ipc-handlers.cjs');
+const { createUpdateService } = require('./update-service.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
 const { createIncomingMessageProcessor } = require('./incoming-message-persistence.cjs');
@@ -62,7 +63,8 @@ app.setPath('userData', atomicDataPath);
 const historySecurity = createHistorySecurity(process.env.ATOMIC_XMPP_USERNAME || '');
 const stickerStorageActivation = activateStickerStorage({
   environment: process.env,
-  providerFactory: (configuration) => createConfiguredStickerStorageProvider({ environment: process.env, configuration }),
+  providerFactory: (configuration) =>
+    createConfiguredStickerStorageProvider({ environment: process.env, configuration }),
 });
 const fileResourceLimiter = new TransferResourceLimiter();
 const {
@@ -148,6 +150,15 @@ const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
   },
   getTimeoutSeconds: currentTransferTimeout,
 });
+const updateService = createUpdateService({
+  app,
+  isPackaged: app.isPackaged,
+  hasCriticalTransfers: () => fileResourceLimiter.counts('').global > 0,
+  logger: console,
+});
+updateService.onStatus((status) => {
+  for (const contents of webContents.getAllWebContents()) contents.send('update.status', status);
+});
 
 const applicationAttention = createApplicationAttention({ BrowserWindow, app });
 const messageNotifications = createMessageNotifications({
@@ -196,7 +207,10 @@ function attachEventSources() {
   const processIncomingMessage = createIncomingMessageProcessor({
     persistence: runtime.persistence,
     onPersistenceError: (error) =>
-      console.error('[PERSISTENCE] Could not save incoming message:', error?.message || 'STORAGE_FAILED'),
+      console.error(
+        '[PERSISTENCE] Could not save incoming message:',
+        error?.message || 'STORAGE_FAILED',
+      ),
   });
   runtime.media.onEvent((event) => eventRouter.forwardTransferEvent(event));
   fileTransfers.onEvent((event) => {
@@ -220,18 +234,31 @@ function attachEventSources() {
           runtime.xmpp.sessionGenerations.get(accountId) === generation &&
           runtime.xmpp.isStickerSourceAuthorized(accountId, persisted.senderJid);
         if (isAuthorizedSource()) {
-          void runtime.stickerMessages.load(accountId, persisted.refId, isAuthorizedSource)
-            .then((loaded) => eventRouter.forwardXmppEvent({ type: 'sticker.stateChanged', payload: loaded }))
+          void runtime.stickerMessages
+            .load(accountId, persisted.refId, isAuthorizedSource)
+            .then((loaded) =>
+              eventRouter.forwardXmppEvent({ type: 'sticker.stateChanged', payload: loaded }),
+            )
             .catch((error) => {
               if (error?.code === 'UNAUTHORIZED') return;
               const failed = runtime.persistence.markStickerMessageUnavailable(
-                accountId, persisted.refId, error?.code || 'MEDIA_PREVIEW_UNAVAILABLE', new Date().toISOString(),
+                accountId,
+                persisted.refId,
+                error?.code || 'MEDIA_PREVIEW_UNAVAILABLE',
+                new Date().toISOString(),
               );
-              if (failed) eventRouter.forwardXmppEvent({ type: 'sticker.stateChanged', payload: runtime.stickerMessages.publicRef(failed) });
+              if (failed)
+                eventRouter.forwardXmppEvent({
+                  type: 'sticker.stateChanged',
+                  payload: runtime.stickerMessages.publicRef(failed),
+                });
             });
         }
       } catch (error) {
-        console.error('[STICKER] Could not save incoming sticker:', error?.message || 'STORAGE_FAILED');
+        console.error(
+          '[STICKER] Could not save incoming sticker:',
+          error?.message || 'STORAGE_FAILED',
+        );
       }
       return;
     }
@@ -261,12 +288,15 @@ function initializeRuntime() {
     stickerStorageProvider: stickerStorageActivation.provider,
     stickerStorageConfiguration: stickerStorageActivation.configuration,
   });
-  runtime.stickers.setActiveGrantChecker((accountId, assetId) => stickerGrants.hasActiveAsset(accountId, assetId));
+  runtime.stickers.setActiveGrantChecker((accountId, assetId) =>
+    stickerGrants.hasActiveAsset(accountId, assetId),
+  );
   attachEventSources();
   createWindow();
 }
 
 async function shutdown() {
+  updateService.stop();
   const activeRuntime = runtime;
   await Promise.all(
     [...(activeRuntime?.xmpp.sessions.keys() || [])].map((accountId) =>
@@ -297,6 +327,10 @@ registerIpcHandlers({
   selectDownloadDirectory,
   defaultDownloadDirectory,
   applicationAttention,
+  updateService,
 });
-app.whenReady().then(initializeRuntime);
+app.whenReady().then(() => {
+  initializeRuntime();
+  updateService.start();
+});
 registerAppLifecycle({ app, BrowserWindow, createWindow, shutdown });

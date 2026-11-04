@@ -12,6 +12,7 @@ const { registerFileHistoryHandlers } = require('./ipc-file-history-handlers.cjs
 const { registerStickerHandlers } = require('./ipc-sticker-handlers.cjs');
 const { registerStickerPackHandlers } = require('./ipc-sticker-pack-handlers.cjs');
 const { registerStickerMessageHandlers } = require('./ipc-sticker-message-handlers.cjs');
+const { registerUpdateHandlers } = require('./ipc-update-handlers.cjs');
 
 function registerIpcHandlers(options) {
   const helpers = createIpcHelpers(options);
@@ -29,6 +30,7 @@ function registerIpcHandlers(options) {
   registerPreferenceHandlers(dependencies);
   registerConnectionProfileHandlers(dependencies);
   registerAttentionHandlers(dependencies);
+  registerUpdateHandlers(dependencies);
 }
 
 module.exports = { registerIpcHandlers };

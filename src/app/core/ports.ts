@@ -83,6 +83,8 @@ import {
   TypedDomainEvent,
   TimelinePage,
   TimelinePageInput,
+  UpdateRequest,
+  UpdateStatus,
   XmppConnectionProfile,
 } from './domain';
 
@@ -171,6 +173,14 @@ export interface CertificatePort {
   decide(input: CertificateTrustDecisionInput): Promise<Result<void>>;
 }
 
+export interface UpdatePort {
+  getStatus(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+  check(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+  download(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+  install(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+  subscribe(listener: (status: UpdateStatus) => void): () => void;
+}
+
 export interface AttentionPort {
   request(input: AttentionRequest): Promise<Result<void>>;
   clear(input: AttentionClearRequest): Promise<Result<void>>;
@@ -248,6 +258,7 @@ export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountP
 export const HISTORY_PORT = new InjectionToken<HistoryPort>('AtomicChat HistoryPort');
 export const PREFERENCES_PORT = new InjectionToken<PreferencesPort>('AtomicChat PreferencesPort');
 export const CERTIFICATE_PORT = new InjectionToken<CertificatePort>('AtomicChat CertificatePort');
+export const UPDATE_PORT = new InjectionToken<UpdatePort>('AtomicChat UpdatePort');
 export const ATTENTION_PORT = new InjectionToken<AttentionPort>('AtomicChat AttentionPort');
 export const BROADCAST_PORT = new InjectionToken<BroadcastPort>('AtomicChat BroadcastPort');
 export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
@@ -256,7 +267,13 @@ export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
 export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewPort');
 export const MEDIA_PORT = new InjectionToken<MediaPort>('AtomicChat MediaPort');
 export const FILE_HISTORY_PORT = new InjectionToken<FileHistoryPort>('AtomicChat FileHistoryPort');
-export const STICKER_LIBRARY_PORT = new InjectionToken<StickerLibraryPort>('AtomicChat StickerLibraryPort');
+export const STICKER_LIBRARY_PORT = new InjectionToken<StickerLibraryPort>(
+  'AtomicChat StickerLibraryPort',
+);
 export const STICKER_PACK_PORT = new InjectionToken<StickerPackPort>('AtomicChat StickerPackPort');
-export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>('AtomicChat StickerPreviewPort');
-export const STICKER_MESSAGE_PORT = new InjectionToken<StickerMessagePort>('AtomicChat StickerMessagePort');
+export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>(
+  'AtomicChat StickerPreviewPort',
+);
+export const STICKER_MESSAGE_PORT = new InjectionToken<StickerMessagePort>(
+  'AtomicChat StickerMessagePort',
+);

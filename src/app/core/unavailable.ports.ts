@@ -61,6 +61,8 @@ import {
   Result,
   TimelinePage,
   TimelinePageInput,
+  UpdateRequest,
+  UpdateStatus,
   RoomRef,
   RoomState,
   RoomSendReceipt,
@@ -87,6 +89,7 @@ import {
   StickerPackPort,
   StickerPreviewPort,
   StickerMessagePort,
+  UpdatePort,
 } from './ports';
 
 const unsupported = <T>(requestId: string): Result<T> => ({
@@ -245,6 +248,25 @@ export class UnavailableCertificatePort implements CertificatePort {
 }
 
 @Injectable({ providedIn: 'root' })
+export class UnavailableUpdatePort implements UpdatePort {
+  getStatus(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  check(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  download(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  install(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  subscribe(_listener: (status: UpdateStatus) => void): () => void {
+    return () => undefined;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
 export class UnavailableFileTransferPort implements FileTransferPort {
   send(input: FileSendInput): Promise<Result<FileTransfer | null>> {
     return Promise.resolve(unsupported(input.requestId));
@@ -309,16 +331,36 @@ export class UnavailableStickerLibraryPort implements StickerLibraryPort {
 
 @Injectable({ providedIn: 'root' })
 export class UnavailableStickerPackPort implements StickerPackPort {
-  list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> { return Promise.resolve(unsupported(input.requestId)); }
-  get(input: StickerPackGetRequest): Promise<Result<StickerPackDTO>> { return Promise.resolve(unsupported(input.requestId)); }
-  save(input: StickerPackSaveRequest): Promise<Result<StickerPackDTO>> { return Promise.resolve(unsupported(input.requestId)); }
-  delete(input: StickerPackDeleteRequest): Promise<Result<void>> { return Promise.resolve(unsupported(input.requestId)); }
-  listDrafts(input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> { return Promise.resolve(unsupported(input.requestId)); }
-  createDraft(input: StickerDraftCreateRequest): Promise<Result<StickerDraftDTO>> { return Promise.resolve(unsupported(input.requestId)); }
-  getDraft(input: StickerDraftGetRequest): Promise<Result<StickerDraftDTO>> { return Promise.resolve(unsupported(input.requestId)); }
-  updateDraft(input: StickerDraftUpdateRequest): Promise<Result<StickerDraftDTO>> { return Promise.resolve(unsupported(input.requestId)); }
-  discardDraft(input: StickerDraftDiscardRequest): Promise<Result<void>> { return Promise.resolve(unsupported(input.requestId)); }
-  commitDraft(input: StickerDraftCommitRequest): Promise<Result<StickerPackDTO>> { return Promise.resolve(unsupported(input.requestId)); }
+  list(input: StickerPackListRequest): Promise<Result<StickerPackListSnapshot>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  get(input: StickerPackGetRequest): Promise<Result<StickerPackDTO>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  save(input: StickerPackSaveRequest): Promise<Result<StickerPackDTO>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  delete(input: StickerPackDeleteRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  listDrafts(input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  createDraft(input: StickerDraftCreateRequest): Promise<Result<StickerDraftDTO>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  getDraft(input: StickerDraftGetRequest): Promise<Result<StickerDraftDTO>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  updateDraft(input: StickerDraftUpdateRequest): Promise<Result<StickerDraftDTO>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  discardDraft(input: StickerDraftDiscardRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  commitDraft(input: StickerDraftCommitRequest): Promise<Result<StickerPackDTO>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
 }
 
 @Injectable({ providedIn: 'root' })

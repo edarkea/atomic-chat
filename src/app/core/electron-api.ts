@@ -78,6 +78,8 @@ import {
   StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
+  UpdateRequest,
+  UpdateStatus,
 } from './domain';
 
 export interface AtomicChatApi {
@@ -219,6 +221,13 @@ export interface AtomicChatApi {
     }): Promise<Result<Partial<Preferences>>>;
     reset(input: { accountId: string }): Promise<Result<Preferences>>;
     selectDownloadDirectory(): Promise<Result<string | null>>;
+  };
+  updates: {
+    getStatus(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    check(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    download(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    install(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    subscribe(listener: (status: UpdateStatus) => void): () => void;
   };
   subscribe(listener: (event: unknown) => void): () => void;
 }

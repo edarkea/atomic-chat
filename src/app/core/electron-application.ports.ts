@@ -64,6 +64,8 @@ import {
   TypedDomainEvent,
   TimelinePage,
   TimelinePageInput,
+  UpdateRequest,
+  UpdateStatus,
   XmppConnectionProfile,
 } from './domain';
 import { subscribeToDomainEvents } from './domain-event.validation';
@@ -84,6 +86,7 @@ import {
   StickerPackPort,
   StickerPreviewPort,
   StickerMessagePort,
+  UpdatePort,
 } from './ports';
 
 const unavailable = <T>(requestId: string): Result<T> => ({
@@ -248,6 +251,29 @@ export class ElectronCertificatePort implements CertificatePort {
 }
 
 @Injectable({ providedIn: 'root' })
+export class ElectronUpdatePort implements UpdatePort {
+  getStatus(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    const api = getAtomicChatApi();
+    return api ? api.updates.getStatus(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  check(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    const api = getAtomicChatApi();
+    return api ? api.updates.check(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  download(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    const api = getAtomicChatApi();
+    return api ? api.updates.download(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  install(input: UpdateRequest): Promise<Result<UpdateStatus>> {
+    const api = getAtomicChatApi();
+    return api ? api.updates.install(input) : Promise.resolve(unavailable(input.requestId));
+  }
+  subscribe(listener: (status: UpdateStatus) => void): () => void {
+    return getAtomicChatApi()?.updates.subscribe(listener) || (() => undefined);
+  }
+}
+
+@Injectable({ providedIn: 'root' })
 export class ElectronAttentionPort implements AttentionPort {
   request(input: AttentionRequest): Promise<Result<void>> {
     const api = getAtomicChatApi();
@@ -376,27 +402,39 @@ export class ElectronStickerPackPort implements StickerPackPort {
   }
   listDrafts(input: StickerPackListRequest): Promise<Result<StickerDraftListSnapshot>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.packs.drafts.list(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.packs.drafts.list(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
   createDraft(input: StickerDraftCreateRequest): Promise<Result<StickerDraftDTO>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.packs.drafts.create(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.packs.drafts.create(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
   getDraft(input: StickerDraftGetRequest): Promise<Result<StickerDraftDTO>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.packs.drafts.get(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.packs.drafts.get(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
   updateDraft(input: StickerDraftUpdateRequest): Promise<Result<StickerDraftDTO>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.packs.drafts.update(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.packs.drafts.update(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
   discardDraft(input: StickerDraftDiscardRequest): Promise<Result<void>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.packs.drafts.discard(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.packs.drafts.discard(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
   commitDraft(input: StickerDraftCommitRequest): Promise<Result<StickerPackDTO>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.packs.drafts.commit(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.packs.drafts.commit(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
 }
 
@@ -428,7 +466,9 @@ export class ElectronStickerPreviewPort implements StickerPreviewPort {
 export class ElectronStickerMessagePort implements StickerMessagePort {
   discover(input: StickerCapabilityRequest): Promise<Result<StickerCapability>> {
     const api = getAtomicChatApi();
-    return api ? api.stickers.messages.discover(input) : Promise.resolve(unavailable(input.requestId));
+    return api
+      ? api.stickers.messages.discover(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
   send(input: StickerSendRequest): Promise<Result<StickerMessageRef>> {
     const api = getAtomicChatApi();
