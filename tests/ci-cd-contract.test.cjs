@@ -8,6 +8,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 test('CI workflow is read-only and focused', () => {
   const workflow = read('.github/workflows/ci-tests.yml');
+  assert.match(workflow, /pull_request:\s*\n\s+branches: \[main\]/);
+  assert.doesNotMatch(workflow, /^\s+(push|workflow_dispatch):/m);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm run test:ci:focused/);

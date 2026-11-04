@@ -2,7 +2,7 @@
 
 ## CI focused
 
-`ci-tests.yml` runs on pull requests and pushes to `dev` or `main`, and can be started manually. It has only `contents: read`, cancels redundant runs, applies a timeout, and runs `npm ci`, type/format checks, and `npm run test:ci:focused`. It does not run the historical P0 suite, connect to XMPP, use production secrets, publish artifacts, or modify versions.
+`ci-tests.yml` runs exclusively on pull requests targeting `main`. It has only `contents: read`, cancels redundant runs, applies a timeout, and runs `npm ci`, type/format checks, and `npm run test:ci:focused`. It does not run on pushes, target `dev`, run manually, execute the historical P0 suite, connect to XMPP, use production secrets, publish artifacts, or modify versions.
 
 ## Manual installers
 
