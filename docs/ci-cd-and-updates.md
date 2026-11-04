@@ -2,7 +2,7 @@
 
 ## CI focused
 
-`ci-tests.yml` runs on pushes and pull requests targeting `dev` or `main`, and can also be started manually. It has only `contents: read`, cancels redundant runs, applies a timeout, installs with `npm ci`, requires `npm audit --audit-level=high` to pass, and runs type/format checks plus `npm run test:ci:focused`. It does not execute the historical P0 suite, connect to XMPP, use production secrets, publish artifacts, or modify versions.
+`ci-tests.yml` runs only on pull requests targeting `main`, regardless of the source branch. It does not run on commits pushed to `dev` or `main`, and it has no manual trigger. It has only `contents: read`, cancels redundant runs, applies a timeout, installs with `npm ci`, requires `npm audit --audit-level=high` to pass, and runs type/format checks plus `npm run test:ci:focused`. It does not execute the historical P0 suite, connect to XMPP, use production secrets, publish artifacts, or modify versions.
 
 The high-severity gate is intentional: the complete audit still reports moderate findings in development/build tooling, but the current installed tree reports 0 high and 0 critical findings. `npm audit --omit=dev` also reports 0 findings, but that result is not used as the only release criterion because Electron is shipped in the application even though it is a development dependency.
 
@@ -22,7 +22,7 @@ Electron 45.2.2 is installed successfully with the existing Electron Builder 26 
 
 ## Manual installers
 
-`manual-build.yml` is `workflow_dispatch` only. It produces Windows x64 NSIS, Linux x64 DEB, or Linux x64 AppImage installers according to the selected input. Every build runs the production Angular build, `electron-builder install-app-deps` for native modules such as `better-sqlite3`, and electron-builder with `--publish never`. Artifacts are retained for seven days and include SHA256 checksums; no database, `.env`, or user data is part of the configured application file set.
+`manual-build.yml` is `workflow_dispatch` only and is separate from CI. It is used on demand to generate installable artifacts for QA, native-module validation, or manual inspection without creating a GitHub release. It produces Windows x64 NSIS, Linux x64 DEB, or Linux x64 AppImage installers according to the selected input. Every build runs the production Angular build, `electron-builder install-app-deps` for native modules such as `better-sqlite3`, and electron-builder with `--publish never`. Artifacts are retained for seven days and include SHA256 checksums; no database, `.env`, or user data is part of the configured application file set.
 
 The Linux build runner is Ubuntu 22.04. The supported baseline for the packaged native module is Ubuntu 22.04 or Debian 12 with the required system libraries. AppImage is the preferred self-contained Linux update target. DEB installation/update requires a compatible package manager and is not an unattended repository update mechanism in this project.
 
