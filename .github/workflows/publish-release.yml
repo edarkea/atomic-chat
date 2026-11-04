@@ -25,10 +25,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ inputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - name: Verify approved release commit and metadata
+        run: |
+          set -euo pipefail
+          case "$RELEASE_VERSION" in
+            (''|*[!0-9.]*|*.*.*.*|.*|*.) exit 1 ;;
+          esac
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_TAG" == "v$RELEASE_VERSION" ]]
+          [[ "$RELEASE_REF" == main || "$RELEASE_REF" == "$RELEASE_TAG" ]]
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          git fetch origin main --tags
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          checked_sha="$(git rev-parse HEAD)"
+          test -n "$tag_sha"
+          test "$checked_sha" = "$tag_sha"
+          git merge-base --is-ancestor "$tag_sha" origin/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Security audit gate
+        run: npm audit --audit-level=high
+      - name: Focused release checks
+        run: |
+          npm run typecheck
+          npm run format:check
+          npm run test:ci:focused
+
   build-windows:
     if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    needs: validate
     runs-on: windows-2022
     timeout-minutes: 40
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ inputs.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,13 +85,18 @@ jobs:
       - name: Verify stable version and approved commit
         shell: pwsh
         run: |
-          if ('${{ inputs.version }}' -notmatch '^\d+\.\d+\.\d+$') { throw 'version must be stable semver' }
-          if ('${{ inputs.tag }}' -ne "v${{ inputs.version }}") { throw 'tag must equal v<version>' }
+          $releaseVersion = $env:RELEASE_VERSION
+          $releaseTag = $env:RELEASE_TAG
+          $releaseRef = $env:RELEASE_REF
+          if ($releaseVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'version must be stable semver' }
+          if ($releaseTag -ne "v$releaseVersion") { throw 'tag must equal v<version>' }
           $packageVersion = node -p "require('./package.json').version"
-          if ($packageVersion -ne '${{ inputs.version }}') { throw "package.json version $packageVersion does not match input" }
-          if ('${{ inputs.ref }}' -ne 'main' -and '${{ inputs.ref }}' -ne '${{ inputs.tag }}') { throw 'ref must be main or the approved tag' }
+          if ($packageVersion -ne $releaseVersion) { throw "package.json version $packageVersion does not match input" }
+          if ($releaseRef -ne 'main' -and $releaseRef -ne $releaseTag) { throw 'ref must be main or the approved tag' }
           git fetch origin main --tags
-          $tagSha = git rev-list -n 1 "refs/tags/${{ inputs.tag }}"
+          $tagSha = (git rev-list -n 1 "refs/tags/$releaseTag").Trim()
+          $checkedSha = (git rev-parse HEAD).Trim()
+          if ([string]::IsNullOrWhiteSpace($tagSha) -or $checkedSha -ne $tagSha) { throw 'checked out commit must exactly match the approved tag' }
           $mainSha = git rev-parse origin/main
           git merge-base --is-ancestor $tagSha $mainSha
           if ($LASTEXITCODE -ne 0) { throw 'approved tag must point to a commit on main' }
@@ -67,8 +120,13 @@ jobs:
 
   build-linux:
     if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    needs: validate
     runs-on: ubuntu-22.04
     timeout-minutes: 40
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ inputs.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,12 +134,16 @@ jobs:
           fetch-depth: 0
       - name: Verify stable version and approved commit
         run: |
-          test "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$
-          test "${{ inputs.tag }}" = "v${{ inputs.version }}"
-          test "$(node -p "require('./package.json').version")" = "${{ inputs.version }}"
-          test "${{ inputs.ref }}" = main || test "${{ inputs.ref }}" = "${{ inputs.tag }}"
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$RELEASE_TAG" = "v$RELEASE_VERSION"
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          test "$RELEASE_REF" = main || test "$RELEASE_REF" = "$RELEASE_TAG"
           git fetch origin main --tags
-          tag_sha="$(git rev-list -n 1 "refs/tags/${{ inputs.tag }}")"
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          checked_sha="$(git rev-parse HEAD)"
+          test -n "$tag_sha"
+          test "$checked_sha" = "$tag_sha"
           git merge-base --is-ancestor "$tag_sha" origin/main
       - run: npm ci
       - run: npx electron-builder install-app-deps
@@ -99,9 +161,13 @@ jobs:
 
   publish:
     if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
-    needs: [build-windows, build-linux]
+    needs: [validate, build-windows, build-linux]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_REF: ${{ inputs.ref }}
     environment:
       name: production-release
     permissions:
@@ -121,6 +187,13 @@ jobs:
           path: release/linux
       - name: Verify release metadata and combine checksums
         run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          checked_sha="$(git rev-parse HEAD)"
+          test -n "$tag_sha"
+          test "$checked_sha" = "$tag_sha"
+          git merge-base --is-ancestor "$tag_sha" origin/main
           test -f release/windows/latest.yml
           test -f release/linux/latest-linux.yml
           test -f release/windows/SHA256SUMS.txt
@@ -128,10 +201,10 @@ jobs:
           cp release/windows/SHA256SUMS.txt release/SHA256SUMS-windows-x64.txt
           cp release/linux/SHA256SUMS.txt release/SHA256SUMS-linux-x64.txt
           find release/windows release/linux -maxdepth 1 -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.yml' \) -print0 |
-            sort -z | xargs -0 sha256sum > "release/SHA256SUMS-${{ inputs.version }}.txt"
+            sort -z | xargs -0 sha256sum > "release/SHA256SUMS-${RELEASE_VERSION}.txt"
           cp release/windows/* release/linux/* release/
           rm -rf release/windows release/linux
-          if gh release view "${{ inputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo 'release already exists; stable releases are never overwritten' >&2
             exit 1
           fi
@@ -139,9 +212,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git show-ref --verify --quiet "refs/tags/${{ inputs.tag }}"
-          gh release create "${{ inputs.tag }}" release/* \
-            --repo "${{ github.repository }}" \
+          set -euo pipefail
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          build_sha="$(git rev-parse HEAD)"
+          gh release create "$RELEASE_TAG" release/* \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "Atomic Chat ${{ inputs.version }}" \
-            --notes "Built from ${{ github.sha }} by ${{ github.actor }}."
+            --title "Atomic Chat $RELEASE_VERSION" \
+            --notes "Built from $build_sha by $GITHUB_ACTOR."

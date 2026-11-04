@@ -1,8 +1,11 @@
 name: CI tests
 
 on:
+  push:
+    branches: [dev, main]
   pull_request:
-    branches: [main]
+    branches: [dev, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,6 +29,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Security audit gate
+        run: npm audit --audit-level=high
       - name: Type and format checks
         run: |
           npm run typecheck

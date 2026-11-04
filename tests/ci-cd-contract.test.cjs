@@ -8,10 +8,12 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 test('CI workflow is read-only and focused', () => {
   const workflow = read('.github/workflows/ci-tests.yml');
-  assert.match(workflow, /pull_request:\s*\n\s+branches: \[main\]/);
-  assert.doesNotMatch(workflow, /^\s+(push|workflow_dispatch):/m);
+  assert.match(workflow, /push:\s*\n\s+branches: \[dev, main\]/);
+  assert.match(workflow, /pull_request:\s*\n\s+branches: \[dev, main\]/);
+  assert.match(workflow, /^\s+workflow_dispatch:/m);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
   assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npm audit --audit-level=high/);
   assert.match(workflow, /npm run test:ci:focused/);
   assert.doesNotMatch(workflow, /test:p0|npm test\b/);
   assert.match(workflow, /cancel-in-progress: true/);
@@ -33,9 +35,16 @@ test('release workflow requires actor, stable version, protected tag and environ
   assert.doesNotMatch(workflow, /^\s+(push|pull_request):/m);
   assert.match(workflow, /github\.actor == 'edarkea'/);
   assert.match(workflow, /ATOMIC_RELEASE_PUBLISHERS/);
+  assert.match(workflow, /needs: validate/);
+  assert.match(workflow, /checked_sha=/);
+  assert.match(workflow, /test "\$checked_sha" = "\$tag_sha"/);
+  assert.match(workflow, /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/);
+  assert.match(workflow, /npm audit --audit-level=high/);
   assert.match(workflow, /package\.json.*version|packageVersion/);
   assert.match(workflow, /environment:\s*\n\s+name: production-release/);
   assert.match(workflow, /permissions:\s*\n\s+contents: write/);
   assert.match(workflow, /--verify-tag/);
+  assert.doesNotMatch(workflow, /if \('\$\{\{ inputs\./);
+  assert.doesNotMatch(workflow, /gh release (view|create) "\$\{\{ inputs\./);
   assert.doesNotMatch(workflow, /npm version|git tag /);
 });
