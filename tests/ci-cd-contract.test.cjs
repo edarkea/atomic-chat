@@ -47,6 +47,7 @@ test('release workflow derives the tag from package version and requires protect
   const workflow = read('.github/workflows/publish-release.yml');
   const stagingScript = read('scripts/prepare-release-staging.cjs');
   const packageJson = JSON.parse(read('package.json'));
+  const packageLock = JSON.parse(read('package-lock.json'));
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /^\s+(push|pull_request):/m);
   assert.match(workflow, /github\.actor == 'edarkea'/);
@@ -91,7 +92,8 @@ test('release workflow derives the tag from package version and requires protect
   assert.match(stagingScript, /copyOptionalPattern\(linuxDirectory, \/\\\.blockmap\$\//);
   assert.match(stagingScript, /copyRequiredPattern\(linuxDirectory, \/\\\.deb\$\//);
   assert.match(stagingScript, /copyRequiredPattern\(linuxDirectory, \/\\\.AppImage\$\//);
-  assert.equal(packageJson.version, '0.0.1');
+  assert.match(packageJson.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(packageLock.packages[''].version, packageJson.version);
 });
 
 test('release tag uses explicit bot identity without runner Git configuration', () => {
