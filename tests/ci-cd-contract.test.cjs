@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -53,7 +54,12 @@ test('release workflow derives the tag from package version and requires protect
   assert.match(workflow, /needs: validate/);
   assert.match(workflow, /Read package version/);
   assert.match(workflow, /steps\.metadata\.outputs\.version/);
-  assert.match(workflow, /git tag --annotate "\$RELEASE_TAG" "\$RELEASE_SHA"/);
+  assert.match(
+    workflow,
+    /git -c user\.name='github-actions\[bot\]'[\s\\]+-c user\.email='41898282\+github-actions\[bot\]@users\.noreply\.github\.com'[\s\\]+tag --annotate/,
+  );
+  assert.match(workflow, /git cat-file -t "refs\/tags\/\$RELEASE_TAG"\)" = tag/);
+  assert.match(workflow, /git rev-parse "refs\/tags\/\$RELEASE_TAG\^\{\}"\)" = "\$RELEASE_SHA"/);
   assert.match(workflow, /git push origin "\$RELEASE_TAG"/);
   assert.match(workflow, /npm audit --audit-level=high/);
   assert.match(workflow, /package\.json.*version|packageVersion/);
@@ -76,7 +82,6 @@ test('release workflow derives the tag from package version and requires protect
   assert.doesNotMatch(workflow, /cp release\/windows\/\* release\/linux\/\* release\//);
   assert.doesNotMatch(workflow, /gh release create "\$RELEASE_TAG" release\/\*/);
   assert.doesNotMatch(workflow, /inputs\.(version|tag|ref)/);
-  assert.doesNotMatch(workflow, /tag_sha/);
   assert.match(workflow, /\[System\.IO\.File\]::WriteAllText/);
   assert.match(workflow, /\[System\.Text\.UTF8Encoding\]::new\(\$false\)/);
   assert.match(stagingScript, /normalizeChecksumManifest/);
@@ -87,6 +92,60 @@ test('release workflow derives the tag from package version and requires protect
   assert.match(stagingScript, /copyRequiredPattern\(linuxDirectory, \/\\\.deb\$\//);
   assert.match(stagingScript, /copyRequiredPattern\(linuxDirectory, \/\\\.AppImage\$\//);
   assert.equal(packageJson.version, '0.0.1');
+});
+
+test('release tag uses explicit bot identity without runner Git configuration', () => {
+  const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-git-tag-'));
+  const gitEnvironment = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: path.join(rootDirectory, 'missing-global-config'),
+    GIT_CONFIG_NOSYSTEM: '1',
+  };
+  const git = (args) =>
+    execFileSync('git', args, { cwd: rootDirectory, env: gitEnvironment, encoding: 'utf8' }).trim();
+
+  try {
+    git(['init', '--quiet']);
+    git([
+      '-c',
+      'user.name=fixture-commit',
+      '-c',
+      'user.email=fixture-commit@example.invalid',
+      'commit',
+      '--allow-empty',
+      '--message',
+      'approved release commit',
+    ]);
+    assert.throws(() => git(['config', '--local', '--get', 'user.name']), /Command failed/);
+
+    const approvedSha = git(['rev-parse', 'HEAD']);
+    git([
+      '-c',
+      'user.name=github-actions[bot]',
+      '-c',
+      'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+      'tag',
+      '--annotate',
+      'v0.0.1',
+      approvedSha,
+      '--message',
+      'Atomic Chat v0.0.1',
+    ]);
+
+    assert.equal(git(['cat-file', '-t', 'refs/tags/v0.0.1']), 'tag');
+    assert.equal(git(['rev-parse', 'refs/tags/v0.0.1^{}']), approvedSha);
+    const tagger = git([
+      'for-each-ref',
+      '--format=%(taggername)\t%(taggeremail)',
+      'refs/tags/v0.0.1',
+    ]);
+    assert.equal(
+      tagger,
+      'github-actions[bot]\t<41898282+github-actions[bot]@users.noreply.github.com>',
+    );
+  } finally {
+    fs.rmSync(rootDirectory, { recursive: true, force: true });
+  }
 });
 
 test('Windows checksum normalization accepts line endings and rejects bad or missing artifacts', () => {
