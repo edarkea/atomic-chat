@@ -13,6 +13,13 @@ export function formatMessageTime(value: string | undefined): string {
     : '—:—';
 }
 
+export function formatMessageDate(value: string | undefined): string {
+  const date = dateFrom(value);
+  if (!date) return '--/--/----';
+  const pad = (part: number): string => String(part).padStart(2, '0');
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
+
 export function formatMessageDateTime(value: string | undefined): string {
   const date = dateFrom(value);
   return date

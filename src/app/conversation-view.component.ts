@@ -237,6 +237,20 @@ export class ConversationViewComponent {
     this.scheduleScroll(this.bareJid(conversation), true);
   }
 
+  public scrollToMessage(messageId: string): void {
+    this.followLatest = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const content = this.chatContent?.nativeElement;
+        if (!content || this.bareJid(this.selectedJid()) === '') return;
+        const message = Array.from(content.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+          (element) => element.dataset['messageId'] === messageId,
+        );
+        message?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    });
+  }
+
   private scheduleScroll(conversation: string, force: boolean): void {
     const generation = ++this.scrollGeneration;
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);

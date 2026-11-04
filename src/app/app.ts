@@ -580,6 +580,7 @@ export class App {
   }));
   @ViewChild(LoginPanelComponent) private loginPanel?: LoginPanelComponent;
   @ViewChild(ConversationViewComponent) private conversationView?: ConversationViewComponent;
+  @ViewChild(NewMessageDialogComponent) private newMessageDialog?: NewMessageDialogComponent;
   @ViewChild(SidebarComponent) private sidebar?: SidebarComponent;
 
   constructor() {
@@ -1151,7 +1152,7 @@ export class App {
     this.conversationSelection.set({ kind: 'direct', accountId: hit.accountId, jid: this.bareJid(hit.conversationId) });
     this.refreshMessageSearchForSelection();
     await this.chat.revealSearchHit(hit);
-    this.conversationView?.scrollToLatest(hit.conversationId);
+    this.conversationView?.scrollToMessage(hit.messageId);
   }
   private currentMessageSearchScope(): { readonly kind: 'all' } | { readonly kind: 'conversation'; readonly conversationId: string } {
     return this.messageSearchScope() === 'all' || !this.selectedJid()
@@ -1269,6 +1270,7 @@ export class App {
     this.newMessageSearch.set('');
     this.newMessageLocalError.set(null);
     this.newMessageOpen.set(true);
+    queueMicrotask(() => requestAnimationFrame(() => this.newMessageDialog?.focusSearch()));
   }
   protected closeNewMessageDialog(): void {
     this.newMessageOpen.set(false);
@@ -1445,11 +1447,10 @@ export class App {
       !event.defaultPrevented &&
       !event.isComposing
     ) {
-      const target = event.target;
-      if (!(target instanceof Element && target.closest('[role="dialog"], [role="menu"], [aria-modal="true"]'))) {
-        event.preventDefault();
-        this.sidebar?.focusContactSearch();
-      }
+      if (this.certificateRequest() || this.presenceOpen() || this.preferencesOpen() || this.broadcastOpen()) return;
+      event.preventDefault();
+      if (this.newMessageOpen()) this.newMessageDialog?.focusSearch();
+      else this.openNewMessageDialog();
       return;
     }
     if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;

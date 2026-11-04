@@ -30,6 +30,7 @@ export interface NewMessageDialogModel {
 })
 export class NewMessageDialogComponent {
   @ViewChild('dialog') private readonly dialog?: ElementRef<HTMLElement>;
+  @ViewChild('searchInput') private readonly searchInput?: ElementRef<HTMLInputElement>;
 
   readonly model = input.required<NewMessageDialogModel>();
   readonly searchChange = output<string>();
@@ -53,6 +54,13 @@ export class NewMessageDialogComponent {
 
   protected contactName(contact: Contact): string {
     return contact.name?.trim() || contact.jid;
+  }
+
+  focusSearch(): void {
+    const input = this.searchInput?.nativeElement;
+    if (!input) return;
+    input.focus();
+    input.select();
   }
 
   protected isJoining(roomJid: string): boolean {

@@ -32,12 +32,11 @@
       <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-emoji" /></svg>
     </button>
   }
-  <app-sticker-picker [accountId]="stickersAccountId()" [disabled]="disabled()" (stickerSend)="stickerSend.emit($event)" />
   <button class="send" type="submit" aria-label="Enviar" [disabled]="disabled() || !draft().trim()">
     <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-send" /></svg>
   </button>
   @if (emojiOpen()) {
-    <div class="emoji-popover" (mousedown)="$event.preventDefault()">
+    <div class="emoji-popover">
       <app-emoji-picker (emojiSelected)="insertEmoji($event)" (closed)="closeEmoji()" />
     </div>
   }

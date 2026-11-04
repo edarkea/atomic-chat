@@ -68,6 +68,7 @@
           [classification]="item.message.classification"
           [persistenceStatus]="item.message.persistenceStatus"
           [createdAt]="item.message.createdAt"
+          [attr.data-message-id]="item.message.id"
         />
       } @else if (item.kind === 'sticker') {
         <app-sticker-message-card

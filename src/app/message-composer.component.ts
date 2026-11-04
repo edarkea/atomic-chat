@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, input, output, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { StickerPickerComponent } from './sticker-picker.component';
 import { EmojiPickerComponent } from './emoji-picker.component';
 
 export function insertTextAtSelection(
@@ -19,7 +18,7 @@ export function insertTextAtSelection(
 
 @Component({
   selector: 'app-message-composer',
-  imports: [FormsModule, StickerPickerComponent, EmojiPickerComponent],
+  imports: [FormsModule, EmojiPickerComponent],
   templateUrl: './message-composer.component.html',
   styleUrls: ['./message-composer.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
