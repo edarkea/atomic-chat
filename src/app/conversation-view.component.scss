@@ -27,6 +27,10 @@
   color: var(--atomic-green);
   outline: 2px solid var(--atomic-focus);
 }
+.conversation-search-toggle:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
 .day-separator { align-items: center; color: var(--atomic-text-muted); display: flex; font-size: 11px; gap: 8px; justify-content: center; margin: 10px 0; }
 .day-separator::before, .day-separator::after { background: var(--atomic-separator); content: ''; flex: 1; height: 1px; }
 .drop-overlay {

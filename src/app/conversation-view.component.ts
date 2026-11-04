@@ -145,7 +145,10 @@ export class ConversationViewComponent {
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
   }
-  protected toggleSearch(): void { this.searchOpen.update((open) => !open); }
+  protected toggleSearch(): void {
+    if (!this.isSelected()) return;
+    this.searchOpen.update((open) => !open);
+  }
   protected hasDayChanged(index: number, sortAt: string): boolean {
     return index === 0 || messageDayKey(this.timeline()[index - 1]?.sortAt) !== messageDayKey(sortAt);
   }

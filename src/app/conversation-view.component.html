@@ -13,7 +13,7 @@
       }}</strong>
       <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
     </div>
-    <button class="conversation-search-toggle" type="button" aria-label="Buscar en mensajes" title="Buscar en mensajes" (click)="toggleSearch()">
+    <button class="conversation-search-toggle" type="button" aria-label="Buscar en mensajes" title="Buscar en mensajes" [disabled]="!isSelected()" (click)="toggleSearch()">
       <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-search" /></svg>
     </button>
     <button
