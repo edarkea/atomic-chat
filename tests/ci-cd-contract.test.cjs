@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
@@ -33,6 +35,8 @@ test('manual build workflow never publishes and has no write permission', () => 
   assert.match(workflow, /sha256sum -c SHA256SUMS\.txt/);
   assert.match(workflow, /release contains no artifacts/);
   assert.doesNotMatch(workflow, /find release .*sha256sum/);
+  assert.match(workflow, /\[System\.IO\.File\]::WriteAllText/);
+  assert.match(workflow, /\[System\.Text\.UTF8Encoding\]::new\(\$false\)/);
 });
 
 test('release workflow derives the tag from package version and requires protection', () => {
@@ -69,5 +73,97 @@ test('release workflow derives the tag from package version and requires protect
   assert.doesNotMatch(workflow, /gh release create "\$RELEASE_TAG" release\/\*/);
   assert.doesNotMatch(workflow, /inputs\.(version|tag|ref)/);
   assert.doesNotMatch(workflow, /tag_sha/);
+  assert.match(workflow, /\[System\.IO\.File\]::WriteAllText/);
+  assert.match(workflow, /\[System\.Text\.UTF8Encoding\]::new\(\$false\)/);
+  assert.match(workflow, /normalize_windows_manifest/);
+  assert.match(workflow, /perl -0pe/);
+  assert.match(workflow, /release_status/);
   assert.equal(packageJson.version, '0.0.1');
+});
+
+test('Windows checksum normalization accepts line endings and rejects bad or missing artifacts', () => {
+  const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-checksum-'));
+  const releaseDirectory = path.join(rootDirectory, 'release');
+  const stagingDirectory = path.join(rootDirectory, 'publish');
+  fs.mkdirSync(releaseDirectory);
+  fs.mkdirSync(stagingDirectory);
+
+  const artifactName = 'Atomic Chat Setup 0.0.1.exe';
+  const artifactPath = path.join(releaseDirectory, artifactName);
+  const artifactContents = Buffer.from('valid installer bytes');
+  fs.writeFileSync(artifactPath, artifactContents);
+  const hash = crypto.createHash('sha256').update(artifactContents).digest('hex');
+  const checksumLine = `${hash}  ${artifactName}`;
+
+  const normalizeManifest = (contents) =>
+    contents.replace(/\r+(?:\n|$)/g, '\n').replace(/\r+(?=[0-9A-Fa-f]{64}  )/g, '\n');
+  const verifyManifest = (manifestPath, baseDirectory) => {
+    const lines = fs
+      .readFileSync(manifestPath, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0);
+    for (const line of lines) {
+      const match = /^([0-9a-f]{64})  (.+)$/.exec(line);
+      if (!match) throw new Error(`invalid checksum line: ${line}`);
+      const filePath = path.join(baseDirectory, match[2]);
+      if (!fs.existsSync(filePath)) throw new Error(`missing checksum artifact: ${match[2]}`);
+      const actualHash = crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(filePath))
+        .digest('hex');
+      if (actualHash !== match[1]) throw new Error(`checksum mismatch: ${match[2]}`);
+    }
+  };
+
+  try {
+    for (const [index, lineEnding] of ['\n', '\r\n', '\r\r\n'].entries()) {
+      const sourceManifest = path.join(rootDirectory, `source-${index}.txt`);
+      const normalizedManifest = path.join(rootDirectory, `normalized-${index}.txt`);
+      fs.writeFileSync(sourceManifest, `${checksumLine}${lineEnding}`, 'utf8');
+      fs.writeFileSync(
+        normalizedManifest,
+        normalizeManifest(fs.readFileSync(sourceManifest, 'utf8')),
+        'utf8',
+      );
+      assert.doesNotThrow(() => verifyManifest(normalizedManifest, releaseDirectory));
+    }
+
+    const validManifest = path.join(rootDirectory, 'valid.txt');
+    fs.writeFileSync(validManifest, `${checksumLine}\n`, 'utf8');
+    fs.writeFileSync(artifactPath, Buffer.from('altered installer bytes'));
+    assert.throws(() => verifyManifest(validManifest, releaseDirectory), /checksum mismatch/);
+
+    fs.unlinkSync(artifactPath);
+    assert.throws(
+      () => verifyManifest(validManifest, releaseDirectory),
+      /missing checksum artifact/,
+    );
+
+    const stagedArtifact = path.join(stagingDirectory, artifactName);
+    const debugFile = path.join(releaseDirectory, 'builder-debug.yml');
+    const unpackedDirectory = path.join(releaseDirectory, 'win-unpacked');
+    fs.writeFileSync(artifactPath, artifactContents);
+    fs.writeFileSync(debugFile, 'debug');
+    fs.mkdirSync(unpackedDirectory);
+    fs.writeFileSync(path.join(unpackedDirectory, 'app.exe'), 'unpacked');
+
+    for (const entry of fs.readdirSync(releaseDirectory, { withFileTypes: true })) {
+      if (
+        entry.isFile() &&
+        entry.name !== 'builder-debug.yml' &&
+        /\.(exe|deb|AppImage|blockmap|yml)$/.test(entry.name)
+      ) {
+        fs.copyFileSync(
+          path.join(releaseDirectory, entry.name),
+          path.join(stagingDirectory, entry.name),
+        );
+      }
+    }
+
+    assert.equal(fs.existsSync(stagedArtifact), true);
+    assert.equal(fs.existsSync(path.join(stagingDirectory, 'builder-debug.yml')), false);
+    assert.equal(fs.existsSync(path.join(stagingDirectory, 'win-unpacked')), false);
+  } finally {
+    fs.rmSync(rootDirectory, { recursive: true, force: true });
+  }
 });
