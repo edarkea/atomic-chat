@@ -1,6 +1,30 @@
 {
   "name": "atomic-chat",
   "version": "0.0.1",
+  "description": "A retro-futuristic desktop XMPP messaging client built with Angular, TypeScript and Electron.",
+  "author": {
+    "name": "Edinson Ayui",
+    "url": "https://github.com/edarkea"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edarkea/atomic-chat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/edarkea/atomic-chat/issues"
+  },
+  "homepage": "https://github.com/edarkea/atomic-chat",
+  "keywords": [
+    "atomic-chat",
+    "xmpp",
+    "openfire",
+    "messaging",
+    "desktop",
+    "electron",
+    "angular",
+    "typescript"
+  ],
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -54,6 +78,7 @@
   "build": {
     "appId": "com.atomicchat.desktop",
     "productName": "Atomic Chat",
+    "copyright": "Copyright © 2026 Edinson Ayui",
     "directories": {
       "output": "release"
     },
@@ -88,7 +113,7 @@
     },
     "linux": {
       "category": "Network",
-      "maintainer": "Steeven Ayui <edison.ayui@gmail.com>",
+      "maintainer": "Edinson Ayui <edison.ayui@gmail.com>",
       "icon": "build/icons",
       "target": [
         {
@@ -107,8 +132,6 @@
       "artifactName": "AtomicChat-${version}-linux-x64.${ext}"
     }
   },
-  "description": "Atomic Chat Desktop",
-  "homepage": "https://github.com/edarkea/atomic-chat",
   "allowScripts": {
     "@parcel/watcher@2.6.0": true,
     "better-sqlite3@13.0.3": true,
