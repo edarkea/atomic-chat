@@ -50,6 +50,26 @@ interface HistoryContext {
   readonly requestId: string;
 }
 
+function loginErrorMessage(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : error instanceof Error
+        ? error.message
+        : '';
+  const messages: Record<string, string> = {
+    AUTH_FAILED: 'El servidor rechazó la autenticación.',
+    SERVER_UNREACHABLE: 'No fue posible alcanzar el servidor XMPP.',
+    STORAGE_FAILED: 'No fue posible acceder al almacenamiento seguro.',
+    INVALID_INPUT: 'La configuración o las credenciales no son válidas.',
+    TRANSPORT_FAILED: 'El transporte XMPP no pudo completar la conexión.',
+    INTERNAL: 'No fue posible completar el inicio de sesión por un error interno controlado.',
+    secret_unavailable: 'No fue posible acceder al almacenamiento seguro.',
+    'XMPP endpoint is not configured': 'La configuración del endpoint XMPP no es válida.',
+  };
+  return messages[code] || messages['INTERNAL'];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ChatFacade {
   private readonly account = inject<AccountPort>(ACCOUNT_PORT);
@@ -431,9 +451,9 @@ export class ChatFacade {
         await this.loadPreferences(generation, requestedAccount);
       }
       return true;
-    } catch {
+    } catch (error: unknown) {
       if (this.isCurrent(generation, requestedAccount)) {
-        this.error.set('No fue posible iniciar sesión con el servidor XMPP.');
+        this.error.set(loginErrorMessage(error));
       }
       return false;
     }

@@ -1,6 +1,6 @@
 {
   "name": "atomic-chat",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A retro-futuristic desktop XMPP messaging client built with Angular, TypeScript and Electron.",
   "author": {
     "name": "Edinson Ayui",
@@ -37,7 +37,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:angular": "ng test --no-watch --no-progress",
-    "test:ci:focused": "ng test --no-watch --no-progress --include src/app/message-composer.spec.ts --include src/app/message-date-time.spec.ts && node --test tests/message-search.test.cjs tests/sticker-message-ipc.test.cjs tests/update-service.test.cjs tests/ci-cd-contract.test.cjs",
+    "test:ci:focused": "ng test --no-watch --no-progress --include src/app/message-composer.spec.ts --include src/app/message-date-time.spec.ts && node --test tests/message-search.test.cjs tests/sticker-message-ipc.test.cjs tests/update-service.test.cjs tests/ci-cd-contract.test.cjs tests/login-credentials.test.cjs",
     "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\"",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && npm run typecheck:electron",
     "typecheck:electron": "tsc -p tsconfig.electron-checkjs.json --noEmit",
