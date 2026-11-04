@@ -85,10 +85,19 @@ jobs:
       - name: Generate checksums
         shell: pwsh
         run: |
-          Get-ChildItem -Path release -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
-            Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), $_.Path.Substring((Resolve-Path release).Path.Length + 1) } |
-            Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
+          $releasePath = (Resolve-Path -LiteralPath release).Path
+          $manifestPath = Join-Path $releasePath 'SHA256SUMS.txt'
+          $files = @(Get-ChildItem -LiteralPath $releasePath -File |
+            Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            Sort-Object -Property Name)
+          if ($files.Count -eq 0) { throw 'release contains no artifacts to checksum' }
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllText($manifestPath, (($lines -join "`n") + "`n"), $utf8NoBom)
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'checksum manifest was not created' }
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ needs.validate.outputs.version }}-windows-x64
@@ -179,6 +188,14 @@ jobs:
           test "$RELEASE_TAG" = "v$RELEASE_VERSION"
           test -s release/windows/SHA256SUMS.txt
           test -s release/linux/SHA256SUMS.txt
+          normalize_windows_manifest() {
+            local manifest="release/windows/SHA256SUMS.txt"
+            local normalized
+            normalized="$(mktemp)"
+            perl -0pe 's/\r+(?:\n|\z)/\n/g; s/\r+(?=[0-9A-Fa-f]{64}  )/\n/g' "$manifest" > "$normalized"
+            mv -- "$normalized" "$manifest"
+          }
+          normalize_windows_manifest
           (cd release/windows && sha256sum -c SHA256SUMS.txt)
           (cd release/linux && sha256sum -c SHA256SUMS.txt)
 
