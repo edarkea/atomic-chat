@@ -124,7 +124,16 @@ jobs:
       - run: npx electron-builder --linux deb AppImage --x64 --publish never
       - name: Generate checksums
         run: |
-          find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
+          set -euo pipefail
+          cd release
+          mapfile -d '' -t artifacts < <(find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\0' | LC_ALL=C sort -z)
+          if ((${#artifacts[@]} == 0)); then
+            echo 'release contains no artifacts to checksum' >&2
+            exit 1
+          fi
+          printf '%s\0' "${artifacts[@]}" | xargs -0 -r sha256sum > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ needs.validate.outputs.version }}-linux-x64

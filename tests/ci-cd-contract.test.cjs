@@ -8,8 +8,10 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 test('CI workflow is read-only and focused', () => {
   const workflow = read('.github/workflows/ci-tests.yml');
+  assert.match(workflow, /push:\s*\n\s+branches: \[main\]/);
   assert.match(workflow, /pull_request:\s*\n\s+branches: \[main\]/);
-  assert.doesNotMatch(workflow, /^\s+(push|workflow_dispatch):/m);
+  assert.doesNotMatch(workflow, /^\s+workflow_dispatch:/m);
+  assert.doesNotMatch(workflow, /branches: \[dev/);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm audit --audit-level=high/);
@@ -26,6 +28,11 @@ test('manual build workflow never publishes and has no write permission', () => 
   assert.doesNotMatch(workflow, /contents: write|GH_TOKEN|CSC_LINK/);
   assert.match(workflow, /install-app-deps/);
   assert.match(workflow, /SHA256SUMS/);
+  assert.match(workflow, /cd release/);
+  assert.match(workflow, /sort -z/);
+  assert.match(workflow, /sha256sum -c SHA256SUMS\.txt/);
+  assert.match(workflow, /release contains no artifacts/);
+  assert.doesNotMatch(workflow, /find release .*sha256sum/);
 });
 
 test('release workflow derives the tag from package version and requires protection', () => {
@@ -45,6 +52,11 @@ test('release workflow derives the tag from package version and requires protect
   assert.match(workflow, /environment:\s*\n\s+name: production-release/);
   assert.match(workflow, /permissions:\s*\n\s+contents: write/);
   assert.match(workflow, /--verify-tag/);
+  assert.match(workflow, /cd release/);
+  assert.match(workflow, /sort -z/);
+  assert.match(workflow, /sha256sum -c SHA256SUMS\.txt/);
+  assert.match(workflow, /release contains no artifacts/);
+  assert.doesNotMatch(workflow, /find release .*sha256sum/);
   assert.doesNotMatch(workflow, /inputs\.(version|tag|ref)/);
   assert.doesNotMatch(workflow, /tag_sha/);
   assert.equal(packageJson.version, '0.0.1');
