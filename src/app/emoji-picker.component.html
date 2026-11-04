@@ -1,0 +1,30 @@
+<section class="emoji-picker" role="dialog" aria-label="Selector de emojis">
+  <div class="emoji-toolbar">
+    <input
+      aria-label="Buscar emoji por nombre"
+      placeholder="Buscar emoji..."
+      [ngModel]="query()"
+      (ngModelChange)="query.set($event)"
+    />
+    <button type="button" class="close" aria-label="Cerrar selector de emojis" (click)="closed.emit()">×</button>
+  </div>
+  <div class="emoji-categories" role="tablist" aria-label="Categorías de emojis">
+    @for (item of categories; track item) {
+      <button type="button" role="tab" [attr.aria-selected]="category() === item" (click)="category.set(item)">{{ item }}</button>
+    }
+  </div>
+  @if (recentEntries().length && !query() && category() === 'Todos') {
+    <p class="emoji-label">Recientes</p>
+    <div class="emoji-grid" aria-label="Emojis recientes">
+      @for (entry of recentEntries(); track entry.emoji) {
+        <button type="button" [attr.aria-label]="entry.name" (click)="chooseRecent(entry.emoji)">{{ entry.emoji }}</button>
+      }
+    </div>
+  }
+  <div class="emoji-grid" aria-label="Emojis disponibles">
+    @for (entry of visible(); track entry.emoji) {
+      <button type="button" [attr.aria-label]="entry.name" [title]="entry.name" (click)="choose(entry)">{{ entry.emoji }}</button>
+    }
+  </div>
+  @if (!visible().length) { <p class="empty">No hay emojis para esa búsqueda.</p> }
+</section>

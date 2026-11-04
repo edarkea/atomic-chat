@@ -59,10 +59,13 @@
   </div>
   <div class="muc-messages" aria-live="polite">
     @for (message of messages(); track message.id) {
+      @if (hasDayChanged($index, message.receivedAt)) { <div class="day-separator" role="separator"><span>{{ dayLabel(message.receivedAt) }}</span></div> }
       <app-message-item
         [sender]="senderLabel(message)"
         [body]="message.body.text"
         [outgoing]="isOutgoing(message)"
+        [createdAt]="message.receivedAt"
+        [receivedLocally]="true"
       />
     }
     @if (!messages().length) {
@@ -74,6 +77,7 @@
     [placeholder]="'Escribir en la sala...'"
     [draft]="draft()"
     [disabled]="false"
+    [showEmoji]="true"
     [stickersAccountId]="roomState().accountId"
     (draftChange)="draftChange.emit($event)"
     (messageSubmitted)="send.emit()"

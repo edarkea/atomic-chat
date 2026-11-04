@@ -15,6 +15,9 @@ import {
   ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
+  MessageAroundInput,
+  MessageSearchInput,
+  MessageSearchPage,
   MediaListInput,
   Message,
   Preferences,
@@ -143,6 +146,12 @@ export class UnavailableHistoryPort implements HistoryPort {
     return Promise.resolve(unsupported(input.requestId));
   }
   listPage(input: HistoryPageInput): Promise<Result<HistoryPage>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  search(input: MessageSearchInput): Promise<Result<MessageSearchPage>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  around(input: MessageAroundInput): Promise<Result<HistoryPage>> {
     return Promise.resolve(unsupported(input.requestId));
   }
   timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>> {

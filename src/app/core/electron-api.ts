@@ -21,6 +21,9 @@ import {
   MediaListInput,
   HistoryPage,
   HistoryPageInput,
+  MessageAroundInput,
+  MessageSearchInput,
+  MessageSearchPage,
   TimelinePage,
   TimelinePageInput,
   Message,
@@ -192,6 +195,8 @@ export interface AtomicChatApi {
       conversationId: string;
     }): Promise<Result<Message[]>>;
     listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>;
+    search(input: MessageSearchInput): Promise<Result<MessageSearchPage>>;
+    around(input: MessageAroundInput): Promise<Result<HistoryPage>>;
     timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>>;
     conversations(input: {
       version: 1;

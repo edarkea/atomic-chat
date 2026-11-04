@@ -13,6 +13,9 @@
       }}</strong>
       <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
     </div>
+    <button class="conversation-search-toggle" type="button" aria-label="Buscar en mensajes" title="Buscar en mensajes" (click)="toggleSearch()">
+      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-search" /></svg>
+    </button>
     <button
       class="conversation-close"
       type="button"
@@ -23,6 +26,22 @@
       <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-close" /></svg>
     </button>
   </header>
+  @if (searchOpen()) {
+    <app-message-search
+      [query]="searchQuery()"
+      [scope]="searchScope()"
+      [conversationId]="selectedJid()"
+      [conversationNames]="searchConversationNames()"
+      [results]="searchResults()"
+      [loading]="searchLoading()"
+      [error]="searchError()"
+      [hasMore]="searchHasMore()"
+      (queryChange)="searchQueryChange.emit($event)"
+      (scopeChange)="searchScopeChange.emit($event)"
+      (resultSelected)="searchResultSelected.emit($event)"
+      (loadMore)="searchLoadMore.emit()"
+    />
+  }
   <div
     #chatContent
     class="chat-content"
@@ -40,6 +59,7 @@
       <div class="reference-message incoming">No hay mensajes todavía.</div>
     }
     @for (item of timeline(); track item.id) {
+      @if (hasDayChanged($index, item.sortAt)) { <div class="day-separator" role="separator"><span>{{ dayLabel(item.sortAt) }}</span></div> }
       @if (item.kind === 'text') {
         <app-message-item
           [sender]="item.senderLabel"
@@ -47,6 +67,7 @@
           [outgoing]="item.outgoing"
           [classification]="item.message.classification"
           [persistenceStatus]="item.message.persistenceStatus"
+          [createdAt]="item.message.createdAt"
         />
       } @else if (item.kind === 'sticker') {
         <app-sticker-message-card

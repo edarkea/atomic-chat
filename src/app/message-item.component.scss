@@ -22,3 +22,5 @@
   font-size: 11px;
   margin-top: 6px;
 }
+.message-body { overflow-wrap: anywhere; white-space: pre-wrap; }
+.message-time { color: var(--atomic-text-muted); display: block; font-size: 10px; margin-top: 4px; }

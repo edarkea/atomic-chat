@@ -23,6 +23,7 @@ import {
   FileTransfer,
   HistoryTimelineItem,
   Message,
+  MessageSearchHit,
   Preferences,
   RoomState,
   XmppTransport,
@@ -140,6 +141,20 @@ export class App {
   protected readonly selectedProfileId = signal('');
   protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
   protected readonly search = signal('');
+  protected readonly messageSearchQuery = signal('');
+  protected readonly messageSearchScope = signal<'all' | 'conversation'>('conversation');
+  protected readonly messageSearchConversationNames = computed<ReadonlyMap<string, string>>(
+    () =>
+      new Map(
+        this.chat.contacts()
+          .map((contact) => {
+            const name = contact.name?.trim();
+            return name ? ([this.bareJid(contact.jid), name] as const) : null;
+          })
+          .filter((entry): entry is readonly [string, string] => entry !== null),
+      ),
+  );
+  private messageSearchTimer: ReturnType<typeof setTimeout> | undefined;
   protected readonly newMessageOpen = signal(false);
   protected readonly newMessageSearch = signal('');
   protected readonly newMessageJoiningRoom = signal<string | null>(null);
@@ -898,6 +913,7 @@ export class App {
       accountId: this.chat.accountId(),
       jid: this.bareJid(contact.jid),
     });
+    this.refreshMessageSearchForSelection();
     void this.scrollAfterConversationLoad(contact.jid);
   }
   protected useJid(): void {
@@ -917,6 +933,7 @@ export class App {
       this.selectedContact.set(undefined);
       this.conversationVisibility.reveal(this.chat.accountId(), 'direct', jid);
       this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid });
+      this.refreshMessageSearchForSelection();
       void this.scrollAfterConversationLoad(jid);
     } else if (jidInput.includes('@')) {
       this.newMessageLocalError.set('Introduce un JID XMPP completo y válido.');
@@ -1106,6 +1123,47 @@ export class App {
   protected draftChanged(value: string): void {
     this.draft.set(value);
     void this.chat.updateTypingState(this.selectedJid(), value);
+  }
+  protected searchMessages(query: string): void {
+    this.messageSearchQuery.set(query);
+    if (this.messageSearchTimer) clearTimeout(this.messageSearchTimer);
+    this.messageSearchTimer = setTimeout(() => {
+      void this.runMessageSearch();
+    }, 180);
+  }
+  protected changeMessageSearchScope(scope: 'all' | 'conversation'): void {
+    this.messageSearchScope.set(scope);
+    void this.runMessageSearch();
+  }
+  protected loadMoreMessageSearch(): void {
+    void this.chat.searchMessages(this.messageSearchQuery(), this.currentMessageSearchScope(), true);
+  }
+  protected async selectMessageSearchHit(hit: MessageSearchHit): Promise<void> {
+    if (hit.accountId !== this.chat.accountId()) return;
+    const contact = this.chat.contacts().find((item) => this.bareJid(item.jid) === this.bareJid(hit.conversationId)) || {
+      jid: hit.conversationId,
+      name: hit.conversationId,
+      groups: [],
+      source: 'conversation' as const,
+    };
+    this.selectedContact.set(contact);
+    this.conversationVisibility.reveal(this.chat.accountId(), 'direct', hit.conversationId);
+    this.conversationSelection.set({ kind: 'direct', accountId: hit.accountId, jid: this.bareJid(hit.conversationId) });
+    this.refreshMessageSearchForSelection();
+    await this.chat.revealSearchHit(hit);
+    this.conversationView?.scrollToLatest(hit.conversationId);
+  }
+  private currentMessageSearchScope(): { readonly kind: 'all' } | { readonly kind: 'conversation'; readonly conversationId: string } {
+    return this.messageSearchScope() === 'all' || !this.selectedJid()
+      ? { kind: 'all' }
+      : { kind: 'conversation', conversationId: this.bareJid(this.selectedJid()) };
+  }
+  private runMessageSearch(): Promise<void> {
+    return this.chat.searchMessages(this.messageSearchQuery(), this.currentMessageSearchScope());
+  }
+  private refreshMessageSearchForSelection(): void {
+    if (this.messageSearchScope() === 'conversation' && this.messageSearchQuery().trim())
+      void this.runMessageSearch();
   }
   protected typingFocus(): void {
     void this.chat.setTypingActivity(this.selectedJid(), 'active');
@@ -1380,6 +1438,20 @@ export class App {
 
   @HostListener('document:keydown', ['$event'])
   protected onDocumentKeydown(event: KeyboardEvent): void {
+    if (
+      event.ctrlKey &&
+      !event.metaKey &&
+      event.key.toLowerCase() === 'f' &&
+      !event.defaultPrevented &&
+      !event.isComposing
+    ) {
+      const target = event.target;
+      if (!(target instanceof Element && target.closest('[role="dialog"], [role="menu"], [aria-modal="true"]'))) {
+        event.preventDefault();
+        this.sidebar?.focusContactSearch();
+      }
+      return;
+    }
     if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
     if (this.theme.editorOpen()) {
       event.preventDefault();

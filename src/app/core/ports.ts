@@ -63,6 +63,9 @@ import {
   StickerStorageUploadRequest,
   HistoryPage,
   HistoryPageInput,
+  MessageAroundInput,
+  MessageSearchInput,
+  MessageSearchPage,
   MediaListInput,
   Message,
   MessageSendInput,
@@ -135,6 +138,8 @@ export interface HistoryPort {
     conversationId: string;
   }): Promise<Result<Message[]>>;
   listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>;
+  search(input: MessageSearchInput): Promise<Result<MessageSearchPage>>;
+  around(input: MessageAroundInput): Promise<Result<HistoryPage>>;
   timelinePage?(input: TimelinePageInput): Promise<Result<TimelinePage>>;
   conversations(input: {
     version: 1;
