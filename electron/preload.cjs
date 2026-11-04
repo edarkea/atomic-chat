@@ -131,6 +131,8 @@ contextBridge.exposeInMainWorld(
     history: Object.freeze({
       list: (input) => invoke('messages.list', input),
       listPage: (input) => invoke('messages.page', input),
+      search: (input) => invoke('messages.search', input),
+      around: (input) => invoke('messages.around', input),
       timelinePage: (input) => invoke('timeline.page', input),
       conversations: (input) => invoke('conversations.list', input),
     }),

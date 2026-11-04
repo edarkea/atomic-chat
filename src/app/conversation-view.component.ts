@@ -17,12 +17,15 @@ import {
   Contact,
   FileTransfer,
   Message,
+  MessageSearchHit,
   StickerMessageRef,
 } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
+import { MessageSearchComponent } from './message-search.component';
+import { formatMessageDay, messageDayKey } from './message-date-time';
 
 export type ConversationTimelineItem =
   | {
@@ -62,7 +65,7 @@ export interface OlderMessagesRequest {
 
 @Component({
   selector: 'app-conversation-view',
-  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, StickerMessageCardComponent],
+  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, StickerMessageCardComponent, MessageSearchComponent],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -78,6 +81,12 @@ export class ConversationViewComponent {
   readonly hasOlderMessages = input.required<boolean>();
   readonly hasNewerMessages = input.required<boolean>();
   readonly typing = input(false);
+  readonly searchQuery = input('');
+  readonly searchScope = input<'all' | 'conversation'>('conversation');
+  readonly searchResults = input<ReadonlyArray<MessageSearchHit>>([]);
+  readonly searchLoading = input(false);
+  readonly searchError = input<string | null>(null);
+  readonly searchHasMore = input(false);
 
   readonly closeRequested = output<void>();
   readonly filesDropped = output<ReadonlyArray<File>>();
@@ -100,6 +109,11 @@ export class ConversationViewComponent {
   readonly fileActionPending = input<(transferId: string) => boolean>(() => false);
   readonly loadOlder = output<OlderMessagesRequest>();
   readonly loadNewer = output<string>();
+  readonly searchQueryChange = output<string>();
+  readonly searchScopeChange = output<'all' | 'conversation'>();
+  readonly searchResultSelected = output<MessageSearchHit>();
+  readonly searchLoadMore = output<void>();
+  protected readonly searchOpen = signal(false);
 
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
   private followLatest = true;
@@ -130,6 +144,11 @@ export class ConversationViewComponent {
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
   }
+  protected toggleSearch(): void { this.searchOpen.update((open) => !open); }
+  protected hasDayChanged(index: number, sortAt: string): boolean {
+    return index === 0 || messageDayKey(this.timeline()[index - 1]?.sortAt) !== messageDayKey(sortAt);
+  }
+  protected dayLabel(sortAt: string): string { return formatMessageDay(sortAt); }
 
   protected onDragEnter(event: DragEvent): void {
     if (!this.isFileDrag(event)) return;

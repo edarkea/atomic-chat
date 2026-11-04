@@ -16,7 +16,7 @@
   border-color: var(--atomic-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--atomic-focus) 15%, transparent);
 }
-.composer input {
+.composer textarea {
   background: transparent;
   border: 0;
   color: var(--atomic-text);
@@ -25,8 +25,13 @@
   font-size: 14px;
   min-width: 0;
   outline: 0;
+  max-height: 120px;
+  min-height: 28px;
+  overflow-y: auto;
+  resize: none;
+  white-space: pre-wrap;
 }
-.composer input::placeholder {
+.composer textarea::placeholder {
   color: var(--atomic-text-muted);
 }
 .composer button {
@@ -52,11 +57,8 @@
   display: inline-flex;
   justify-content: center;
 }
-.emoji {
-  align-items: center;
-  color: var(--atomic-text-secondary);
-  display: inline-flex;
-}
+.composer { position: relative; }
+.emoji-popover { bottom: calc(100% + 8px); position: absolute; right: 16px; z-index: 3; }
 .send {
   transform: rotate(-25deg);
 }

@@ -17,6 +17,9 @@ import {
   ImagePreviewRevokeRequest,
   HistoryPage,
   HistoryPageInput,
+  MessageAroundInput,
+  MessageSearchInput,
+  MessageSearchPage,
   MediaListInput,
   Message,
   Preferences,
@@ -160,6 +163,16 @@ export class ElectronHistoryPort implements HistoryPort {
   listPage(input: HistoryPageInput): Promise<Result<HistoryPage>> {
     const api = getAtomicChatApi();
     return api ? api.history.listPage(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  search(input: MessageSearchInput): Promise<Result<MessageSearchPage>> {
+    const api = getAtomicChatApi();
+    return api ? api.history.search(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  around(input: MessageAroundInput): Promise<Result<HistoryPage>> {
+    const api = getAtomicChatApi();
+    return api ? api.history.around(input) : Promise.resolve(unavailable(input.requestId));
   }
 
   timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>> {

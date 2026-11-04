@@ -81,6 +81,40 @@ export interface HistoryPage {
   nextCursor: string | null;
   hasMore: boolean;
 }
+export type MessageSearchScope =
+  | { readonly kind: 'all' }
+  | { readonly kind: 'conversation'; readonly conversationId: string };
+export interface MessageSearchInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly query: string;
+  readonly scope: MessageSearchScope;
+  readonly limit: number;
+  readonly cursor?: string | null;
+}
+export interface MessageSearchHit {
+  readonly messageId: string;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly senderJid: string;
+  readonly bodyPreview: string;
+  readonly createdAt: string;
+}
+export interface MessageSearchPage {
+  readonly items: ReadonlyArray<MessageSearchHit>;
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+}
+export interface MessageAroundInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly messageId: string;
+  readonly createdAt: string;
+  readonly limit: number;
+}
 export interface CertificateInfo {
   fingerprintSha256: string;
   subject: string;

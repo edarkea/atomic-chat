@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { MessageClassification, MessagePersistenceStatus } from './core/domain';
+import { formatMessageDateTime, formatMessageTime } from './message-date-time';
 
 @Component({
   selector: 'app-message-item',
@@ -13,4 +14,9 @@ export class MessageItemComponent {
   readonly outgoing = input.required<boolean>();
   readonly classification = input<MessageClassification>();
   readonly persistenceStatus = input<MessagePersistenceStatus>();
+  readonly createdAt = input<string>();
+  readonly receivedLocally = input(false);
+  readonly timestampNote = input('hora local');
+  protected time(value: string | undefined): string { return formatMessageTime(value); }
+  protected fullDate(value: string | undefined): string { return formatMessageDateTime(value); }
 }

@@ -42,6 +42,8 @@ export class ConversationListComponent {
   private readonly broadcastTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('preferencesTrigger')
   private readonly preferencesTrigger?: ElementRef<HTMLButtonElement>;
+  @ViewChild('contactSearch')
+  private readonly contactSearch?: ElementRef<HTMLInputElement>;
   readonly model = input.required<ConversationListModel>();
   readonly searchChange = output<string>();
   readonly useJid = output<void>();
@@ -123,5 +125,12 @@ export class ConversationListComponent {
 
   focusPreferencesTrigger(): void {
     this.preferencesTrigger?.nativeElement.focus();
+  }
+
+  focusContactSearch(): void {
+    const input = this.contactSearch?.nativeElement;
+    if (!input) return;
+    input.focus();
+    input.select();
   }
 }

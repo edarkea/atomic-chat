@@ -63,6 +63,91 @@ function registerHistoryHandlers({ ipcMain, assertSender, getRuntime, historySec
       return historyError(error, event, input);
     }
   });
+  ipcMain.handle('messages.search', (event, input) => {
+    assertSender(event);
+    try {
+      authorizeHistoryInput(event, input);
+      if (
+        typeof input.query !== 'string' ||
+        !input.query.trim() ||
+        input.query.length > 100 ||
+        !Number.isInteger(input.limit) ||
+        input.limit < 1 ||
+        input.limit > 50 ||
+        !input.scope ||
+        !['all', 'conversation'].includes(input.scope.kind) ||
+        (input.scope.kind === 'conversation' &&
+          (typeof input.scope.conversationId !== 'string' || !input.scope.conversationId.trim()))
+      )
+        throw new Error('INVALID_INPUT');
+      const conversationId =
+        input.scope.kind === 'conversation' ? input.scope.conversationId.trim().split('/')[0].toLowerCase() : null;
+      const scopeKey = conversationId ? `conversation:${conversationId}` : 'all';
+      const cursor = input.cursor == null
+        ? null
+        : historySecurity.decodeSearchCursor(input.cursor, input.accountId, input.query, scopeKey);
+      const result = getRuntime().persistence.searchMessages(
+        input.accountId,
+        input.query,
+        conversationId,
+        input.limit,
+        cursor,
+      );
+      const last = result.items[result.items.length - 1];
+      return {
+        ok: true,
+        value: {
+          items: result.items,
+          nextCursor: last && result.hasMore
+            ? historySecurity.encodeSearchCursor({
+                accountId: input.accountId,
+                query: input.query,
+                scopeKey,
+                createdAt: last.createdAt,
+                id: last.messageId,
+              })
+            : null,
+          hasMore: result.hasMore,
+        },
+        version: 1,
+        requestId: input.requestId,
+      };
+    } catch (error) {
+      return historyError(error, event, input);
+    }
+  });
+  ipcMain.handle('messages.around', (event, input) => {
+    assertSender(event);
+    try {
+      authorizeHistoryInput(event, input);
+      if (
+        typeof input.conversationId !== 'string' ||
+        !input.conversationId.trim() ||
+        typeof input.messageId !== 'string' ||
+        !input.messageId.trim() ||
+        typeof input.createdAt !== 'string' ||
+        !Number.isInteger(input.limit) ||
+        input.limit < 1 ||
+        input.limit > 100
+      )
+        throw new Error('INVALID_INPUT');
+      const conversationId = input.conversationId.trim().split('/')[0].toLowerCase();
+      return {
+        ok: true,
+        value: getRuntime().persistence.listMessagesAround(
+          input.accountId,
+          conversationId,
+          input.messageId,
+          input.createdAt,
+          input.limit,
+        ),
+        version: 1,
+        requestId: input.requestId,
+      };
+    } catch (error) {
+      return historyError(error, event, input);
+    }
+  });
   ipcMain.handle('timeline.page', async (event, input) => {
     assertSender(event);
     try {

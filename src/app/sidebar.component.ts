@@ -51,4 +51,8 @@ export class SidebarComponent {
   focusPreferencesTrigger(): void {
     this.conversationList?.focusPreferencesTrigger();
   }
+
+  focusContactSearch(): void {
+    this.conversationList?.focusContactSearch();
+  }
 }
