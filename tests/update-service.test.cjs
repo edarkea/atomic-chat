@@ -100,3 +100,16 @@ test('unpackaged applications do not load or invoke an updater', async () => {
   assert.equal(factoryCalled, false);
   service.stop();
 });
+
+test('uses the Atomic Chat package version instead of the Electron runtime version', () => {
+  const service = createUpdateService({
+    app: { isPackaged: false, getVersion: () => '39.8.10' },
+    applicationVersion: '0.0.0',
+  });
+
+  assert.equal(
+    service.getStatus({ version: 1, requestId: 'version-check' }).currentVersion,
+    '0.0.0',
+  );
+  service.stop();
+});

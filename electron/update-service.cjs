@@ -47,6 +47,7 @@ function errorCode(value) {
 /**
  * @param {{
  *   app: {isPackaged?: boolean, getVersion?: () => string},
+ *   applicationVersion?: string,
  *   isPackaged?: boolean,
  *   autoUpdaterFactory?: () => AutoUpdaterLike,
  *   hasCriticalTransfers?: () => boolean,
@@ -56,7 +57,7 @@ function errorCode(value) {
  */
 function createUpdateService(options) {
   const isPackaged = options.isPackaged ?? options.app.isPackaged === true;
-  const currentVersion = () => versionOf(options.app.getVersion?.());
+  const currentVersion = () => versionOf(options.applicationVersion || options.app.getVersion?.());
   /** @type {Set<(status: UpdateStatus) => void>} */
   const listeners = new Set();
   const intervalMs = Math.max(60_000, options.intervalMs ?? UPDATE_INTERVAL_MS);

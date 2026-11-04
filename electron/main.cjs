@@ -49,6 +49,7 @@ const {
 } = require('./download-directory.cjs');
 
 const fs = require('node:fs');
+const { version: applicationVersion } = require('../package.json');
 
 const atomicDataPath = app.isPackaged
   ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || app.getPath('appData'), 'AtomicChat-Data')
@@ -152,6 +153,7 @@ const outgoingFileTransfers = new OutgoingFileTransferCoordinator({
 });
 const updateService = createUpdateService({
   app,
+  applicationVersion,
   isPackaged: app.isPackaged,
   hasCriticalTransfers: () => fileResourceLimiter.counts('').global > 0,
   logger: console,

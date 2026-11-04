@@ -44,20 +44,6 @@
   text-align: center;
 }
 
-.app-version {
-  color: var(--atomic-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-.app-version::before {
-  color: var(--atomic-border);
-  content: '·';
-  margin-right: var(--atomic-space-2);
-}
-
 .workspace {
   display: grid;
   flex: 1 1 auto;
@@ -96,8 +82,5 @@
   }
   .brand {
     font-size: 14px;
-  }
-  .concept {
-    display: none;
   }
 }
