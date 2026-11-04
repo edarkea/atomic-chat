@@ -1,132 +1,118 @@
 # Atomic Chat
 
-Atomic Chat is a desktop XMPP messaging client built with Angular and Electron. It is designed for Openfire and provides a modern, controlled alternative to Spark for individual messaging, presence and roster management.
+<p align="center">
+  <a href="https://github.com/edarkea/atomic-chat">
+    <img src="assets/branding/atomic-chat-logo.svg" alt="Atomic Chat logo" width="160">
+  </a>
+</p>
 
-## Current capabilities
+<p align="center"><strong>A retro-futuristic XMPP desktop messenger</strong></p>
+<p align="center"><em>Connect. Communicate. Stay Atomic.</em></p>
+<p align="center">Created by Edinson Ayui</p>
 
-- XMPP login against an Openfire server.
-- Secure credential handling through Electron Main and operating-system secure storage.
-- Connection status, disconnect and recovery state reporting.
-- Local and remote presence: `available` and `unavailable`.
-- Real Openfire roster loading and contact search.
-- One-to-one messaging with Spark/Openfire users.
-- Incoming/outgoing classification, JID normalization and duplicate prevention.
-- Local SQLite history for sent and received messages.
-- Chronological conversation loading after restarting the application.
-- P1 preferences: Atomic theme, notification preference persistence and per-account automatic login.
-- Restricted Main/Preload/Renderer IPC architecture.
-- MUC V1 discovery, entry/exit, participant state and in-memory groupchat messages. Room entry remains blocked unless Electron Main has operator-controlled evidence that the account cannot create rooms.
+<p align="center">
+  <a href="https://github.com/edarkea/atomic-chat/releases/latest"><img src="https://img.shields.io/github/v/release/edarkea/atomic-chat?display_name=tag&sort=semver" alt="Latest stable release"></a>
+  <a href="https://github.com/edarkea/atomic-chat/actions/workflows/ci-tests.yml"><img src="https://github.com/edarkea/atomic-chat/actions/workflows/ci-tests.yml/badge.svg?branch=main" alt="Focused CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/edarkea/atomic-chat" alt="MIT License"></a>
+  <a href="https://github.com/edarkea/atomic-chat/releases/latest"><img src="https://img.shields.io/badge/Windows-x64-0078D6?logo=windows&logoColor=white" alt="Windows x64"></a>
+  <a href="https://github.com/edarkea/atomic-chat/releases/latest"><img src="https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&logoColor=111111" alt="Linux x64"></a>
+</p>
 
-## System description
+## About
+
+Atomic Chat is a desktop XMPP messaging client built with Angular, TypeScript and Electron. It is designed for XMPP/Openfire deployments and has a retro-futuristic interface inspired by terminal-era science fiction.
+
+The project is conceptually informed by classic Spark workflows, but it is an independent application with its own implementation, visual identity and distribution. Atomic Chat is not an official Spark, Ignite Realtime or Fallout project, and does not claim affiliation with their names or trademarks.
+
+### Resumen en español
+
+Atomic Chat es un cliente de mensajería XMPP para escritorio, desarrollado con Angular, TypeScript y Electron. Ofrece conversaciones individuales, contactos, presencia, historial local y herramientas de administración del cliente, con soporte condicionado para salas MUC y actualizaciones controladas.
+
+## Features
+
+### Implemented
+
+- XMPP authentication and connection management for Openfire-compatible deployments.
+- One-to-one conversations, contact roster loading and contact search.
+- Presence and connection-state reporting, including recovery and disconnect states.
+- Local SQLite history for incoming and outgoing messages.
+- Message search in the current conversation and across local conversation history.
+- Message dates, local times and chronological day separation.
+- Emoji picker and multiline message composition.
+- File transfer management with guarded previews for supported image content.
+- Theme Studio, the Atomic theme and persisted custom themes.
+- Preferences, connection profiles and guarded credential handling through Electron Main and operating-system secure storage.
+- Local sticker library and sticker-pack organization.
+
+### Available with explicit limitations
+
+- MUC support currently covers discovery, entry/exit and participant state for the supported flow. Room creation, moderation, invitations, passwords, private room messages, automatic rejoin/forwarding, files and persistent MUC history are not complete.
+- Sticker assets can be organized locally and received sticker messages can be displayed or saved. Sending stickers remains disabled and must not be considered an available chat feature.
+- The updater infrastructure can check public GitHub Releases and lets the user control download and installation. Installed-update end-to-end validation, signing and target-platform compatibility remain pending.
+- Interoperability evidence is limited to the tested Openfire/Spark environment; compatibility with every XMPP server or extension is not claimed.
+
+## Downloads
+
+Stable downloads are published on the [latest GitHub Release](https://github.com/edarkea/atomic-chat/releases/latest) when available:
+
+- **Windows x64:** NSIS `.exe` installer.
+- **Linux x64:** `.deb` package.
+- **Linux x64:** `.AppImage` package.
+
+macOS and other architectures are not distributed by the current build configuration.
+
+## Architecture
 
 ```text
-Angular Renderer
-       │ restricted Preload API
-       ▼
-Electron Main
-  ├── XMPP adapter (@xmpp/client)
-  ├── SQLite persistence (better-sqlite3)
-  └── Secure credential storage (safeStorage)
-       │
-       ▼
-Openfire XMPP server
+Angular Renderer → Restricted Preload API → Electron Main → XMPP / SQLite / Secure Storage
 ```
 
-The Renderer does not access Node.js, SQLite, credentials or the XMPP socket directly. Electron Main validates IPC requests, controls persistence and owns the XMPP connection.
+The Renderer does not access Node.js, SQLite, credentials or the XMPP socket directly. Electron Main owns the XMPP connection and persistence, validates IPC requests, and uses restricted Preload APIs to expose only the operations required by the UI. Credentials are handled in Main and protected with operating-system secure storage.
 
-## Openfire configuration
+## Development
 
-Atomic Chat expects XMPP TCP access, normally on port `5222`, with authentication, roster, presence and individual messaging enabled.
+The project files are at the repository root. Use Node.js and npm versions compatible with the `packageManager` field in `package.json`.
 
-`ATOMIC_XMPP_MUC_POLICY_JSON` is an operator-provided declaration that the account cannot create rooms; it is not an automatic verification of Openfire or another XMPP server.
+Install dependencies and create a local configuration from the safe template:
 
-Copy `.env.example` to `.env` and configure it locally:
+```powershell
+npm ci
+Copy-Item .env.example .env
+```
+
+Edit `.env` with a test XMPP/Openfire account. The template contains placeholders only; never commit `.env`, real passwords or production credentials.
 
 ```env
-ATOMIC_XMPP_SERVICE=your-openfire-host
-ATOMIC_XMPP_DOMAIN=your-xmpp-domain
+ATOMIC_XMPP_SERVICE=xmpp.example.test
+ATOMIC_XMPP_DOMAIN=example.test
 ATOMIC_XMPP_PORT=5222
 ATOMIC_XMPP_TRANSPORT=starttls
-ATOMIC_XMPP_USERNAME=your-user
-ATOMIC_XMPP_PASSWORD=your-password
+ATOMIC_XMPP_USERNAME=test-user
+ATOMIC_XMPP_PASSWORD=replace-with-synthetic-password
 ATOMIC_XMPP_ALLOW_INSECURE_TLS=false
-# Optional operator-controlled JSON accreditation; do not provide this from the Renderer.
-# The endpoint is mandatory and must match the active XMPP connection exactly.
-# ATOMIC_XMPP_MUC_POLICY_JSON=[{"accountId":"user@your-xmpp-domain","service":"conference.your-xmpp-domain","canCreate":false,"source":"operator","evidence":"approved Openfire policy record","endpoint":{"host":"your-openfire-host","port":5222,"transport":"starttls"}}]
 ```
 
-### MUC: política de entrada
-
-Atomic Chat solo intenta entrar a salas descubiertas en la sesión vigente. No crea salas ni cambia la política del servidor.
-
-Antes de configurar `ATOMIC_XMPP_MUC_POLICY_JSON`, un operador autorizado debe confirmar en Openfire que la cuenta indicada no puede crear salas. La declaración debe usar la cuenta, el servicio MUC, el host, el puerto y el transporte exactos de la conexión; `canCreate: false` no es una verificación automática ni debe usarse para falsear una prueba.
-
-Ejemplo de una declaración aprobada:
-
-```json
-[{"accountId":"user@your-xmpp-domain","service":"conference.your-xmpp-domain","canCreate":false,"source":"operator","evidence":"referencia-real-de-aprobacion","endpoint":{"host":"your-openfire-host","port":5222,"transport":"starttls"}}]
-```
-
-Después de cambiarla, reinicia la aplicación y vuelve a descubrir las salas. Una política ausente, no coincidente o un descubrimiento obsoleto bloquean la entrada localmente; un rechazo posterior se informa como rechazo del servidor. Ningún secreto, credencial ni evidencia inventada debe incluirse en el repositorio.
-
-Never commit `.env` or real credentials. Passwords are handled by Electron Main and `safeStorage`, not stored as regular SQLite fields.
-
-## Running the desktop application
-
-From the repository root:
+Useful project commands:
 
 ```powershell
-cd apps/atomic-chat
-npm install
 npm run build
 npm run electron
+npm run typecheck
+npm run test:ci:focused
 ```
 
-The Electron window opens with the login screen. If `autoLogin` is enabled, Atomic Chat attempts to connect using the stored secure credential.
+`npm run electron` launches the desktop application using the local `.env`. Focused CI tests are intentionally separate from the historical P0, Openfire integration and load suites.
 
-## Angular development server
+## Documentation, limitations and roadmap
 
-```powershell
-cd apps/atomic-chat
-npm start
-```
+See [CI, builds and updates](docs/ci-cd-and-updates.md) for the current release controls, dependency-security notes, manual build workflow and updater status.
 
-The Angular server runs at `http://localhost:4200/`. The complete XMPP and secure-storage flow must be tested through Electron.
+The main operational limitations are conditional MUC authorization, disabled sticker sending, incomplete installed-updater E2E validation, target-platform packaging/signing checks and dependence on the configured XMPP server's authentication, roster, presence, file-transfer and MUC capabilities.
 
-## Build and validation
+## Credits and license
 
-```powershell
-cd apps/atomic-chat
-npm run build
-npm run test:p0
-```
+**Created and maintained by Edinson Ayui**
 
-P0 has been validated in the observed Openfire/Spark environment for connection, session behavior, presence, roster and individual messaging. P1 preferences and local history are implemented with documented reservations.
+**Copyright © 2026 Edinson Ayui**
 
-## Known limitations
-
-- A self-signed certificate is never accepted automatically. Electron Main performs an unauthenticated probe (direct TLS or TCP/XMPP STARTTLS), shows the certificate details in Angular, and keeps the operational connection at `rejectUnauthorized: true`. Trust is scoped to the XMPP account, endpoint, selected transport and exact SHA-256 certificate.
-- A reviewed identity mismatch is a separate explicit exception: it is allowed only after `trust_once` or `trust_and_remember`, and the live TLS check still requires the exact approved SHA-256 fingerprint. Expired, not-yet-valid and explicitly prohibited signature algorithms remain blocked.
-- Set `ATOMIC_XMPP_TRANSPORT=starttls` for the usual port `5222`, or `direct-tls` for `xmpps:`/port `5223`. The legacy `ATOMIC_XMPP_TLS` boolean is adapted when no explicit transport is present: a host-only endpoint on port `5222` maps to STARTTLS, while port `5223` maps to direct TLS; explicit `transport` always wins. The selected transport is persisted and never shares trust with the other transport.
-- Migration failure/recovery testing and a complete automatic retry policy remain limited.
-- Notification preference persistence exists; system notification behavior is not complete.
-- MUC V1 does not create/configure/moderate rooms, invite users, handle room passwords, private MUC messages, automatic rejoin/forwarding, files or persistent MUC history.
-- Interoperability evidence is specific to the tested Openfire/Spark environment.
-
-## Certificate trust implementation references
-
-The implementation maps the audit plan areas as follows: A1.3 (TLS transport and certificate classification) is in `electron/certificate-trust.cjs` and `electron/xmpp-adapter.cjs`; B1 (restricted Main/Preload/Renderer IPC and explicit decisions) is in `electron/main.cjs`, `electron/preload.cjs`, `src/app/core/electron-api.ts`, and `src/app/core/chat.facade.ts`; D1 (persistent, endpoint/transport-scoped trust) is in `electron/storage.cjs` and the `trusted_certificates` table migration. The Angular warning is in `src/app/app.html` and uses the existing Wasteland Terminal styles.
-
-### Migración del almacenamiento de certificados
-
-La migración SQLite 6 añade `trusted_certificates.identity_mismatch` con valor predeterminado `0`. Es aditiva y no elimina certificados aprobados ni copia secretos. Los registros existentes no contienen autorización histórica para discrepancias de identidad; si el certificado vuelve a presentar esa discrepancia, Atomic Chat exige una nueva decisión explícita. La migración se ejecuta en Electron Main y conserva la separación por cuenta, host, puerto y transporte.
-
-## Project structure
-
-```text
-electron/              Electron Main, IPC, persistence and XMPP adapter
-src/app/               Angular UI and domain facade
-src/app/core/          TypeScript contracts and ports
-tests/                 P0 and interoperability validation tests
-.env.example           Safe configuration template
-```
+**Licensed under the [MIT License](LICENSE).**
