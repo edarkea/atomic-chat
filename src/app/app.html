@@ -160,7 +160,8 @@
       <div class="brand">
         <svg class="ac-icon ac-icon-brand" aria-hidden="true" focusable="false">
           <use href="#ac-brand" /></svg
-        ><strong>ATOMIC CHAT</strong><span class="concept">Concepto</span>
+        ><strong>ATOMIC CHAT</strong
+        ><span class="concept">v{{ updates.status().currentVersion }}</span>
       </div>
       @if (totalUnread() > 0) {
         <span class="global-unread" aria-label="Mensajes no leídos">{{ totalUnread() }}</span>
@@ -216,10 +217,21 @@
             [hasOlderMessages]="chat.hasOlderMessages()"
             [hasNewerMessages]="chat.hasNewerMessages()"
             [typing]="typingContact()"
+            [searchQuery]="messageSearchQuery()"
+            [searchScope]="messageSearchScope()"
+            [searchConversationNames]="messageSearchConversationNames()"
+            [searchResults]="chat.messageSearchResults()"
+            [searchLoading]="chat.messageSearchLoading()"
+            [searchError]="chat.messageSearchError()"
+            [searchHasMore]="chat.messageSearchHasMore()"
             (draftChange)="draftChanged($event)"
             (typingFocus)="typingFocus()"
             (typingBlur)="typingBlur()"
             (messageSend)="send()"
+            (searchQueryChange)="searchMessages($event)"
+            (searchScopeChange)="changeMessageSearchScope($event)"
+            (searchResultSelected)="selectMessageSearchHit($event)"
+            (searchLoadMore)="loadMoreMessageSearch()"
             (stickerSend)="sendSticker($event)"
             (stickerLoad)="loadSticker($event)"
             (stickerSave)="saveSticker($event)"
@@ -262,6 +274,9 @@
     (preferenceChange)="savePreferenceChange($event)"
     (selectDownloadDirectory)="selectDownloadDirectory()"
     (reset)="resetPreferences()"
+    (checkForUpdates)="checkForUpdates()"
+    (downloadUpdate)="downloadUpdate()"
+    (installUpdate)="installUpdate()"
     (cancelled)="closePreferences()"
   />
 }

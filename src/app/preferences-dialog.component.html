@@ -59,6 +59,64 @@
                 [ngModel]="model().preferences.autoLogin"
                 (ngModelChange)="preferenceChange.emit({ autoLogin: $event })"
             /></label>
+            <div class="software-update" aria-live="polite">
+              <div class="software-update-heading">
+                <span>
+                  <strong>Actualización de Atomic Chat</strong>
+                  <small>Versión instalada: v{{ model().updateStatus.currentVersion }}</small>
+                </span>
+                @switch (model().updateStatus.state) {
+                  @case ('checking') {
+                    <small>Comprobando…</small>
+                  }
+                  @case ('downloading') {
+                    <small>Descargando {{ model().updateStatus.progressPercent || 0 }}%</small>
+                  }
+                  @case ('up-to-date') {
+                    <small>Sin actualizaciones pendientes</small>
+                  }
+                }
+              </div>
+              @if (model().updateStatus.state === 'available') {
+                <p class="preference-help">
+                  Hay una actualización disponible: v{{ model().updateStatus.availableVersion }}.
+                  Puedes seguir trabajando y descargarla cuando quieras.
+                </p>
+                <button
+                  type="button"
+                  class="primary update-button"
+                  [disabled]="model().updateBusy"
+                  (click)="downloadUpdate.emit()"
+                >
+                  Descargar actualización
+                </button>
+              } @else if (model().updateStatus.state === 'downloaded') {
+                <p class="preference-help">
+                  La actualización v{{ model().updateStatus.availableVersion }} está lista para
+                  instalarse.
+                </p>
+                <button
+                  type="button"
+                  class="primary update-button"
+                  [disabled]="model().updateBusy"
+                  (click)="installUpdate.emit()"
+                >
+                  Reiniciar para actualizar
+                </button>
+              } @else if (model().updateStatus.state === 'error' || model().updateError) {
+                <p class="preference-error" role="alert">
+                  {{ model().updateError || 'No fue posible comprobar las actualizaciones.' }}
+                </p>
+              }
+              <button
+                type="button"
+                class="secondary update-button"
+                [disabled]="model().updateBusy || model().updateStatus.state === 'downloading'"
+                (click)="checkForUpdates.emit()"
+              >
+                Buscar actualizaciones
+              </button>
+            </div>
           </section>
         }
         @case ('appearance') {

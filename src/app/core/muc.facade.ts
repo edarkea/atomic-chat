@@ -143,8 +143,8 @@ export class MucFacade {
 
   async send(accountId: string, roomJid: string, text: string): Promise<boolean> {
     this.activeAccountId.set(accountId);
-    const body = text.trim();
-    if (!body) return false;
+    const body = text;
+    if (!body.trim()) return false;
     const input: MucSendInput = {
       version: 1,
       requestId: createOpaqueId('muc-send'),

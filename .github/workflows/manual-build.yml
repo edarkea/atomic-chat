@@ -1,0 +1,78 @@
+name: Manual build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Build target
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    if: inputs.target == 'all' || inputs.target == 'windows'
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Rebuild native production dependencies
+        run: npx electron-builder install-app-deps
+      - run: npm run build
+      - name: Package Windows NSIS x64 without publishing
+        run: npx electron-builder --win nsis --x64 --publish never
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path release -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), $_.Path.Substring((Resolve-Path release).Path.Length + 1) } |
+            Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atomic-chat-${{ github.sha }}-windows-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    if: inputs.target == 'all' || inputs.target == 'linux'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Rebuild native production dependencies
+        run: npx electron-builder install-app-deps
+      - run: npm run build
+      - name: Package Linux DEB and AppImage x64 without publishing
+        run: npx electron-builder --linux deb AppImage --x64 --publish never
+      - name: Generate SHA256 checksums
+        run: |
+          find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atomic-chat-${{ github.sha }}-linux-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7

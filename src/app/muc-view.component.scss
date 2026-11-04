@@ -81,3 +81,5 @@
   scrollbar-color: var(--atomic-border) var(--atomic-bg);
   scrollbar-width: thin;
 }
+.day-separator { align-items: center; color: var(--atomic-text-muted); display: flex; font-size: 11px; gap: 8px; justify-content: center; margin: 10px 0; }
+.day-separator::before, .day-separator::after { background: var(--atomic-separator); content: ''; flex: 1; height: 1px; }

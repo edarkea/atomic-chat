@@ -15,6 +15,7 @@ import {
   ElectronStickerPackPort,
   ElectronStickerPreviewPort,
   ElectronStickerMessagePort,
+  ElectronUpdatePort,
 } from './electron-application.ports';
 import { ElectronXmppPort } from './electron-xmpp.port';
 import { InMemoryXmppPort } from './in-memory-xmpp.port';
@@ -35,6 +36,7 @@ import {
   MUC_PORT,
   PREFERENCES_PORT,
   XMPP_PORT,
+  UPDATE_PORT,
 } from './ports';
 import {
   UnavailableAccountPort,
@@ -51,6 +53,7 @@ import {
   UnavailableStickerPackPort,
   UnavailableStickerPreviewPort,
   UnavailableStickerMessagePort,
+  UnavailableUpdatePort,
 } from './unavailable.ports';
 
 export const corePortProviders: Provider[] = [
@@ -64,12 +67,14 @@ export const corePortProviders: Provider[] = [
   ElectronCertificatePort,
   ElectronFileTransferPort,
   ElectronFileHistoryPort,
+  ElectronUpdatePort,
   UnavailableAccountPort,
   UnavailableHistoryPort,
   UnavailablePreferencesPort,
   UnavailableCertificatePort,
   UnavailableFileTransferPort,
   UnavailableFileHistoryPort,
+  UnavailableUpdatePort,
   UnavailableMucPort,
   {
     provide: XMPP_PORT,
@@ -121,10 +126,8 @@ export const corePortProviders: Provider[] = [
   },
   {
     provide: FILE_HISTORY_PORT,
-    useFactory: (
-      electron: ElectronFileHistoryPort,
-      unavailable: UnavailableFileHistoryPort,
-    ) => (hasAtomicChatApi() ? electron : unavailable),
+    useFactory: (electron: ElectronFileHistoryPort, unavailable: UnavailableFileHistoryPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronFileHistoryPort, UnavailableFileHistoryPort],
   },
   {
@@ -135,8 +138,10 @@ export const corePortProviders: Provider[] = [
   },
   {
     provide: STICKER_LIBRARY_PORT,
-    useFactory: (electron: ElectronStickerLibraryPort, unavailable: UnavailableStickerLibraryPort) =>
-      hasAtomicChatApi() ? electron : unavailable,
+    useFactory: (
+      electron: ElectronStickerLibraryPort,
+      unavailable: UnavailableStickerLibraryPort,
+    ) => (hasAtomicChatApi() ? electron : unavailable),
     deps: [ElectronStickerLibraryPort, UnavailableStickerLibraryPort],
   },
   {
@@ -147,14 +152,18 @@ export const corePortProviders: Provider[] = [
   },
   {
     provide: STICKER_PREVIEW_PORT,
-    useFactory: (electron: ElectronStickerPreviewPort, unavailable: UnavailableStickerPreviewPort) =>
-      hasAtomicChatApi() ? electron : unavailable,
+    useFactory: (
+      electron: ElectronStickerPreviewPort,
+      unavailable: UnavailableStickerPreviewPort,
+    ) => (hasAtomicChatApi() ? electron : unavailable),
     deps: [ElectronStickerPreviewPort, UnavailableStickerPreviewPort],
   },
   {
     provide: STICKER_MESSAGE_PORT,
-    useFactory: (electron: ElectronStickerMessagePort, unavailable: UnavailableStickerMessagePort) =>
-      hasAtomicChatApi() ? electron : unavailable,
+    useFactory: (
+      electron: ElectronStickerMessagePort,
+      unavailable: UnavailableStickerMessagePort,
+    ) => (hasAtomicChatApi() ? electron : unavailable),
     deps: [ElectronStickerMessagePort, UnavailableStickerMessagePort],
   },
   { provide: ATTENTION_PORT, useExisting: ElectronAttentionPort },
@@ -163,5 +172,11 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronBroadcastPort, unavailable: UnavailableBroadcastPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronBroadcastPort, UnavailableBroadcastPort],
+  },
+  {
+    provide: UPDATE_PORT,
+    useFactory: (electron: ElectronUpdatePort, unavailable: UnavailableUpdatePort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronUpdatePort, UnavailableUpdatePort],
   },
 ];

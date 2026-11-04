@@ -2,12 +2,7 @@ export type ContractVersion = 1;
 export type RequestId = string;
 export type ClientMessageId = string;
 export type ContactAvailability =
-  | 'available'
-  | 'away'
-  | 'extended-away'
-  | 'dnd'
-  | 'unavailable'
-  | 'unknown';
+  'available' | 'away' | 'extended-away' | 'dnd' | 'unavailable' | 'unknown';
 export type Availability = ContactAvailability;
 export type PresenceMode = 'chat' | 'away' | 'dnd' | 'xa';
 export type XmppTransport = 'starttls' | 'direct-tls';
@@ -80,6 +75,39 @@ export interface HistoryPage {
   items: Message[];
   nextCursor: string | null;
   hasMore: boolean;
+}
+export type MessageSearchScope =
+  { readonly kind: 'all' } | { readonly kind: 'conversation'; readonly conversationId: string };
+export interface MessageSearchInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly query: string;
+  readonly scope: MessageSearchScope;
+  readonly limit: number;
+  readonly cursor?: string | null;
+}
+export interface MessageSearchHit {
+  readonly messageId: string;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly senderJid: string;
+  readonly bodyPreview: string;
+  readonly createdAt: string;
+}
+export interface MessageSearchPage {
+  readonly items: ReadonlyArray<MessageSearchHit>;
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+}
+export interface MessageAroundInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly messageId: string;
+  readonly createdAt: string;
+  readonly limit: number;
 }
 export interface CertificateInfo {
   fingerprintSha256: string;
@@ -382,7 +410,8 @@ export interface StickerPackDTO {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-export type StickerDraftStatus = 'editing' | 'validating' | 'ready' | 'failed' | 'saved' | 'discarded';
+export type StickerDraftStatus =
+  'editing' | 'validating' | 'ready' | 'failed' | 'saved' | 'discarded';
 export interface StickerDraftDTO {
   readonly draftId: string;
   readonly accountId: string;
@@ -687,6 +716,25 @@ export interface TimelinePage {
 export type Result<T> =
   | { ok: true; value: T; version: ContractVersion; requestId: RequestId }
   | { ok: false; error: AppError; version: ContractVersion };
+
+export type UpdateState =
+  'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error';
+
+export interface UpdateStatus {
+  readonly version: ContractVersion;
+  readonly state: UpdateState;
+  readonly currentVersion: string;
+  readonly availableVersion?: string;
+  readonly progressPercent?: number;
+  readonly errorCode?: AppErrorCode;
+  readonly requestId?: RequestId;
+  readonly correlationId?: string;
+}
+
+export interface UpdateRequest {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+}
 export type RoomId = string;
 export type OccupantId = string;
 export type MucRoomStatus = 'idle' | 'joining' | 'joined' | 'leaving' | 'failed';
@@ -842,13 +890,11 @@ export interface ConversationSummary {
   lastMessageAt?: number;
 }
 
-export type ActiveConversation =
-  | {
-      readonly accountId: string;
-      readonly kind: 'direct' | 'muc';
-      readonly jid: string;
-    }
-  | null;
+export type ActiveConversation = {
+  readonly accountId: string;
+  readonly kind: 'direct' | 'muc';
+  readonly jid: string;
+} | null;
 
 export interface AttentionState {
   accountId: string;

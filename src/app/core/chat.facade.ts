@@ -11,7 +11,11 @@ import {
   Contact,
   ConversationSummary,
   HistoryTimelineItem,
+  HistoryPage,
+  MessageAroundInput,
   Message,
+  MessageSearchHit,
+  MessageSearchScope,
   MessageSendInput,
   Presence,
   PresenceInput,
@@ -69,6 +73,10 @@ export class ChatFacade {
   readonly contacts = signal<Contact[]>([]);
   readonly conversationSummaries = signal<ReadonlyArray<ConversationSummary>>([]);
   readonly messages = signal<Message[]>([]);
+  readonly messageSearchResults = signal<ReadonlyArray<MessageSearchHit>>([]);
+  readonly messageSearchLoading = signal(false);
+  readonly messageSearchError = signal<string | null>(null);
+  readonly messageSearchHasMore = signal(false);
   readonly timelineItems = signal<ReadonlyArray<HistoryTimelineItem>>([]);
   readonly timelineSupported = signal(false);
   readonly historyLoading = signal(false);
@@ -107,10 +115,16 @@ export class ChatFacade {
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly typingStates = new Map<string, ChatState>();
   private readonly outgoingChatStates = new Map<string, ChatState>();
+  private messageSearchCursor: string | null = null;
+  private messageSearchGeneration = 0;
   private readonly accountContactReset = effect(() => {
     this.accountId();
     this.contacts.set([]);
     this.conversationSummaries.set([]);
+    this.messageSearchGeneration += 1;
+    this.messageSearchResults.set([]);
+    this.messageSearchCursor = null;
+    this.messageSearchHasMore.set(false);
   });
 
   constructor() {
@@ -572,6 +586,78 @@ export class ChatFacade {
     }
   }
 
+  async searchMessages(query: string, scope: MessageSearchScope, append = false): Promise<void> {
+    const normalized = query.trim();
+    if (!normalized) {
+      this.messageSearchGeneration += 1;
+      this.messageSearchResults.set([]);
+      this.messageSearchCursor = null;
+      this.messageSearchHasMore.set(false);
+      this.messageSearchError.set(null);
+      return;
+    }
+    const generation = ++this.messageSearchGeneration;
+    const accountId = this.accountId();
+    const cursor = append ? this.messageSearchCursor : null;
+    if (!append) {
+      this.messageSearchResults.set([]);
+      this.messageSearchCursor = null;
+      this.messageSearchHasMore.set(false);
+    }
+    this.messageSearchLoading.set(true);
+    this.messageSearchError.set(null);
+    try {
+      const result = await this.history.search({
+        version: 1,
+        requestId: createOpaqueId('message-search'),
+        accountId,
+        query: normalized,
+        scope,
+        limit: 50,
+        cursor,
+      });
+      if (generation !== this.messageSearchGeneration || accountId !== this.accountId()) return;
+      if (!result.ok) {
+        this.messageSearchError.set(result.error.message);
+        return;
+      }
+      const previous = append ? this.messageSearchResults() : [];
+      this.messageSearchResults.set([...previous, ...result.value.items]);
+      this.messageSearchCursor = result.value.nextCursor;
+      this.messageSearchHasMore.set(result.value.hasMore);
+    } catch {
+      if (generation === this.messageSearchGeneration)
+        this.messageSearchError.set('No fue posible buscar en los mensajes.');
+    } finally {
+      if (generation === this.messageSearchGeneration) this.messageSearchLoading.set(false);
+    }
+  }
+
+  async revealSearchHit(hit: MessageSearchHit): Promise<void> {
+    if (hit.accountId !== this.accountId()) return;
+    await this.loadConversation(hit.conversationId);
+    if (this.historyContext?.conversationId !== this.bareConversation(hit.conversationId)) return;
+    const input: MessageAroundInput = {
+      version: 1,
+      requestId: createOpaqueId('message-around'),
+      accountId: hit.accountId,
+      conversationId: this.bareConversation(hit.conversationId),
+      messageId: hit.messageId,
+      createdAt: hit.createdAt,
+      limit: 100,
+    };
+    const result: Result<HistoryPage> = await this.history.around(input);
+    const context = this.historyContext;
+    if (!context || !this.isHistoryContextCurrent(context)) return;
+    if (!result.ok) {
+      this.error.set(result.error.message);
+      return;
+    }
+    this.messages.set(result.value.items);
+    this.hasOlderMessages.set(false);
+    this.hasNewerMessages.set(false);
+  }
+
   async loadOlderMessages(conversationId: string): Promise<void> {
     await this.loadHistoryPage(conversationId, 'older');
   }
@@ -638,9 +724,9 @@ export class ChatFacade {
   }
 
   async send(text: string, conversationId: string): Promise<boolean> {
-    const cleanText = text.trim();
+    const cleanText = text;
     const recipient = conversationId.trim();
-    if (!cleanText || !recipient || !this.accountId().trim()) return false;
+    if (!cleanText.trim() || !recipient || !this.accountId().trim()) return false;
     try {
       const result = await this.sendMessageInput({
         version: 1,

@@ -5,7 +5,10 @@
       <span class="broadcast-badge">DIFUSIÓN</span>
     }
   </div>
-  <p>{{ body() }}</p>
+  <p class="message-body">{{ body() }}</p>
+  <time class="message-time" [attr.datetime]="createdAt() || null" [title]="fullDate(createdAt())" [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())">
+    {{ time(createdAt()) }} · {{ date(createdAt()) }}
+  </time>
   @if (persistenceStatus() === 'memory-only') {
     <small class="message-persistence-warning"
       >Mensaje no guardado; solo disponible en esta sesión.</small

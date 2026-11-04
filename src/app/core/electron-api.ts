@@ -21,6 +21,9 @@ import {
   MediaListInput,
   HistoryPage,
   HistoryPageInput,
+  MessageAroundInput,
+  MessageSearchInput,
+  MessageSearchPage,
   TimelinePage,
   TimelinePageInput,
   Message,
@@ -75,6 +78,8 @@ import {
   StickerMessageSaveRequest,
   StickerMessageRef,
   StickerSendRequest,
+  UpdateRequest,
+  UpdateStatus,
 } from './domain';
 
 export interface AtomicChatApi {
@@ -192,6 +197,8 @@ export interface AtomicChatApi {
       conversationId: string;
     }): Promise<Result<Message[]>>;
     listPage(input: HistoryPageInput): Promise<Result<HistoryPage>>;
+    search(input: MessageSearchInput): Promise<Result<MessageSearchPage>>;
+    around(input: MessageAroundInput): Promise<Result<HistoryPage>>;
     timelinePage(input: TimelinePageInput): Promise<Result<TimelinePage>>;
     conversations(input: {
       version: 1;
@@ -214,6 +221,13 @@ export interface AtomicChatApi {
     }): Promise<Result<Partial<Preferences>>>;
     reset(input: { accountId: string }): Promise<Result<Preferences>>;
     selectDownloadDirectory(): Promise<Result<string | null>>;
+  };
+  updates: {
+    getStatus(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    check(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    download(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    install(input: UpdateRequest): Promise<Result<UpdateStatus>>;
+    subscribe(listener: (status: UpdateStatus) => void): () => void;
   };
   subscribe(listener: (event: unknown) => void): () => void;
 }

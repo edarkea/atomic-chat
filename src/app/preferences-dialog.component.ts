@@ -9,7 +9,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Preferences } from './core/domain';
+import { Preferences, UpdateStatus } from './core/domain';
 import { isThemeId, THEME_OPTIONS, ThemeService } from './core/theme.service';
 import { ThemeStudioComponent } from './theme-studio.component';
 
@@ -22,6 +22,9 @@ export interface PreferencesDialogModel {
   readonly downloadDirectorySelecting: boolean;
   readonly saveState: PreferencesSaveState;
   readonly error: string | null;
+  readonly updateStatus: UpdateStatus;
+  readonly updateBusy: boolean;
+  readonly updateError: string | null;
 }
 
 @Component({
@@ -51,6 +54,9 @@ export class PreferencesDialogComponent {
   readonly preferenceChange = output<Partial<Preferences>>();
   readonly selectDownloadDirectory = output<void>();
   readonly reset = output<void>();
+  readonly checkForUpdates = output<void>();
+  readonly downloadUpdate = output<void>();
+  readonly installUpdate = output<void>();
   readonly cancelled = output<void>();
 
   private readonly themeService: ThemeService;

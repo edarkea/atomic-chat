@@ -680,6 +680,56 @@ class PersistenceStore {
     return { items: page, hasMore };
   }
 
+  searchMessages(accountId, query, conversationId, limit, cursor) {
+    const values = [accountId];
+    const scope = conversationId ? `conversation:${conversationId}` : 'all';
+    const pattern = `%${query.replaceAll('~', '~~').replaceAll('%', '~%').replaceAll('_', '~_')}%`;
+    let predicate = `WHERE account_id = ? AND json_extract(body, '$.text') LIKE ? ESCAPE '~'`;
+    values.push(pattern);
+    if (conversationId) {
+      predicate += ' AND conversation_id = ?';
+      values.push(conversationId);
+    }
+    if (cursor) {
+      predicate += ' AND (created_at < ? OR (created_at = ? AND id < ?))';
+      values.push(cursor.createdAt, cursor.createdAt, cursor.id);
+    }
+    const rows = this.database.prepare(
+      `SELECT id, account_id AS accountId, conversation_id AS conversationId, sender_jid AS senderJid,
+        json_extract(body, '$.text') AS bodyText, created_at AS createdAt
+       FROM messages ${predicate} ORDER BY created_at DESC, id DESC LIMIT ?`,
+    ).all(...values, limit + 1);
+    const hasMore = rows.length > limit;
+    return {
+      scope,
+      items: rows.slice(0, limit).map((row) => ({
+        messageId: row.id,
+        accountId: row.accountId,
+        conversationId: row.conversationId,
+        senderJid: row.senderJid,
+        bodyPreview: String(row.bodyText || '').slice(0, 240),
+        createdAt: row.createdAt,
+      })),
+      hasMore,
+    };
+  }
+
+  listMessagesAround(accountId, conversationId, messageId, createdAt, limit) {
+    const rows = this.database.prepare(
+      `SELECT id, conversation_id AS conversationId, client_message_id AS clientMessageId,
+        sender_jid AS senderJid, body, status, created_at AS createdAt, classification
+       FROM messages
+       WHERE account_id = ? AND conversation_id = ?
+         AND (created_at < ? OR (created_at = ? AND id <= ?))
+       ORDER BY created_at DESC, id DESC LIMIT ?`,
+    ).all(accountId, conversationId, createdAt, createdAt, messageId, limit);
+    return {
+      items: rows.reverse().map((row) => ({ ...row, accountId, body: JSON.parse(row.body) })),
+      hasMore: false,
+      nextCursor: null,
+    };
+  }
+
   upsertMedia(record, storageKey = null) {
     if (!record?.accountId || !record?.mediaId || !record?.transferId)
       throw new Error('INVALID_INPUT');

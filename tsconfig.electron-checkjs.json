@@ -11,6 +11,8 @@
   "include": [
     "electron/file-transfer-utils.cjs",
     "electron/file-transfer-resources.cjs",
+    "electron/update-service.cjs",
+    "electron/ipc-update-handlers.cjs",
     "tests/fixtures/cal11-invalid-direction.cjs"
   ]
 }

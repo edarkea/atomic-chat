@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 import { MucNotice, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
+import { formatMessageDay, messageDayKey } from './message-date-time';
 
 @Component({
   selector: 'app-muc-view',
@@ -43,4 +44,8 @@ export class MucViewComponent {
     const separator = occupantJid.indexOf('/');
     return separator >= 0 ? occupantJid.slice(separator + 1).trim() : '';
   }
+  protected hasDayChanged(index: number, receivedAt: string): boolean {
+    return index === 0 || messageDayKey(this.messages()[index - 1]?.receivedAt) !== messageDayKey(receivedAt);
+  }
+  protected dayLabel(receivedAt: string): string { return formatMessageDay(receivedAt); }
 }

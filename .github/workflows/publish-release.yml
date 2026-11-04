@@ -1,0 +1,207 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      sha: ${{ steps.metadata.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Read package version and verify main
+        id: metadata
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          checked_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          test "$checked_sha" = "$main_sha"
+          version="$(node -p "require('./package.json').version")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="v$version"
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null || git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "release tag $tag already exists" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$checked_sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Security audit gate
+        run: npm audit --audit-level=high
+      - name: Focused release checks
+        run: |
+          npm run typecheck
+          npm run format:check
+          npm run test:ci:focused
+
+  build-windows:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    needs: validate
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+      - name: Verify package version and approved commit
+        shell: pwsh
+        run: |
+          $checkedSha = (git rev-parse HEAD).Trim()
+          if ($checkedSha -ne $env:RELEASE_SHA) { throw 'checked out commit differs from the approved main commit' }
+          $packageVersion = node -p "require('./package.json').version"
+          if ($packageVersion -ne $env:RELEASE_VERSION) { throw "package.json version $packageVersion does not match the release version" }
+          if ($env:RELEASE_TAG -ne "v$packageVersion") { throw 'release tag must be v<package.json.version>' }
+      - run: npm ci
+      - run: npx electron-builder install-app-deps
+      - run: npm run build
+      - run: npx electron-builder --win nsis --x64 --publish never
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path release -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), $_.Path.Substring((Resolve-Path release).Path.Length + 1) } |
+            Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.validate.outputs.version }}-windows-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 3
+
+  build-linux:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    needs: validate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+      - name: Verify package version and approved commit
+        run: |
+          set -euo pipefail
+          checked_sha="$(git rev-parse HEAD)"
+          test "$checked_sha" = "$RELEASE_SHA"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$package_version" = "$RELEASE_VERSION"
+          test "$RELEASE_TAG" = "v$package_version"
+      - run: npm ci
+      - run: npx electron-builder install-app-deps
+      - run: npm run build
+      - run: npx electron-builder --linux deb AppImage --x64 --publish never
+      - name: Generate checksums
+        run: |
+          find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.validate.outputs.version }}-linux-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
+    needs: [validate, build-windows, build-linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+    environment:
+      name: production-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ needs.validate.outputs.version }}-windows-x64
+          path: release/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ needs.validate.outputs.version }}-linux-x64
+          path: release/linux
+      - name: Verify release metadata and combine checksums
+        run: |
+          set -euo pipefail
+          checked_sha="$(git rev-parse HEAD)"
+          test "$checked_sha" = "$RELEASE_SHA"
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          test "$RELEASE_TAG" = "v$RELEASE_VERSION"
+          test -f release/windows/latest.yml
+          test -f release/linux/latest-linux.yml
+          test -f release/windows/SHA256SUMS.txt
+          test -f release/linux/SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'release already exists; stable releases are never overwritten' >&2
+            exit 1
+          fi
+          cp release/windows/SHA256SUMS.txt release/SHA256SUMS-windows-x64.txt
+          cp release/linux/SHA256SUMS.txt release/SHA256SUMS-linux-x64.txt
+          find release/windows release/linux -maxdepth 1 -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.yml' \) -print0 |
+            sort -z | xargs -0 sha256sum > "release/SHA256SUMS-${RELEASE_VERSION}.txt"
+          cp release/windows/* release/linux/* release/
+          rm -rf release/windows release/linux
+      - name: Create the release tag from package.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG" >/dev/null || git ls-remote --exit-code origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release tag $RELEASE_TAG already exists" >&2
+            exit 1
+          fi
+          git tag --annotate "$RELEASE_TAG" "$RELEASE_SHA" --message "Atomic Chat $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
+      - name: Create the approved stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          build_sha="$(git rev-parse HEAD)"
+          gh release create "$RELEASE_TAG" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Atomic Chat $RELEASE_VERSION" \
+            --notes "Built from $build_sha by $GITHUB_ACTOR."

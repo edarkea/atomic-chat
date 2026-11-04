@@ -23,6 +23,7 @@ import {
   FileTransfer,
   HistoryTimelineItem,
   Message,
+  MessageSearchHit,
   Preferences,
   RoomState,
   XmppTransport,
@@ -56,8 +57,10 @@ import {
 } from './preferences-dialog.component';
 import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
 import { StickerMessageFacade } from './core/sticker-message.facade';
+import { UpdateFacade } from './core/update.facade';
 
-export const STICKER_SENDING_DISABLED_MESSAGE = 'El envío de stickers está temporalmente deshabilitado';
+export const STICKER_SENDING_DISABLED_MESSAGE =
+  'El envío de stickers está temporalmente deshabilitado';
 
 const STICKER_SEND_ERROR_MESSAGES: Readonly<Partial<Record<AppErrorCode, string>>> = {
   INVALID_INPUT: 'La solicitud del sticker no es válida.',
@@ -75,14 +78,17 @@ const STICKER_SEND_ERROR_MESSAGES: Readonly<Partial<Record<AppErrorCode, string>
   RESOURCE_CONSTRAINT: 'Se alcanzó el límite local de stickers o almacenamiento.',
   CONFLICT: 'El envío entra en conflicto con otra operación del mismo mensaje.',
   SEND_IN_PROGRESS: 'El envío del sticker sigue pendiente; no se repetirá automáticamente.',
-  SEND_RESULT_UNKNOWN: 'El servidor no confirmó si el sticker fue enviado; no se repetirá automáticamente.',
+  SEND_RESULT_UNKNOWN:
+    'El servidor no confirmó si el sticker fue enviado; no se repetirá automáticamente.',
   INTERNAL: 'No fue posible completar el envío del sticker.',
 };
 
 export function stickerSendErrorMessage(error: Pick<AppError, 'code' | 'message'>): string {
   if (error.code === 'UNSUPPORTED' && error.message === STICKER_SENDING_DISABLED_MESSAGE)
     return STICKER_SENDING_DISABLED_MESSAGE;
-  return STICKER_SEND_ERROR_MESSAGES[error.code] || 'No fue posible completar el envío del sticker.';
+  return (
+    STICKER_SEND_ERROR_MESSAGES[error.code] || 'No fue posible completar el envío del sticker.'
+  );
 }
 
 type ConversationSelection =
@@ -117,6 +123,7 @@ export class App {
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly stickerMessages = inject(StickerMessageFacade);
+  protected readonly updates = inject(UpdateFacade);
   private readonly stickerSendingDisabled = true;
   protected readonly theme = inject(ThemeService);
   private readonly broadcast = inject(BroadcastFacade);
@@ -140,6 +147,21 @@ export class App {
   protected readonly selectedProfileId = signal('');
   protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
   protected readonly search = signal('');
+  protected readonly messageSearchQuery = signal('');
+  protected readonly messageSearchScope = signal<'all' | 'conversation'>('conversation');
+  protected readonly messageSearchConversationNames = computed<ReadonlyMap<string, string>>(
+    () =>
+      new Map(
+        this.chat
+          .contacts()
+          .map((contact) => {
+            const name = contact.name?.trim();
+            return name ? ([this.bareJid(contact.jid), name] as const) : null;
+          })
+          .filter((entry): entry is readonly [string, string] => entry !== null),
+      ),
+  );
+  private messageSearchTimer: ReturnType<typeof setTimeout> | undefined;
   protected readonly newMessageOpen = signal(false);
   protected readonly newMessageSearch = signal('');
   protected readonly newMessageJoiningRoom = signal<string | null>(null);
@@ -221,6 +243,9 @@ export class App {
     downloadDirectorySelecting: this.downloadDirectorySelecting(),
     saveState: this.preferencesSaveState(),
     error: this.preferencesError(),
+    updateStatus: this.updates.status(),
+    updateBusy: this.updates.busy(),
+    updateError: this.updates.error(),
   }));
   protected readonly broadcastContacts = computed<ReadonlyArray<Contact>>(() => {
     const accountJid = bareBroadcastJid(this.chat.accountId());
@@ -246,9 +271,13 @@ export class App {
     );
   });
   protected readonly broadcastGroups = computed<ReadonlyArray<string>>(() =>
-    [...new Set(this.broadcastContacts().flatMap((contact) => contact.groups.map((group) => group.trim()).filter(Boolean)))].sort(
-      (left, right) => left.localeCompare(right),
-    ),
+    [
+      ...new Set(
+        this.broadcastContacts().flatMap((contact) =>
+          contact.groups.map((group) => group.trim()).filter(Boolean),
+        ),
+      ),
+    ].sort((left, right) => left.localeCompare(right)),
   );
   protected readonly broadcastDialogModel = computed<BroadcastDialogModel>(() => ({
     contacts: this.broadcastContacts(),
@@ -419,23 +448,26 @@ export class App {
           id: `file:${transfer.offer.transferId}`,
           sortAt: transfer.offer.offeredAt,
           transfer,
-          media: this.files.mediaForTransfer(
-            this.chat.accountId(),
-            transfer.offer.transferId,
-          ),
+          media: this.files.mediaForTransfer(this.chat.accountId(), transfer.offer.transferId),
           senderLabel: transfer.direction === 'outgoing' ? 'Tú' : transfer.offer.senderJid,
           outgoing: transfer.direction === 'outgoing',
           label: this.files.label(transfer.state, transfer.endReason, transfer.direction),
           progressLabel: this.files.label(transfer.state, transfer.endReason, transfer.direction),
         }));
       const activeTransferIds = new Set(files.map((item) => item.transfer.offer.transferId));
-      const timelineMedia = this.chat.timelineItems()
-        .filter((item): item is Extract<HistoryTimelineItem, { kind: 'image' }> => item.kind === 'image')
+      const timelineMedia = this.chat
+        .timelineItems()
+        .filter(
+          (item): item is Extract<HistoryTimelineItem, { kind: 'image' }> => item.kind === 'image',
+        )
         .map((item) => item.media);
       const persistedImages = this.chat.timelineSupported() ? timelineMedia : [];
       const liveMedia = this.files.liveMedia();
       const historicalImages: ConversationTimelineItem[] = [...persistedImages, ...liveMedia]
-        .filter((media, index, all) => all.findIndex((candidate) => candidate.mediaId === media.mediaId) === index)
+        .filter(
+          (media, index, all) =>
+            all.findIndex((candidate) => candidate.mediaId === media.mediaId) === index,
+        )
         .filter(
           (media) =>
             media.accountId === this.chat.accountId() &&
@@ -455,7 +487,9 @@ export class App {
         }));
       const historicalFiles: ConversationTimelineItem[] = this.chat
         .timelineItems()
-        .filter((item): item is Extract<HistoryTimelineItem, { kind: 'file' }> => item.kind === 'file')
+        .filter(
+          (item): item is Extract<HistoryTimelineItem, { kind: 'file' }> => item.kind === 'file',
+        )
         .map((item) => item.file)
         .filter(
           (file) =>
@@ -474,12 +508,17 @@ export class App {
           label: this.fileHistoryLabel(file),
           progressLabel: this.fileHistoryLabel(file),
         }));
-      const stickers: ConversationTimelineItem[] = this.chat.timelineItems()
-        .filter((item): item is Extract<HistoryTimelineItem, { kind: 'sticker' }> => item.kind === 'sticker')
+      const stickers: ConversationTimelineItem[] = this.chat
+        .timelineItems()
+        .filter(
+          (item): item is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
+            item.kind === 'sticker',
+        )
         .map((item) => item.sticker)
-        .filter((sticker) =>
-          sticker.accountId === this.chat.accountId() &&
-          this.bareJid(sticker.conversationId) === this.bareJid(this.selectedJid()),
+        .filter(
+          (sticker) =>
+            sticker.accountId === this.chat.accountId() &&
+            this.bareJid(sticker.conversationId) === this.bareJid(this.selectedJid()),
         )
         .map((sticker) => ({
           kind: 'sticker' as const,
@@ -565,6 +604,7 @@ export class App {
   }));
   @ViewChild(LoginPanelComponent) private loginPanel?: LoginPanelComponent;
   @ViewChild(ConversationViewComponent) private conversationView?: ConversationViewComponent;
+  @ViewChild(NewMessageDialogComponent) private newMessageDialog?: NewMessageDialogComponent;
   @ViewChild(SidebarComponent) private sidebar?: SidebarComponent;
 
   constructor() {
@@ -898,6 +938,7 @@ export class App {
       accountId: this.chat.accountId(),
       jid: this.bareJid(contact.jid),
     });
+    this.refreshMessageSearchForSelection();
     void this.scrollAfterConversationLoad(contact.jid);
   }
   protected useJid(): void {
@@ -917,6 +958,7 @@ export class App {
       this.selectedContact.set(undefined);
       this.conversationVisibility.reveal(this.chat.accountId(), 'direct', jid);
       this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid });
+      this.refreshMessageSearchForSelection();
       void this.scrollAfterConversationLoad(jid);
     } else if (jidInput.includes('@')) {
       this.newMessageLocalError.set('Introduce un JID XMPP completo y válido.');
@@ -965,10 +1007,12 @@ export class App {
   }
 
   protected async loadSticker(refId: string): Promise<void> {
-    const item = this.chat.timelineItems().find(
-      (candidate): candidate is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
-        candidate.kind === 'sticker' && candidate.sticker.refId === refId,
-    );
+    const item = this.chat
+      .timelineItems()
+      .find(
+        (candidate): candidate is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
+          candidate.kind === 'sticker' && candidate.sticker.refId === refId,
+      );
     if (!item) return;
     const result = await this.stickerMessages.load(item.sticker);
     if (result.ok) this.chat.upsertStickerMessage(result.value);
@@ -976,15 +1020,21 @@ export class App {
   }
 
   protected async saveSticker(refId: string): Promise<void> {
-    const item = this.chat.timelineItems().find(
-      (candidate): candidate is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
-        candidate.kind === 'sticker' && candidate.sticker.refId === refId,
-    );
+    const item = this.chat
+      .timelineItems()
+      .find(
+        (candidate): candidate is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
+          candidate.kind === 'sticker' && candidate.sticker.refId === refId,
+      );
     if (!item) return;
     const result = await this.stickerMessages.save(item.sticker);
     if (result.ok) this.chat.upsertStickerMessage(result.value);
     else {
-      this.chat.upsertStickerMessage({ ...item.sticker, errorCode: 'STORAGE_FAILED', updatedAt: new Date().toISOString() });
+      this.chat.upsertStickerMessage({
+        ...item.sticker,
+        errorCode: 'STORAGE_FAILED',
+        updatedAt: new Date().toISOString(),
+      });
       this.chat.error.set('No se pudo guardar el sticker en Mis stickers.');
     }
   }
@@ -1031,9 +1081,7 @@ export class App {
     const allJids = this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid));
     const selected = this.broadcastSelectedJids();
     const allSelected = allJids.length > 0 && allJids.every((jid) => selected.has(jid));
-    this.broadcastSelectedJids.set(
-      allSelected ? new Set<string>() : new Set(allJids),
-    );
+    this.broadcastSelectedJids.set(allSelected ? new Set<string>() : new Set(allJids));
     this.broadcastError.set(null);
   }
 
@@ -1041,7 +1089,9 @@ export class App {
     if (this.broadcastBusy()) return;
     const mode = retryAttempt?.mode ?? this.broadcastMode();
     const body = (retryAttempt?.body ?? this.broadcastBody()).trim();
-    const currentJids = new Set(this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid)));
+    const currentJids = new Set(
+      this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid)),
+    );
     const recipientJids = [...this.broadcastSelectedJids()].filter((jid) => currentJids.has(jid));
     if (!body) {
       this.broadcastError.set('Escribe un mensaje antes de difundirlo.');
@@ -1106,6 +1156,58 @@ export class App {
   protected draftChanged(value: string): void {
     this.draft.set(value);
     void this.chat.updateTypingState(this.selectedJid(), value);
+  }
+  protected searchMessages(query: string): void {
+    this.messageSearchQuery.set(query);
+    if (this.messageSearchTimer) clearTimeout(this.messageSearchTimer);
+    this.messageSearchTimer = setTimeout(() => {
+      void this.runMessageSearch();
+    }, 180);
+  }
+  protected changeMessageSearchScope(scope: 'all' | 'conversation'): void {
+    this.messageSearchScope.set(scope);
+    void this.runMessageSearch();
+  }
+  protected loadMoreMessageSearch(): void {
+    void this.chat.searchMessages(
+      this.messageSearchQuery(),
+      this.currentMessageSearchScope(),
+      true,
+    );
+  }
+  protected async selectMessageSearchHit(hit: MessageSearchHit): Promise<void> {
+    if (hit.accountId !== this.chat.accountId()) return;
+    const contact = this.chat
+      .contacts()
+      .find((item) => this.bareJid(item.jid) === this.bareJid(hit.conversationId)) || {
+      jid: hit.conversationId,
+      name: hit.conversationId,
+      groups: [],
+      source: 'conversation' as const,
+    };
+    this.selectedContact.set(contact);
+    this.conversationVisibility.reveal(this.chat.accountId(), 'direct', hit.conversationId);
+    this.conversationSelection.set({
+      kind: 'direct',
+      accountId: hit.accountId,
+      jid: this.bareJid(hit.conversationId),
+    });
+    this.refreshMessageSearchForSelection();
+    await this.chat.revealSearchHit(hit);
+    this.conversationView?.scrollToMessage(hit.messageId);
+  }
+  private currentMessageSearchScope():
+    { readonly kind: 'all' } | { readonly kind: 'conversation'; readonly conversationId: string } {
+    return this.messageSearchScope() === 'all' || !this.selectedJid()
+      ? { kind: 'all' }
+      : { kind: 'conversation', conversationId: this.bareJid(this.selectedJid()) };
+  }
+  private runMessageSearch(): Promise<void> {
+    return this.chat.searchMessages(this.messageSearchQuery(), this.currentMessageSearchScope());
+  }
+  private refreshMessageSearchForSelection(): void {
+    if (this.messageSearchScope() === 'conversation' && this.messageSearchQuery().trim())
+      void this.runMessageSearch();
   }
   protected typingFocus(): void {
     void this.chat.setTypingActivity(this.selectedJid(), 'active');
@@ -1211,6 +1313,7 @@ export class App {
     this.newMessageSearch.set('');
     this.newMessageLocalError.set(null);
     this.newMessageOpen.set(true);
+    queueMicrotask(() => requestAnimationFrame(() => this.newMessageDialog?.focusSearch()));
   }
   protected closeNewMessageDialog(): void {
     this.newMessageOpen.set(false);
@@ -1225,6 +1328,15 @@ export class App {
     this.preferencesError.set(null);
     this.preferencesSaveState.set('idle');
     this.preferencesOpen.set(true);
+  }
+  protected checkForUpdates(): void {
+    void this.updates.check();
+  }
+  protected downloadUpdate(): void {
+    void this.updates.download();
+  }
+  protected installUpdate(): void {
+    void this.updates.install();
   }
   protected closePreferences(): void {
     this.preferencesOpen.set(false);
@@ -1380,6 +1492,25 @@ export class App {
 
   @HostListener('document:keydown', ['$event'])
   protected onDocumentKeydown(event: KeyboardEvent): void {
+    if (
+      event.ctrlKey &&
+      !event.metaKey &&
+      event.key.toLowerCase() === 'f' &&
+      !event.defaultPrevented &&
+      !event.isComposing
+    ) {
+      if (
+        this.certificateRequest() ||
+        this.presenceOpen() ||
+        this.preferencesOpen() ||
+        this.broadcastOpen()
+      )
+        return;
+      event.preventDefault();
+      if (this.newMessageOpen()) this.newMessageDialog?.focusSearch();
+      else this.openNewMessageDialog();
+      return;
+    }
     if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
     if (this.theme.editorOpen()) {
       event.preventDefault();
