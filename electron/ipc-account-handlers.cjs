@@ -38,9 +38,22 @@ function registerAccountHandlers({
           input.credentialRef !== `account:${input.accountId}`))
     )
       throw new Error('INVALID_INPUT');
-    getRuntime().secrets.put(input.credentialRef, input.secret, {
-      remember: input.remember !== false,
-    });
+    try {
+      getRuntime().secrets.put(input.credentialRef, input.secret, {
+        remember: input.remember !== false,
+      });
+    } catch {
+      return {
+        ok: false,
+        version: 1,
+        error: {
+          code: 'STORAGE_FAILED',
+          retryable: false,
+          requestId: requestId(event, input),
+          message: 'No fue posible acceder al almacenamiento seguro.',
+        },
+      };
+    }
     return { ok: true, value: { stored: true }, version: 1, requestId: requestId(event, input) };
   });
   ipcMain.handle('account.connect', async (event, input) => {
@@ -131,11 +144,33 @@ function registerAccountHandlers({
       historySecurity.completeConnection(event.sender.id, connectionToken, input.accountId);
       return { ok: true, value: state, version: 1, requestId: connectionRequest };
     } catch (error) {
+      const diagnosticCodes = new Set([
+        'CERTIFICATE_REJECTED',
+        'CERTIFICATE_DECISION_TIMEOUT',
+        'CERTIFICATE_INVALID',
+        'TRANSPORT_INCOMPATIBLE',
+        'STARTTLS_UNAVAILABLE',
+        'TLS_NEGOTIATION_FAILED',
+        'SERVER_UNREACHABLE',
+        'AUTH_FAILED',
+        'INVALID_ENDPOINT',
+        'INVALID_DOMAIN',
+        'INVALID_DNS_RESPONSE',
+        'SERVICE_UNAVAILABLE',
+        'DNS_TIMEOUT',
+        'INVALID_INPUT',
+        'TRANSPORT_FAILED',
+      ]);
+      const diagnosticCode = [error?.condition, error?.code, error?.message].find(
+        (value) => typeof value === 'string' && diagnosticCodes.has(value),
+      );
       console.error('[XMPP-CONNECT-FAILED]', {
         transport: input?.endpoint?.transport,
         port: input?.endpoint?.port,
-        phase: error?.phase || 'connect',
-        code: error?.code || error?.message || 'TRANSPORT_FAILED',
+        phase: 'connect',
+        // Never log arbitrary error messages: a third-party error must not be
+        // able to place credentials or SASL material in application logs.
+        code: diagnosticCode || 'UNCLASSIFIED',
       });
       return connectionError(error, connectionRequest);
     } finally {

@@ -169,11 +169,19 @@ function createIpcHelpers({
       'SERVICE_UNAVAILABLE',
       'DNS_TIMEOUT',
       'INVALID_INPUT',
+      'TRANSPORT_FAILED',
+      'INTERNAL',
     ]);
-    const rawCode = error?.code || error?.message;
+    // @xmpp/error keeps the XMPP condition separate from a message that may
+    // include server-provided text (for example, "not-authorized - ...").
+    // Prefer the typed condition so authentication failures are not classified
+    // as transport failures merely because the server added explanatory text.
+    const rawCode = error?.condition || error?.code || error?.message;
     const code =
       error?.message === 'secret_unavailable' ||
-      error?.message === 'certificate_storage_unavailable'
+      error?.code === 'secret_unavailable' ||
+      error?.message === 'certificate_storage_unavailable' ||
+      error?.code === 'certificate_storage_unavailable'
         ? 'STORAGE_FAILED'
         : rawCode === 'TLS_POLICY'
           ? 'UNSUPPORTED'
@@ -190,7 +198,7 @@ function createIpcHelpers({
                 ? 'TLS_NEGOTIATION_FAILED'
                 : knownCodes.has(rawCode)
                   ? rawCode
-                  : 'TRANSPORT_FAILED';
+                  : 'INTERNAL';
     const messages = {
       CERTIFICATE_REJECTED: 'La conexión fue cancelada porque no se aceptó el certificado.',
       CERTIFICATE_INVALID:
@@ -208,6 +216,7 @@ function createIpcHelpers({
       SERVICE_UNAVAILABLE: 'El dominio XMPP rechazó el servicio solicitado.',
       DNS_TIMEOUT: 'El descubrimiento del servidor excedió el tiempo límite.',
       INVALID_INPUT: 'La solicitud de conexión no es válida.',
+      INTERNAL: 'No fue posible completar el inicio de sesión por un error interno controlado.',
     };
     return {
       ok: false,
