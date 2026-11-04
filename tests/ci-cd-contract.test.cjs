@@ -28,22 +28,24 @@ test('manual build workflow never publishes and has no write permission', () => 
   assert.match(workflow, /SHA256SUMS/);
 });
 
-test('release workflow requires actor, stable version, protected tag and environment', () => {
+test('release workflow derives the tag from package version and requires protection', () => {
   const workflow = read('.github/workflows/publish-release.yml');
+  const packageJson = JSON.parse(read('package.json'));
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /^\s+(push|pull_request):/m);
   assert.match(workflow, /github\.actor == 'edarkea'/);
   assert.match(workflow, /ATOMIC_RELEASE_PUBLISHERS/);
   assert.match(workflow, /needs: validate/);
-  assert.match(workflow, /checked_sha=/);
-  assert.match(workflow, /test "\$checked_sha" = "\$tag_sha"/);
-  assert.match(workflow, /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/);
+  assert.match(workflow, /Read package version/);
+  assert.match(workflow, /steps\.metadata\.outputs\.version/);
+  assert.match(workflow, /git tag --annotate "\$RELEASE_TAG" "\$RELEASE_SHA"/);
+  assert.match(workflow, /git push origin "\$RELEASE_TAG"/);
   assert.match(workflow, /npm audit --audit-level=high/);
   assert.match(workflow, /package\.json.*version|packageVersion/);
   assert.match(workflow, /environment:\s*\n\s+name: production-release/);
   assert.match(workflow, /permissions:\s*\n\s+contents: write/);
   assert.match(workflow, /--verify-tag/);
-  assert.doesNotMatch(workflow, /if \('\$\{\{ inputs\./);
-  assert.doesNotMatch(workflow, /gh release (view|create) "\$\{\{ inputs\./);
-  assert.doesNotMatch(workflow, /npm version|git tag /);
+  assert.doesNotMatch(workflow, /inputs\.(version|tag|ref)/);
+  assert.doesNotMatch(workflow, /tag_sha/);
+  assert.equal(packageJson.version, '0.0.1');
 });

@@ -2,26 +2,12 @@ name: Publish release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: Stable semver without the v prefix, for example 1.2.3
-        required: true
-        type: string
-      tag:
-        description: Existing protected tag linked to the approved commit, for example v1.2.3
-        required: true
-        type: string
-      ref:
-        description: Branch or commit to build; it must be main or the approved tag
-        required: true
-        default: main
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-release-${{ inputs.tag }}
+  group: publish-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -29,31 +15,33 @@ jobs:
     if: github.actor == 'edarkea' || contains(format(',{0},', vars.ATOMIC_RELEASE_PUBLISHERS), format(',{0},', github.actor))
     runs-on: ubuntu-22.04
     timeout-minutes: 20
-    env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: ${{ inputs.tag }}
-      RELEASE_REF: ${{ inputs.ref }}
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      sha: ${{ steps.metadata.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: main
           fetch-depth: 0
-      - name: Verify approved release commit and metadata
+      - name: Read package version and verify main
+        id: metadata
         run: |
           set -euo pipefail
-          case "$RELEASE_VERSION" in
-            (''|*[!0-9.]*|*.*.*.*|.*|*.) exit 1 ;;
-          esac
-          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [[ "$RELEASE_TAG" == "v$RELEASE_VERSION" ]]
-          [[ "$RELEASE_REF" == main || "$RELEASE_REF" == "$RELEASE_TAG" ]]
-          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
           git fetch origin main --tags
-          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
           checked_sha="$(git rev-parse HEAD)"
-          test -n "$tag_sha"
-          test "$checked_sha" = "$tag_sha"
-          git merge-base --is-ancestor "$tag_sha" origin/main
+          main_sha="$(git rev-parse origin/main)"
+          test "$checked_sha" = "$main_sha"
+          version="$(node -p "require('./package.json').version")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="v$version"
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null || git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "release tag $tag already exists" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$checked_sha" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -74,32 +62,22 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 40
     env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: ${{ inputs.tag }}
-      RELEASE_REF: ${{ inputs.ref }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.validate.outputs.sha }}
           fetch-depth: 0
-      - name: Verify stable version and approved commit
+      - name: Verify package version and approved commit
         shell: pwsh
         run: |
-          $releaseVersion = $env:RELEASE_VERSION
-          $releaseTag = $env:RELEASE_TAG
-          $releaseRef = $env:RELEASE_REF
-          if ($releaseVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'version must be stable semver' }
-          if ($releaseTag -ne "v$releaseVersion") { throw 'tag must equal v<version>' }
-          $packageVersion = node -p "require('./package.json').version"
-          if ($packageVersion -ne $releaseVersion) { throw "package.json version $packageVersion does not match input" }
-          if ($releaseRef -ne 'main' -and $releaseRef -ne $releaseTag) { throw 'ref must be main or the approved tag' }
-          git fetch origin main --tags
-          $tagSha = (git rev-list -n 1 "refs/tags/$releaseTag").Trim()
           $checkedSha = (git rev-parse HEAD).Trim()
-          if ([string]::IsNullOrWhiteSpace($tagSha) -or $checkedSha -ne $tagSha) { throw 'checked out commit must exactly match the approved tag' }
-          $mainSha = git rev-parse origin/main
-          git merge-base --is-ancestor $tagSha $mainSha
-          if ($LASTEXITCODE -ne 0) { throw 'approved tag must point to a commit on main' }
+          if ($checkedSha -ne $env:RELEASE_SHA) { throw 'checked out commit differs from the approved main commit' }
+          $packageVersion = node -p "require('./package.json').version"
+          if ($packageVersion -ne $env:RELEASE_VERSION) { throw "package.json version $packageVersion does not match the release version" }
+          if ($env:RELEASE_TAG -ne "v$packageVersion") { throw 'release tag must be v<package.json.version>' }
       - run: npm ci
       - run: npx electron-builder install-app-deps
       - run: npm run build
@@ -113,7 +91,7 @@ jobs:
             Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ inputs.version }}-windows-x64
+          name: release-${{ needs.validate.outputs.version }}-windows-x64
           path: release/*
           if-no-files-found: error
           retention-days: 3
@@ -124,27 +102,22 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: ${{ inputs.tag }}
-      RELEASE_REF: ${{ inputs.ref }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.validate.outputs.sha }}
           fetch-depth: 0
-      - name: Verify stable version and approved commit
+      - name: Verify package version and approved commit
         run: |
           set -euo pipefail
-          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          test "$RELEASE_TAG" = "v$RELEASE_VERSION"
-          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
-          test "$RELEASE_REF" = main || test "$RELEASE_REF" = "$RELEASE_TAG"
-          git fetch origin main --tags
-          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
           checked_sha="$(git rev-parse HEAD)"
-          test -n "$tag_sha"
-          test "$checked_sha" = "$tag_sha"
-          git merge-base --is-ancestor "$tag_sha" origin/main
+          test "$checked_sha" = "$RELEASE_SHA"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$package_version" = "$RELEASE_VERSION"
+          test "$RELEASE_TAG" = "v$package_version"
       - run: npm ci
       - run: npx electron-builder install-app-deps
       - run: npm run build
@@ -154,7 +127,7 @@ jobs:
           find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | xargs sha256sum > release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ inputs.version }}-linux-x64
+          name: release-${{ needs.validate.outputs.version }}-linux-x64
           path: release/*
           if-no-files-found: error
           retention-days: 3
@@ -165,9 +138,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     env:
-      RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: ${{ inputs.tag }}
-      RELEASE_REF: ${{ inputs.ref }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
     environment:
       name: production-release
     permissions:
@@ -175,39 +148,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.validate.outputs.sha }}
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          name: release-${{ inputs.version }}-windows-x64
+          name: release-${{ needs.validate.outputs.version }}-windows-x64
           path: release/windows
       - uses: actions/download-artifact@v4
         with:
-          name: release-${{ inputs.version }}-linux-x64
+          name: release-${{ needs.validate.outputs.version }}-linux-x64
           path: release/linux
       - name: Verify release metadata and combine checksums
         run: |
           set -euo pipefail
-          git fetch origin main --tags
-          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
           checked_sha="$(git rev-parse HEAD)"
-          test -n "$tag_sha"
-          test "$checked_sha" = "$tag_sha"
-          git merge-base --is-ancestor "$tag_sha" origin/main
+          test "$checked_sha" = "$RELEASE_SHA"
+          test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
+          test "$RELEASE_TAG" = "v$RELEASE_VERSION"
           test -f release/windows/latest.yml
           test -f release/linux/latest-linux.yml
           test -f release/windows/SHA256SUMS.txt
           test -f release/linux/SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'release already exists; stable releases are never overwritten' >&2
+            exit 1
+          fi
           cp release/windows/SHA256SUMS.txt release/SHA256SUMS-windows-x64.txt
           cp release/linux/SHA256SUMS.txt release/SHA256SUMS-linux-x64.txt
           find release/windows release/linux -maxdepth 1 -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.yml' \) -print0 |
             sort -z | xargs -0 sha256sum > "release/SHA256SUMS-${RELEASE_VERSION}.txt"
           cp release/windows/* release/linux/* release/
           rm -rf release/windows release/linux
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'release already exists; stable releases are never overwritten' >&2
+      - name: Create the release tag from package.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG" >/dev/null || git ls-remote --exit-code origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release tag $RELEASE_TAG already exists" >&2
             exit 1
           fi
+          git tag --annotate "$RELEASE_TAG" "$RELEASE_SHA" --message "Atomic Chat $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
       - name: Create the approved stable release
         env:
           GH_TOKEN: ${{ github.token }}
