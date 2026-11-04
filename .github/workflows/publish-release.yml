@@ -167,27 +167,151 @@ jobs:
         with:
           name: release-${{ needs.validate.outputs.version }}-linux-x64
           path: release/linux
-      - name: Verify release metadata and combine checksums
+      - name: Verify manifests and stage release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          export LC_ALL=C
           checked_sha="$(git rev-parse HEAD)"
           test "$checked_sha" = "$RELEASE_SHA"
           test "$(node -p "require('./package.json').version")" = "$RELEASE_VERSION"
           test "$RELEASE_TAG" = "v$RELEASE_VERSION"
-          test -f release/windows/latest.yml
-          test -f release/linux/latest-linux.yml
-          test -f release/windows/SHA256SUMS.txt
-          test -f release/linux/SHA256SUMS.txt
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'release already exists; stable releases are never overwritten' >&2
+          test -s release/windows/SHA256SUMS.txt
+          test -s release/linux/SHA256SUMS.txt
+          (cd release/windows && sha256sum -c SHA256SUMS.txt)
+          (cd release/linux && sha256sum -c SHA256SUMS.txt)
+
+          release_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          case "$release_status" in
+            200)
+              gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+              echo 'release already exists; stable releases are never overwritten' >&2
+              exit 1
+              ;;
+            404)
+              echo "release $RELEASE_TAG does not exist; continuing"
+              ;;
+            401|403)
+              echo "GitHub API authentication/authorization failed with HTTP $release_status" >&2
+              exit 1
+              ;;
+            *)
+              echo "GitHub API check failed with unexpected HTTP $release_status" >&2
+              exit 1
+              ;;
+          esac
+
+          rm -rf release/publish
+          mkdir -p release/publish
+          windows_artifacts=()
+          linux_artifacts=()
+
+          copy_one() {
+            local source="$1"
+            local platform="$2"
+            local base
+            test -f "$source"
+            base="$(basename -- "$source")"
+            if [[ -e "release/publish/$base" ]]; then
+              echo "artifact name collision: $base" >&2
+              exit 1
+            fi
+            cp -- "$source" release/publish/
+            if [[ "$platform" == windows ]]; then
+              windows_artifacts+=("$base")
+            else
+              linux_artifacts+=("$base")
+            fi
+          }
+
+          copy_pattern() {
+            local source_dir="$1"
+            local pattern="$2"
+            local platform="$3"
+            local file
+            local -a matches=()
+            mapfile -d '' -t matches < <(find "$source_dir" -maxdepth 1 -type f -name "$pattern" -print0 | sort -z)
+            if ((${#matches[@]} == 0)); then
+              echo "no $pattern artifact found in $source_dir" >&2
+              exit 1
+            fi
+            for file in "${matches[@]}"; do
+              copy_one "$file" "$platform"
+            done
+          }
+
+          copy_one release/windows/latest.yml windows
+          copy_pattern release/windows '*.exe' windows
+          copy_pattern release/windows '*.blockmap' windows
+          copy_one release/linux/latest-linux.yml linux
+          copy_pattern release/linux '*.deb' linux
+          copy_pattern release/linux '*.AppImage' linux
+          copy_pattern release/linux '*.blockmap' linux
+
+          if find release/publish -maxdepth 1 \( -name 'builder-debug.yml' -o -name 'win-unpacked' -o -name 'linux-unpacked' \) -print -quit | grep -q .; then
+            echo 'debug files or unpacked directories must not enter release staging' >&2
             exit 1
           fi
-          cp release/windows/SHA256SUMS.txt release/SHA256SUMS-windows-x64.txt
-          cp release/linux/SHA256SUMS.txt release/SHA256SUMS-linux-x64.txt
-          find release/windows release/linux -maxdepth 1 -type f \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.yml' \) -print0 |
-            sort -z | xargs -0 sha256sum > "release/SHA256SUMS-${RELEASE_VERSION}.txt"
-          cp release/windows/* release/linux/* release/
-          rm -rf release/windows release/linux
+
+          verify_update_manifest() {
+            local manifest="$1"
+            local reference
+            local references=0
+            while IFS= read -r reference; do
+              reference="${reference%$'\r'}"
+              [[ -n "$reference" ]] || continue
+              references=$((references + 1))
+              if [[ "$reference" == /* || "$reference" == *'/'* || "$reference" == .* ]]; then
+                echo "manifest contains an invalid staged path: $reference" >&2
+                exit 1
+              fi
+              test -f "release/publish/$reference"
+            done < <(grep -E '^[[:space:]]*(url|path):[[:space:]]*' "$manifest" | sed -E 's/^[[:space:]]*(url|path):[[:space:]]*//; s/^"//; s/"$//')
+            if ((references == 0)); then
+              echo "manifest has no artifact references: $manifest" >&2
+              exit 1
+            fi
+          }
+
+          verify_update_manifest release/publish/latest.yml
+          verify_update_manifest release/publish/latest-linux.yml
+
+          write_manifest() {
+            local manifest_name="$1"
+            shift
+            local -a files=("$@")
+            if ((${#files[@]} == 0)); then
+              echo "cannot create empty manifest: $manifest_name" >&2
+              exit 1
+            fi
+            (
+              cd release/publish
+              printf '%s\0' "${files[@]}" | sort -z | xargs -0 -r sha256sum > "$manifest_name"
+              test -s "$manifest_name"
+              sha256sum -c "$manifest_name"
+            )
+          }
+
+          write_manifest SHA256SUMS-windows-x64.txt "${windows_artifacts[@]}"
+          write_manifest SHA256SUMS-linux-x64.txt "${linux_artifacts[@]}"
+
+          global_manifest="SHA256SUMS-${RELEASE_VERSION}.txt"
+          (
+            cd release/publish
+            mapfile -d '' -t final_artifacts < <(find . -maxdepth 1 -type f ! -name "$global_manifest" -printf '%f\0' | sort -z)
+            if ((${#final_artifacts[@]} == 0)); then
+              echo 'final release staging contains no artifacts' >&2
+              exit 1
+            fi
+            printf '%s\0' "${final_artifacts[@]}" | xargs -0 -r sha256sum > "$global_manifest"
+            test -s "$global_manifest"
+            sha256sum -c "$global_manifest"
+          )
       - name: Create the release tag from package.json
         env:
           GH_TOKEN: ${{ github.token }}
@@ -209,7 +333,12 @@ jobs:
           set -euo pipefail
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
           build_sha="$(git rev-parse HEAD)"
-          gh release create "$RELEASE_TAG" release/* \
+          mapfile -d '' -t release_files < <(find release/publish -maxdepth 1 -type f -print0 | LC_ALL=C sort -z)
+          if ((${#release_files[@]} == 0)); then
+            echo 'release staging is empty' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" "${release_files[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Atomic Chat $RELEASE_VERSION" \
