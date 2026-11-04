@@ -44,23 +44,18 @@
   text-align: center;
 }
 
-.update-action {
-  background: var(--atomic-green);
-  border: 1px solid var(--atomic-green);
-  border-radius: 4px;
-  color: var(--atomic-bg);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  margin-left: auto;
-  padding: 6px 10px;
+.app-version {
+  color: var(--atomic-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.update-status {
-  color: var(--atomic-text-secondary);
-  font-size: 12px;
-  margin-left: auto;
+.app-version::before {
+  color: var(--atomic-border);
+  content: '·';
+  margin-right: var(--atomic-space-2);
 }
 
 .workspace {

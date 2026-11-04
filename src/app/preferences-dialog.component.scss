@@ -119,6 +119,36 @@
   accent-color: var(--atomic-green);
   flex: 0 0 auto;
 }
+.software-update {
+  background: var(--atomic-surface-soft);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+}
+.software-update-heading {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.software-update-heading > span {
+  display: grid;
+  gap: 5px;
+}
+.software-update-heading strong {
+  color: var(--atomic-text);
+  font-size: 13px;
+}
+.software-update-heading small {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+}
+.update-button {
+  justify-self: start;
+}
 .preference-field {
   display: grid;
   gap: 6px;

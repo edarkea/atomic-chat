@@ -243,6 +243,9 @@ export class App {
     downloadDirectorySelecting: this.downloadDirectorySelecting(),
     saveState: this.preferencesSaveState(),
     error: this.preferencesError(),
+    updateStatus: this.updates.status(),
+    updateBusy: this.updates.busy(),
+    updateError: this.updates.error(),
   }));
   protected readonly broadcastContacts = computed<ReadonlyArray<Contact>>(() => {
     const accountJid = bareBroadcastJid(this.chat.accountId());
@@ -1325,6 +1328,15 @@ export class App {
     this.preferencesError.set(null);
     this.preferencesSaveState.set('idle');
     this.preferencesOpen.set(true);
+  }
+  protected checkForUpdates(): void {
+    void this.updates.check();
+  }
+  protected downloadUpdate(): void {
+    void this.updates.download();
+  }
+  protected installUpdate(): void {
+    void this.updates.install();
   }
   protected closePreferences(): void {
     this.preferencesOpen.set(false);
