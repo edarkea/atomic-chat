@@ -226,7 +226,11 @@ jobs:
             echo "release tag $RELEASE_TAG already exists" >&2
             exit 1
           fi
-          git tag --annotate "$RELEASE_TAG" "$RELEASE_SHA" --message "Atomic Chat $RELEASE_TAG"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            tag --annotate "$RELEASE_TAG" "$RELEASE_SHA" --message "Atomic Chat $RELEASE_TAG"
+          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{}")" = "$RELEASE_SHA"
           git push origin "$RELEASE_TAG"
       - name: Create the approved stable release
         env:
