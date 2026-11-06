@@ -75,8 +75,22 @@ test('persists theme id and palette together while retaining preference scopes',
   ]);
 });
 
-test('rejects arbitrary CSS keys and non-hex values', () => {
+test('accepts common CSS color formats while rejecting arbitrary CSS values', () => {
   const { handlers } = setup();
+  const flexiblePalette = {
+    ...palette,
+    background: '#1234',
+    surface: '#11223344',
+    accent: 'rgb(114, 255, 139)',
+    focus: 'hsl(128 100% 86% / 80%)',
+  };
+  handlers.get('preferences.update')(
+    { sender: { id: 1 } },
+    {
+      accountId: 'account@example.invalid',
+      changes: { theme: 'custom', customTheme: flexiblePalette },
+    },
+  );
   assert.throws(
     () =>
       handlers.get('preferences.update')(
@@ -88,6 +102,17 @@ test('rejects arbitrary CSS keys and non-hex values', () => {
   assert.throws(
     () =>
       handlers.get('preferences.update')(
+        { sender: { id: 1 } },
+        {
+          accountId: 'account@example.invalid',
+          changes: { customTheme: { ...palette, accent: 'red; color: blue' } },
+        },
+      ),
+    /INVALID_INPUT/,
+  );
+  assert.throws(
+    () =>
+      setup().handlers.get('preferences.update')(
         { sender: { id: 1 } },
         { accountId: 'account@example.invalid', changes: { theme: 'custom' } },
       ),
@@ -102,6 +127,25 @@ test('rejects arbitrary CSS keys and non-hex values', () => {
         ),
       /INVALID_INPUT/,
     );
+});
+
+test('reset removes the saved custom palette from every preference scope', () => {
+  const { handlers, values } = setup();
+  handlers.get('preferences.update')(
+    { sender: { id: 1 } },
+    {
+      accountId: 'account@example.invalid',
+      changes: { theme: 'custom', customTheme: palette, autoLogin: true },
+    },
+  );
+
+  handlers.get('preferences.reset')({ sender: { id: 1 } }, { accountId: 'account@example.invalid' });
+
+  assert.equal(values.has('global:app'), false);
+  assert.equal(values.has('account:account@example.invalid'), false);
+  const restored = handlers.get('preferences.get')({ sender: { id: 1 } }, { accountId: '' });
+  assert.equal(restored.value.theme, 'atomic');
+  assert.equal(Object.hasOwn(restored.value, 'customTheme'), false);
 });
 
 test('accepts only the current Wasteland presets and switches only the active theme id', () => {

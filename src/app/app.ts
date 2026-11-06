@@ -1311,9 +1311,10 @@ export class App {
     this.preferencesSaveState.set('saving');
     this.preferencesError.set(null);
     const saved = await this.chat.resetPreferences();
-    this.theme.resetPreferences();
-    if (saved) this.preferencesSaveState.set('saved');
-    else {
+    if (saved) {
+      this.theme.resetPreferences();
+      this.preferencesSaveState.set('saved');
+    } else {
       this.preferencesSaveState.set('error');
       this.preferencesError.set(
         this.chat.error() || 'No fue posible restablecer las preferencias.',

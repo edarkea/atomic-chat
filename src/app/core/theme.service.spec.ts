@@ -109,14 +109,10 @@ describe('ThemeService', () => {
     });
   });
 
-  it('rejects invalid contrast and keeps the previous active theme after save errors', async () => {
+  it('keeps the previous active theme after save errors', async () => {
     const service = TestBed.inject(ThemeService);
     await service.initialize();
     service.openStudio();
-    service.setDraftColor('text', '#111111');
-    expect(await service.applyDraft()).toBe(false);
-    expect(service.validationError()).toContain('contraste');
-
     service.setDraftColor('text', validCustomPalette.text);
     const failure: Result<Partial<Preferences>> = {
       ok: false,
@@ -148,8 +144,35 @@ describe('ThemeService', () => {
 
     expect(service.themeId()).toBe('atomic');
     expect(service.activePalette()).toEqual(ATOMIC_THEME_PALETTE);
+    expect(stored.customTheme).toEqual(ATOMIC_THEME_PALETTE);
+    expect(preferences.update).toHaveBeenCalledWith({
+      accountId: '',
+      changes: { theme: 'atomic', customTheme: ATOMIC_THEME_PALETTE },
+    });
     expect(stored.notifications).toBe(false);
     expect(stored.autoLogin).toBe(true);
+  });
+
+  it('clears the in-memory custom theme when preferences are reset', async () => {
+    stored = {
+      theme: 'custom',
+      customTheme: validCustomPalette,
+      notifications: true,
+      autoAcceptFileTransfers: false,
+      autoLogin: false,
+      hideClosedConversations: false,
+      fileTransferTimeoutSeconds: 300,
+      downloadDirectory: '',
+    };
+    const service = TestBed.inject(ThemeService);
+    await service.initialize();
+
+    service.resetPreferences();
+
+    expect(service.themeId()).toBe('atomic');
+    expect(service.activePalette()).toEqual(ATOMIC_THEME_PALETTE);
+    expect(await service.selectTheme('custom')).toBe(false);
+    expect(service.editorOpen()).toBe(true);
   });
 
   it('switches the Wasteland presets without overwriting the saved custom palette', async () => {
@@ -286,5 +309,34 @@ describe('validateThemePalette', () => {
       valid: false,
       message: 'Completa todos los colores del tema.',
     });
+  });
+
+  it('accepts the strawberry custom palette without contrast thresholds', () => {
+    expect(
+      validateThemePalette({
+        background: '#FFF7FB',
+        surface: '#FFEAF3',
+        surfaceRaised: '#FFD5E8',
+        accent: '#D92D79',
+        text: '#49243B',
+        textSecondary: '#85576D',
+        border: '#EBAAC8',
+        incomingBubble: '#FFFFFF',
+        outgoingBubble: '#F7B9D5',
+        focus: '#E94C9E',
+      }),
+    ).toEqual({ valid: true });
+  });
+
+  it('accepts short, alpha and functional CSS colors', () => {
+    expect(
+      validateThemePalette({
+        ...ATOMIC_THEME_PALETTE,
+        background: '#1234',
+        surface: '#11223344',
+        accent: 'rgb(114, 255, 139)',
+        focus: 'hsl(128 100% 86% / 80%)',
+      }),
+    ).toEqual({ valid: true });
   });
 });

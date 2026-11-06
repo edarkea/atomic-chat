@@ -32,6 +32,17 @@ export class ThemeStudioComponent {
     return this.theme.draftPalette()[key];
   }
 
+  protected pickerColor(key: ThemeColorKey): string {
+    const value = this.color(key).trim();
+    if (/^#[0-9a-f]{6}$/i.test(value)) return value;
+    if (/^#[0-9a-f]{3,4}$/i.test(value)) {
+      const channels = value.slice(1, 4).split('').map((channel) => channel + channel);
+      return `#${channels.join('')}`;
+    }
+    if (/^#[0-9a-f]{8}$/i.test(value)) return value.slice(0, 7);
+    return '#000000';
+  }
+
   protected changeColor(key: ThemeColorKey, event: Event): void {
     const input = event.target;
     if (input instanceof HTMLInputElement) this.theme.setDraftColor(key, input.value);
