@@ -100,6 +100,18 @@ describe('ThemeService', () => {
     expect(await service.applyDraft()).toBe(true);
     expect(service.themeId()).toBe('custom');
     expect(service.activePalette()).toEqual(validCustomPalette);
+    expect(document.documentElement.style.getPropertyValue('--atomic-bg')).toBe(
+      validCustomPalette.background,
+    );
+    expect(document.documentElement.style.getPropertyValue('--atomic-surface')).toBe(
+      validCustomPalette.surface,
+    );
+    expect(document.documentElement.style.getPropertyValue('--atomic-surface-raised')).toBe(
+      validCustomPalette.surfaceRaised,
+    );
+    expect(document.documentElement.style.getPropertyValue('--atomic-border')).toBe(
+      validCustomPalette.border,
+    );
     expect(document.documentElement.style.getPropertyValue('--atomic-bubble-outgoing')).toBe(
       validCustomPalette.outgoingBubble,
     );

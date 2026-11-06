@@ -53,9 +53,9 @@
     aria-live="polite"
   >
     @if (!isSelected()) {
-      <div class="reference-message incoming">Selecciona una conversación para comenzar.</div>
+      <div class="reference-message empty-state">Selecciona una conversación para comenzar.</div>
     } @else if (!timeline().length) {
-      <div class="reference-message incoming">No hay mensajes todavía.</div>
+      <div class="reference-message empty-state">No hay mensajes todavía.</div>
     }
     @for (item of timeline(); track item.id) {
       @if (hasDayChanged($index, item.sortAt)) { <div class="day-separator" role="separator"><span>{{ dayLabel(item.sortAt) }}</span></div> }

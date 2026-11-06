@@ -291,8 +291,10 @@ select:focus-visible {
   max-width: min(75%, 520px);
   padding: 11px 13px;
 }
-.reference-message.incoming {
-  background: var(--atomic-bubble-incoming);
+.reference-message.empty-state {
+  background: var(--atomic-surface-raised);
+  border: 1px solid var(--atomic-border);
+  color: var(--atomic-text-secondary);
   margin-bottom: 8px;
 }
 
