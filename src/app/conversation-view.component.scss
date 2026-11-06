@@ -13,23 +13,50 @@
   min-width: 0;
   position: relative;
 }
-.conversation-search-toggle {
+.conversation-profile {
+  align-items: center;
   background: transparent;
-  border: 0;
-  color: var(--atomic-text-secondary);
+  border: 1px solid transparent;
   cursor: pointer;
-  margin-left: auto;
-  min-height: 34px;
-  min-width: 34px;
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--atomic-space-3);
+  min-width: 0;
+  padding: 4px 6px;
+  text-align: left;
 }
-.conversation-search-toggle:hover, .conversation-search-toggle:focus-visible {
-  background: var(--atomic-surface-active);
-  color: var(--atomic-green);
+.conversation-profile-copy {
+  min-width: 0;
+}
+.conversation-profile:hover,
+.conversation-profile:focus-visible {
+  border-color: var(--atomic-border);
   outline: 2px solid var(--atomic-focus);
 }
-.conversation-search-toggle:disabled {
+.conversation-profile:disabled {
   cursor: default;
-  opacity: 0.35;
+  opacity: 0.65;
+}
+.conversation-profile:not(:disabled):hover strong,
+.conversation-profile:not(:disabled):focus-visible strong {
+  color: var(--atomic-green);
+}
+.conversation-profile:not(:disabled):hover,
+.conversation-profile:not(:disabled):focus-visible {
+  color: var(--atomic-green);
+}
+.conversation-profile-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-profile-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-profile:focus-visible {
+  background: var(--atomic-surface-active);
 }
 .day-separator { align-items: center; color: var(--atomic-text-muted); display: flex; font-size: 11px; gap: 8px; justify-content: center; margin: 10px 0; }
 .day-separator::before, .day-separator::after { background: var(--atomic-separator); content: ''; flex: 1; height: 1px; }

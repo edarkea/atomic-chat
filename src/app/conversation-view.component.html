@@ -6,15 +6,14 @@
   (drop)="onDrop($event)"
 >
   <header class="chat-header">
-    <span class="avatar header-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
-    <div>
-      <strong>{{
-        activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
-      }}</strong>
-      <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
-    </div>
-    <button class="conversation-search-toggle" type="button" aria-label="Buscar en mensajes" title="Buscar en mensajes" [disabled]="!isSelected()" (click)="toggleSearch()">
-      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-search" /></svg>
+    <button class="conversation-profile" type="button" aria-label="Buscar en mensajes" title="Buscar en mensajes" [attr.aria-expanded]="searchOpen()" [disabled]="!isSelected()" (click)="toggleSearch()">
+      <span class="avatar header-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
+      <span class="conversation-profile-copy">
+        <strong>{{
+          activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
+        }}</strong>
+        <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
+      </span>
     </button>
     <button
       class="conversation-close"
