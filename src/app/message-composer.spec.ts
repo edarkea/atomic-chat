@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
 import { clipboardFiles, insertTextAtSelection, MessageComposerComponent } from './message-composer.component';
 
 describe('composer height after sending', () => {
@@ -68,5 +69,93 @@ describe('clipboardFiles', () => {
       },
     } as unknown as ClipboardEvent;
     expect(clipboardFiles(event)).toEqual([file]);
+  });
+
+  it('deduplicates equivalent file representations from one clipboard event', () => {
+    const first = new File(['image'], 'capture.png', {
+      type: 'image/png',
+      lastModified: 1234,
+    });
+    const equivalent = new File(['image'], 'capture.png', {
+      type: 'image/png',
+      lastModified: 1234,
+    });
+    const event = {
+      clipboardData: {
+        files: [first],
+        items: [{ kind: 'file', getAsFile: () => equivalent }],
+      },
+    } as unknown as ClipboardEvent;
+
+    expect(clipboardFiles(event)).toEqual([first]);
+  });
+});
+
+describe('clipboard paste deduplication', () => {
+  function pasteEvent(file: File): ClipboardEvent {
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      configurable: true,
+      value: {
+        files: [file],
+        items: [{ kind: 'file', getAsFile: () => file }],
+      },
+    });
+    return event as ClipboardEvent;
+  }
+
+  it('ignores equivalent paste events for 800 ms and accepts them afterwards', () => {
+    const fixture = TestBed.createComponent(MessageComposerComponent);
+    fixture.componentRef.setInput('inputName', 'message');
+    fixture.componentRef.setInput('placeholder', 'Escribir mensaje…');
+    fixture.componentRef.setInput('draft', '');
+    fixture.detectChanges();
+    const emitted: ReadonlyArray<File>[] = [];
+    fixture.componentInstance.filesPasted.subscribe((files) => emitted.push(files));
+    const onPaste = (fixture.componentInstance as unknown as {
+      onPaste: (event: ClipboardEvent) => void;
+    }).onPaste.bind(fixture.componentInstance);
+    const now = vi.spyOn(Date, 'now');
+    const file = new File(['image'], 'capture.png', { type: 'image/png', lastModified: 1234 });
+
+    now.mockReturnValue(1000);
+    const first = pasteEvent(file);
+    onPaste(first);
+    now.mockReturnValue(1500);
+    const repeated = pasteEvent(
+      new File(['image'], 'capture.png', { type: 'image/png', lastModified: 1234 }),
+    );
+    onPaste(repeated);
+    now.mockReturnValue(1801);
+    const accepted = pasteEvent(
+      new File(['image'], 'capture.png', { type: 'image/png', lastModified: 1234 }),
+    );
+    onPaste(accepted);
+    now.mockRestore();
+
+    expect(emitted).toHaveLength(2);
+    expect(first.defaultPrevented).toBe(true);
+    expect(repeated.defaultPrevented).toBe(true);
+    expect(accepted.defaultPrevented).toBe(true);
+  });
+
+  it('does not block plain-text paste', () => {
+    const fixture = TestBed.createComponent(MessageComposerComponent);
+    fixture.componentRef.setInput('inputName', 'message');
+    fixture.componentRef.setInput('placeholder', 'Escribir mensaje…');
+    fixture.componentRef.setInput('draft', '');
+    fixture.detectChanges();
+    const onPaste = (fixture.componentInstance as unknown as {
+      onPaste: (event: ClipboardEvent) => void;
+    }).onPaste.bind(fixture.componentInstance);
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', {
+      configurable: true,
+      value: { files: [], items: [{ kind: 'string' }] },
+    });
+
+    onPaste(event as ClipboardEvent);
+
+    expect(event.defaultPrevented).toBe(false);
   });
 });

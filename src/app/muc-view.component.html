@@ -58,18 +58,23 @@
     }
   </div>
   <div class="muc-messages" aria-live="polite">
-    @for (message of messages(); track message.id) {
-      @if (hasDayChanged($index, message.receivedAt)) { <div class="day-separator" role="separator"><span>{{ dayLabel(message.receivedAt) }}</span></div> }
+    @for (display of displayMessages(); track display.item.id) {
+      @let message = display.item;
+      @if (display.daySeparator) { <div class="day-separator" role="separator"><span>{{ dayLabel(message.receivedAt) }}</span></div> }
       <app-message-item
         [sender]="senderLabel(message)"
         [body]="message.body.text"
         [outgoing]="isOutgoing(message)"
         [createdAt]="message.receivedAt"
         [receivedLocally]="true"
+        [showSender]="display.showHeader"
+        [showTime]="display.showHeader"
+        [timestampLabel]="display.timestampLabel"
+        [groupPosition]="display.position"
       />
     }
     @if (!messages().length) {
-      <p class="reference-message incoming">No hay mensajes todavía.</p>
+      <p class="reference-message empty-state">No hay mensajes todavía.</p>
     }
   </div>
   <app-message-composer

@@ -330,7 +330,13 @@ class FileTransferCoordinator {
       this.ownedTemporaries.add(temporary);
       record.handle = handle;
       record.state = 'accepted';
-      this.armTimer(record, 'open', 30000, 'timed_out', 'failed');
+      this.armTimer(
+        record,
+        'open',
+        this.timeoutMilliseconds(record, 30000),
+        'timed_out',
+        'failed',
+      );
       record.updatedAt = new Date().toISOString();
       this.emit(record);
       try {

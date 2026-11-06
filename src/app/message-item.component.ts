@@ -51,6 +51,10 @@ export class MessageItemComponent {
   readonly persistenceStatus = input<MessagePersistenceStatus>();
   readonly createdAt = input<string>();
   readonly receivedLocally = input(false);
+  readonly showSender = input(true);
+  readonly showTime = input(true);
+  readonly timestampLabel = input<string>();
+  readonly groupPosition = input<'single' | 'first' | 'middle' | 'last'>('single');
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
   private readonly externalLinks = inject<ExternalLinkPort>(EXTERNAL_LINK_PORT, { optional: true });
   protected time(value: string | undefined): string { return formatMessageTime(value); }

@@ -188,6 +188,7 @@ function createFileService(adapter) {
       const id = `file_${phase}_${crypto.randomUUID()}`;
       const response = await session.iqCaller.request(
         xml('iq', { type: 'set', id, to: record.offer.recipientJid }, child),
+        record.timeoutSeconds ? record.timeoutSeconds * 1000 : undefined,
       );
       adapter.assertSessionCurrent(
         accountId,

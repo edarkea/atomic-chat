@@ -75,6 +75,7 @@ test('uses the configured download directory without opening a destination promp
       return null;
     },
     selectDefaultDestination: dialogs.selectDefaultFileDestination,
+    getTimeoutSeconds: () => 180,
     scheduleTimeout: harness.scheduleTimeout,
     cancelTimeout: harness.cancelTimeout,
   });
@@ -86,6 +87,7 @@ test('uses the configured download directory without opening a destination promp
     await coordinator.accept('default-directory', 1);
     assert.equal(prompted, false);
     assert.match(coordinator.get('default-directory').destination, /Downloads/);
+    assert.equal(harness.timers[1].delay, 180000);
     await coordinator.cancel('default-directory');
   } finally {
     await fs.rm(root, { recursive: true, force: true });
