@@ -1,6 +1,6 @@
 import { formatMessageDate, formatMessageTime, messageDayKey } from './message-date-time';
 
-export const MESSAGE_GROUP_MAX_GAP_MS = 120_000;
+export const MESSAGE_GROUP_MAX_GAP_MS = 20_000;
 
 export type MessageGroupPosition = 'single' | 'first' | 'middle' | 'last';
 

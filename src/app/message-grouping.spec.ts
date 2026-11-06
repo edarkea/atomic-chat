@@ -32,7 +32,7 @@ const message = (idValue: string, createdAt: string, sender = 'alice', classific
 describe('message grouping', () => {
   it('groups consecutive messages from the same sender within two minutes', () => {
     const messages = Array.from({ length: 5 }, (_, index) =>
-      message(`m${index}`, `2026-06-11T14:${String(20 + index).padStart(2, '0')}:00Z`),
+      message(`m${index}`, `2026-06-11T14:20:${String(index * 4).padStart(2, '0')}Z`),
     );
     const groups = groupConsecutiveMessages(messages, metadata, id, sortAt);
     expect(groups).toHaveLength(1);
@@ -41,13 +41,13 @@ describe('message grouping', () => {
 
   it('starts a new group after the maximum gap', () => {
     const groups = groupConsecutiveMessages(
-      [message('a', '2026-06-11T14:20:00Z'), message('b', '2026-06-11T14:26:00Z')],
+      [message('a', '2026-06-11T14:20:00Z'), message('b', '2026-06-11T14:20:21Z')],
       metadata,
       id,
       sortAt,
     );
     expect(groups.map((group) => group.items)).toHaveLength(2);
-    expect(MESSAGE_GROUP_MAX_GAP_MS).toBe(120_000);
+    expect(MESSAGE_GROUP_MAX_GAP_MS).toBe(20_000);
   });
 
   it('does not group sender, day, classification or non-renderable boundaries', () => {
@@ -71,7 +71,7 @@ describe('message grouping', () => {
   });
 
   it('preserves item identity and exposes compact display positions', () => {
-    const messages = [message('a', '2026-06-11T14:20:00Z'), message('b', '2026-06-11T14:21:00Z'), message('c', '2026-06-11T14:22:00Z')];
+    const messages = [message('a', '2026-06-11T14:20:00Z'), message('b', '2026-06-11T14:20:10Z'), message('c', '2026-06-11T14:20:20Z')];
     const display = groupMessagesForDisplay(messages, metadata, id, sortAt);
     expect(display.map((entry) => entry.position)).toEqual(['first', 'middle', 'last']);
     expect(display[0].showHeader).toBe(true);

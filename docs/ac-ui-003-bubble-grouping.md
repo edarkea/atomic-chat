@@ -8,7 +8,7 @@ La agrupación es únicamente una transformación de presentación. `Message` y 
 | --- | --- | --- |
 | Remitente estable | dirección + JID bare en directos; occupant JID en MUC | `conversation-view.component.ts`, `muc-view.component.ts` |
 | Misma conversación | `conversationId` bare; `roomJid + sessionGeneration` | mismos archivos |
-| Ventana temporal | máximo `120000 ms` entre mensajes consecutivos | `message-grouping.ts` (`MESSAGE_GROUP_MAX_GAP_MS`) |
+| Ventana temporal | máximo `20000 ms` (20 segundos) entre mensajes consecutivos | `message-grouping.ts` (`MESSAGE_GROUP_MAX_GAP_MS`) |
 | Mismo día local | `messageDayKey` | `message-grouping.ts` |
 | Límites | cambio de remitente, conversación, día, clasificación, contexto, fecha inválida o elemento no textual | `canJoin` y `groupConsecutiveMessages` |
 | Difusión | no se mezcla con mensajes normales ni se agrupa sin contexto explícito | `canJoin`; `Message.classification` permanece intacto |
