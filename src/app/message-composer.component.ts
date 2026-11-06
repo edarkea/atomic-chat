@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, effect, ElementRef, HostListener, i
 import { FormsModule } from '@angular/forms';
 import { EmojiPickerComponent } from './emoji-picker.component';
 
+const CLIPBOARD_FILE_DEDUPLICATION_WINDOW_MS = 800;
+
 export function insertTextAtSelection(
   text: string,
   start: number,
@@ -41,6 +43,8 @@ export class MessageComposerComponent {
   protected readonly emojiOpen = signal(false);
   @ViewChild('messageInput') private messageInput?: ElementRef<HTMLTextAreaElement>;
   private savedSelection = { start: 0, end: 0 };
+  private readonly processedPasteEvents = new WeakSet<ClipboardEvent>();
+  private lastClipboardPaste?: { readonly key: string; readonly timestamp: number };
 
   constructor(private readonly host: ElementRef<HTMLElement>) {
     effect(() => {
@@ -87,6 +91,21 @@ export class MessageComposerComponent {
     if (this.disabled()) return;
     const files = clipboardFiles(event);
     if (!files.length) return;
+    if (this.processedPasteEvents.has(event)) {
+      event.preventDefault();
+      return;
+    }
+    this.processedPasteEvents.add(event);
+    const key = clipboardFilesKey(files);
+    const now = Date.now();
+    if (
+      this.lastClipboardPaste?.key === key &&
+      now - this.lastClipboardPaste.timestamp < CLIPBOARD_FILE_DEDUPLICATION_WINDOW_MS
+    ) {
+      event.preventDefault();
+      return;
+    }
+    this.lastClipboardPaste = { key, timestamp: now };
     event.preventDefault();
     this.filesPasted.emit(files);
   }
@@ -117,11 +136,25 @@ export class MessageComposerComponent {
 export function clipboardFiles(event: ClipboardEvent): ReadonlyArray<File> {
   const data = event.clipboardData;
   if (!data) return [];
-  const files = new Set<File>(Array.from(data.files));
+  const files = [...Array.from(data.files)];
   for (const item of Array.from(data.items)) {
     if (item.kind !== 'file') continue;
     const file = item.getAsFile();
-    if (file) files.add(file);
+    if (file) files.push(file);
   }
-  return [...files];
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    const key = clipboardFileKey(file);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function clipboardFileKey(file: File): string {
+  return [file.name, file.size, file.type, file.lastModified, file.webkitRelativePath].join('\u001f');
+}
+
+function clipboardFilesKey(files: ReadonlyArray<File>): string {
+  return files.map(clipboardFileKey).sort().join('\u001e');
 }
