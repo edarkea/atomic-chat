@@ -1,10 +1,33 @@
-<article class="message" [class.outgoing]="outgoing()" [class.incoming]="!outgoing()">
-  <div class="message-sender-line">
-    <p class="message-sender">{{ sender() }}</p>
-    @if (classification() === 'broadcast') {
-      <span class="broadcast-badge">DIFUSIÓN</span>
-    }
-  </div>
+<article
+  class="message"
+  [class.outgoing]="outgoing()"
+  [class.incoming]="!outgoing()"
+  [class.group-first]="groupPosition() === 'first'"
+  [class.group-middle]="groupPosition() === 'middle'"
+  [class.group-last]="groupPosition() === 'last'"
+>
+  @if (showSender() || showTime()) {
+    <div class="message-header">
+      @if (showSender()) {
+        <p class="message-sender">{{ sender() }}</p>
+        @if (classification() === 'broadcast') {
+          <span class="broadcast-badge">DIFUSIÓN</span>
+        }
+      }
+      @if (showSender() && showTime()) {
+        <span class="message-header-separator" aria-hidden="true">·</span>
+      }
+      @if (showTime()) {
+        <time class="message-time" [attr.datetime]="createdAt() || null" [title]="fullDate(createdAt())" [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())">
+          {{ timestampLabel() || (time(createdAt()) + ' · ' + date(createdAt())) }}
+        </time>
+      }
+    </div>
+  } @else {
+    <time class="message-time message-time-hidden" [attr.datetime]="createdAt() || null" [title]="fullDate(createdAt())" [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())">
+      {{ time(createdAt()) }} · {{ date(createdAt()) }}
+    </time>
+  }
   <p class="message-body">
     @for (segment of contentSegments(); track $index) {
       @if (segment.kind === 'link') {
@@ -14,9 +37,6 @@
       }
     }
   </p>
-  <time class="message-time" [attr.datetime]="createdAt() || null" [title]="fullDate(createdAt())" [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())">
-    {{ time(createdAt()) }} · {{ date(createdAt()) }}
-  </time>
   @if (persistenceStatus() === 'memory-only') {
     <small class="message-persistence-warning"
       >Mensaje no guardado; solo disponible en esta sesión.</small

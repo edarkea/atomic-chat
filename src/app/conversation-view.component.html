@@ -57,8 +57,9 @@
     } @else if (!timeline().length) {
       <div class="reference-message empty-state">No hay mensajes todavía.</div>
     }
-    @for (item of timeline(); track item.id) {
-      @if (hasDayChanged($index, item.sortAt)) { <div class="day-separator" role="separator"><span>{{ dayLabel(item.sortAt) }}</span></div> }
+    @for (display of displayTimeline(); track display.item.id) {
+      @if (display.daySeparator) { <div class="day-separator" role="separator"><span>{{ dayLabel(display.item.sortAt) }}</span></div> }
+      @let item = display.item;
       @if (item.kind === 'text') {
         <app-message-item
           [sender]="item.senderLabel"
@@ -67,6 +68,10 @@
           [classification]="item.message.classification"
           [persistenceStatus]="item.message.persistenceStatus"
           [createdAt]="item.message.createdAt"
+          [showSender]="display.showHeader"
+          [showTime]="display.showHeader"
+          [timestampLabel]="display.timestampLabel"
+          [groupPosition]="display.position"
           [attr.data-message-id]="item.message.id"
         />
       } @else if (item.kind === 'sticker') {

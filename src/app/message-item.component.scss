@@ -1,11 +1,13 @@
 :host {
   display: contents;
 }
-.message-sender-line {
+.message-header {
   align-items: center;
   display: flex;
   gap: 8px;
 }
+.message-header .message-sender { flex: 1 1 auto; min-width: 0; }
+.message-header-separator { color: var(--atomic-text-muted); flex: 0 0 auto; }
 .broadcast-badge {
   border: 1px solid var(--atomic-green);
   border-radius: 999px;
@@ -31,4 +33,15 @@
 }
 .message-link:hover,
 .message-link:focus-visible { color: var(--atomic-text); }
-.message-time { color: var(--atomic-text-muted); display: block; font-size: 10px; margin-top: 4px; }
+.message-time { color: var(--atomic-text-muted); flex: 0 0 auto; font-size: 10px; white-space: nowrap; }
+.message-time-hidden {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}

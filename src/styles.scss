@@ -248,9 +248,9 @@ select:focus-visible {
   color: var(--atomic-text);
   font-size: 14px;
   line-height: 1.4;
-  margin: 8px 0 0 auto;
+  margin: 10px 0 0 auto;
   max-width: min(75%, 520px);
-  padding: 11px 13px;
+  padding: 6px 10px;
   width: fit-content;
 }
 .message.incoming {
@@ -259,9 +259,17 @@ select:focus-visible {
   margin-right: auto;
 }
 .message p {
-  margin: 0 0 5px;
+  margin: 0;
   overflow-wrap: anywhere;
 }
+.message.group-middle,
+.message.group-last { margin-top: 2px; }
+.message.group-first.incoming { border-bottom-left-radius: 5px; }
+.message.group-middle.incoming { border-radius: 5px; }
+.message.group-last.incoming { border-top-left-radius: 5px; }
+.message.group-first.outgoing { border-bottom-right-radius: 5px; }
+.message.group-middle.outgoing { border-radius: 5px; }
+.message.group-last.outgoing { border-top-right-radius: 5px; }
 .message small {
   color: var(--atomic-green-soft);
   font-size: 12px;
@@ -270,7 +278,7 @@ select:focus-visible {
   color: var(--atomic-text);
   font-size: 12px;
   font-weight: 700;
-  margin: 0 0 5px;
+  margin: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

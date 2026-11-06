@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MucNotice, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
-import { formatMessageDay, messageDayKey } from './message-date-time';
+import { formatMessageDay } from './message-date-time';
+import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 
 @Component({
   selector: 'app-muc-view',
@@ -28,6 +29,19 @@ export class MucViewComponent {
   readonly draftChange = output<string>();
   readonly send = output<void>();
 
+  protected readonly displayMessages = computed(() =>
+    groupMessagesForDisplay(
+      this.messages(),
+      (message): MessageGroupingMetadata => ({
+        senderKey: message.occupantJid.toLowerCase(),
+        conversationKey: `${message.roomJid.toLowerCase()}|${message.sessionGeneration}`,
+        createdAt: message.receivedAt,
+      }),
+      (message) => message.id,
+      (message) => message.receivedAt,
+    ),
+  );
+
   protected isOutgoing(message: RoomMessage): boolean {
     const state = this.roomState();
     return (
@@ -43,9 +57,6 @@ export class MucViewComponent {
   protected occupantNickname(occupantJid: string): string {
     const separator = occupantJid.indexOf('/');
     return separator >= 0 ? occupantJid.slice(separator + 1).trim() : '';
-  }
-  protected hasDayChanged(index: number, receivedAt: string): boolean {
-    return index === 0 || messageDayKey(this.messages()[index - 1]?.receivedAt) !== messageDayKey(receivedAt);
   }
   protected dayLabel(receivedAt: string): string { return formatMessageDay(receivedAt); }
 }

@@ -25,7 +25,8 @@ import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
-import { formatMessageDay, messageDayKey } from './message-date-time';
+import { formatMessageDay } from './message-date-time';
+import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 
 export type ConversationTimelineItem =
   | {
@@ -130,6 +131,22 @@ export class ConversationViewComponent {
     const last = items[items.length - 1];
     return `${this.bareJid(this.selectedJid())}|${items.length}|${last?.id || ''}|${last?.sortAt || ''}`;
   });
+  protected readonly displayTimeline = computed(() =>
+    groupMessagesForDisplay(
+      this.timeline(),
+      (item): MessageGroupingMetadata | undefined =>
+        item.kind === 'text'
+          ? {
+              senderKey: `${item.outgoing ? 'out:' : 'in:'}${this.bareJid(item.message.senderJid)}`,
+              conversationKey: this.bareJid(item.message.conversationId),
+              createdAt: item.message.createdAt,
+              classification: item.message.classification,
+            }
+          : undefined,
+      (item) => item.id,
+      (item) => item.sortAt,
+    ),
+  );
 
   constructor() {
     effect(() => {
@@ -149,9 +166,6 @@ export class ConversationViewComponent {
   protected toggleSearch(): void {
     if (!this.isSelected()) return;
     this.searchOpen.update((open) => !open);
-  }
-  protected hasDayChanged(index: number, sortAt: string): boolean {
-    return index === 0 || messageDayKey(this.timeline()[index - 1]?.sortAt) !== messageDayKey(sortAt);
   }
   protected dayLabel(sortAt: string): string { return formatMessageDay(sortAt); }
 
