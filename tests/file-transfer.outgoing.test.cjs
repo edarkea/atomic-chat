@@ -153,13 +153,18 @@ function smackAcceptsOffer(si) {
   return form?.attrs.type === 'form' && field?.attrs.type === 'list-single' && options.length > 0 && options.every((option) => option.getChildren('value').length === 1) && streamMethodsFromOffer(si).includes(IBB);
 }
 
-function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfterDisco = false } = {}) {
-  const outgoing = new OutgoingFileTransferCoordinator({ blockSize: 3 });
+function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfterDisco = false, timeoutSeconds } = {}) {
+  const outgoing = new OutgoingFileTransferCoordinator({
+    blockSize: 3,
+    ...(timeoutSeconds ? { getTimeoutSeconds: () => timeoutSeconds } : {}),
+  });
   const adapter = new XmppAdapter(false, null, [], null, outgoing);
   const sent = [];
-  const session = { iqCaller: { request: async (request) => {
+  const timeouts = [];
+  const session = { iqCaller: { request: async (request, timeout) => {
     sent.push(request);
     const child = request.children[0];
+    timeouts.push({ name: child.name, timeout });
     if (child.name === 'query' && child.attrs.xmlns === DISCO) {
       const features = unsupported ? [] : [xml('feature', { var: SI }), xml('feature', { var: FILE }), xml('feature', { var: IBB })];
       const response = xml('iq', { type: 'result', id: request.attrs.id, from: wrongDiscoFrom ? 'other@example.invalid/Spark' : RECIPIENT }, xml('query', { xmlns: DISCO }, ...features));
@@ -174,7 +179,7 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfte
   } }, send: async () => undefined };
   adapter.sessions.set(ACCOUNT, session); adapter.states.set(ACCOUNT, { status: 'connected' }); adapter.sessionGenerations.set(ACCOUNT, 1); adapter.sessionDomains.set(ACCOUNT, 'example.invalid');
   adapter.rosters.set(ACCOUNT, new Map([['spark@example.invalid', { jid: 'spark@example.invalid', subscription: 'to' }]])); adapter.remoteResources.set(ACCOUNT, new Map([[RECIPIENT, { presence: 'available' }]]));
-  return { adapter, outgoing, sent };
+  return { adapter, outgoing, sent, timeouts };
 }
 
 test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data and close', async () => {
@@ -198,6 +203,26 @@ test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data
     assert.deepEqual(sent.filter((iq) => iq.children[0].name === 'data').map((iq) => [iq.children[0].attrs.seq, Buffer.from(iq.children[0].getText(), 'base64').toString()]), [['0', 'hel'], ['1', 'lo']]);
     assert.equal(sent.every((iq) => iq.attrs.to === undefined || iq.attrs.to === RECIPIENT), true);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('C5-OUT-13 passes the configured timeout to the XMPP IQ caller', async () => {
+  const { root, filePath } = await fixture(Buffer.from('hello'));
+  const { adapter, timeouts } = adapterFixture({ timeoutSeconds: 600 });
+  try {
+    await adapter.sendFile(ACCOUNT, {
+      filePath,
+      fileName: 'fixture.bin',
+      conversationId: 'spark@example.invalid',
+      ownerSenderId: 42,
+    });
+    const fileIqTimeouts = timeouts
+      .filter(({ name }) => ['si', 'open', 'data', 'close'].includes(name))
+      .map(({ timeout }) => timeout);
+    assert.ok(fileIqTimeouts.length > 0);
+    assert.ok(fileIqTimeouts.every((timeout) => timeout === 600000));
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test('C5-OUT-10 Smack-style inspection rejects a direct field value without an option', () => {
