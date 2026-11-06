@@ -13,6 +13,7 @@ import {
   FileRequest,
   FileSendInput,
   FileDroppedSendInput,
+  FileClipboardSendInput,
   FileTransfer,
   ChatImageRecord,
   FileHistoryRequest,
@@ -69,6 +70,7 @@ import {
   MediaListInput,
   Message,
   MessageSendInput,
+  ExternalLinkOpenInput,
   MucDiscoverInput,
   MucJoinInput,
   MucLeaveInput,
@@ -193,6 +195,7 @@ export interface BroadcastPort {
 export interface FileTransferPort {
   send(input: FileSendInput): Promise<Result<FileTransfer | null>>;
   sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>>;
+  sendClipboard(input: FileClipboardSendInput): Promise<Result<FileTransfer | null>>;
   accept(input: FileRequest): Promise<Result<FileTransfer>>;
   reject(input: FileRequest): Promise<Result<FileTransfer>>;
   cancel(input: FileRequest): Promise<Result<FileTransfer>>;
@@ -200,6 +203,10 @@ export interface FileTransferPort {
   reveal(input: FileRequest): Promise<Result<void>>;
   listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
+}
+
+export interface ExternalLinkPort {
+  open(input: ExternalLinkOpenInput): Promise<Result<void>>;
 }
 
 export interface PreviewPort {
@@ -263,6 +270,9 @@ export const ATTENTION_PORT = new InjectionToken<AttentionPort>('AtomicChat Atte
 export const BROADCAST_PORT = new InjectionToken<BroadcastPort>('AtomicChat BroadcastPort');
 export const FILE_TRANSFER_PORT = new InjectionToken<FileTransferPort>(
   'AtomicChat FileTransferPort',
+);
+export const EXTERNAL_LINK_PORT = new InjectionToken<ExternalLinkPort>(
+  'AtomicChat ExternalLinkPort',
 );
 export const PREVIEW_PORT = new InjectionToken<PreviewPort>('AtomicChat PreviewPort');
 export const MEDIA_PORT = new InjectionToken<MediaPort>('AtomicChat MediaPort');

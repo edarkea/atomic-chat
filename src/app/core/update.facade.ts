@@ -22,8 +22,12 @@ export class UpdateFacade {
   }
 
   async refresh(): Promise<void> {
-    const result = await this.port.getStatus(this.request());
-    if (result.ok) this.status.set(result.value);
+    try {
+      const result = await this.port.getStatus(this.request());
+      if (result.ok) this.status.set(result.value);
+    } catch {
+      this.error.set('No fue posible consultar la versión instalada.');
+    }
   }
 
   async check(): Promise<void> {
@@ -50,6 +54,8 @@ export class UpdateFacade {
       const result = await this.port[operation](this.request());
       if (result.ok) this.status.set(result.value);
       else this.error.set(result.error.message);
+    } catch {
+      this.error.set('No fue posible completar la actualización. Inténtalo de nuevo.');
     } finally {
       this.busy.set(false);
     }

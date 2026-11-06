@@ -81,6 +81,7 @@ interface EventRecord {
   recipientJid?: unknown;
   requestId?: unknown;
   retryable?: unknown;
+  displayName?: unknown;
   room?: unknown;
   roomJid?: unknown;
   role?: unknown;
@@ -238,6 +239,7 @@ function isConnectionState(value: unknown): value is ConnectionState {
       'failed',
     ]) &&
     isBoolean(value.retryable) &&
+    isOptionalString(value.displayName) &&
     isString(value.since) &&
     isOptionalString(value.reason)
   );

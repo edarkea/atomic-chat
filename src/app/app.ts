@@ -58,6 +58,7 @@ import {
 import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
 import { StickerMessageFacade } from './core/sticker-message.facade';
 import { UpdateFacade } from './core/update.facade';
+import { VersionUpdateComponent } from './version-update.component';
 
 export const STICKER_SENDING_DISABLED_MESSAGE =
   'El envío de stickers está temporalmente deshabilitado';
@@ -101,6 +102,7 @@ type BroadcastAttempt = Readonly<{ mode: BroadcastMode; body: string }>;
 @Component({
   selector: 'app-root',
   imports: [
+    VersionUpdateComponent,
     CertificateDialogComponent,
     ConnectionSettingsDialogComponent,
     ConversationViewComponent,
@@ -547,6 +549,7 @@ export class App {
   ];
   protected readonly sidebarModel = computed<SidebarModel>(() => ({
     operator: {
+      displayName: this.chat.connection().displayName,
       accountId: this.chat.accountId(),
       connectionLabel: this.connectionLabel(),
       presenceLabel: this.presenceLabel(),
@@ -1226,6 +1229,14 @@ export class App {
     }
     void this.files.sendDropped(selection.jid, files);
   }
+  protected pasteFiles(files: ReadonlyArray<File>): void {
+    const selection = this.activeSelection();
+    if (selection.kind !== 'direct' || !this.selectedJid()) {
+      this.files.error.set('Selecciona una conversación individual para pegar archivos.');
+      return;
+    }
+    void this.files.sendClipboard(selection.jid, files);
+  }
   protected dropRejected(message: string): void {
     this.files.error.set(message);
   }
@@ -1300,9 +1311,10 @@ export class App {
     this.preferencesSaveState.set('saving');
     this.preferencesError.set(null);
     const saved = await this.chat.resetPreferences();
-    this.theme.resetPreferences();
-    if (saved) this.preferencesSaveState.set('saved');
-    else {
+    if (saved) {
+      this.theme.resetPreferences();
+      this.preferencesSaveState.set('saved');
+    } else {
       this.preferencesSaveState.set('error');
       this.preferencesError.set(
         this.chat.error() || 'No fue posible restablecer las preferencias.',

@@ -33,6 +33,7 @@ describe('FileFacade injected transfer port', () => {
     port = {
       send: vi.fn(async () => ok<FileTransfer | null>(null)),
       sendDropped: vi.fn(async () => ok<FileTransfer | null>(null)),
+      sendClipboard: vi.fn(async () => ok<FileTransfer | null>(null)),
       accept: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
       reject: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
       cancel: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 // This marker is internal to the trusted preload -> Main boundary. The path
 // is accepted only after webUtils derives it from the public File object.
 const DROPPED_FILE_SOURCE = 'preload-webutils-file-v1';
+const MAX_CLIPBOARD_FILE_BYTES = 128 * 1024 * 1024;
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 const service = process.env.ATOMIC_XMPP_SERVICE || '';
@@ -82,12 +83,34 @@ contextBridge.exposeInMainWorld(
           filePath,
         });
       },
+      sendClipboard: async (input) => {
+        const sizeBytes = Number(input?.file?.size);
+        const base = {
+          source: 'preload-clipboard-file-v1',
+          version: input?.version,
+          requestId: input?.requestId,
+          accountId: input?.accountId,
+          conversationId: input?.conversationId,
+          fileName: input?.file?.name,
+          mimeType: input?.file?.type,
+          sizeBytes,
+        };
+        if (!input?.file || typeof input.file.arrayBuffer !== 'function')
+          return invoke('file.sendClipboard', { ...base, bytes: new Uint8Array() });
+        if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > MAX_CLIPBOARD_FILE_BYTES)
+          return invoke('file.sendClipboard', { ...base, bytes: new Uint8Array() });
+        const bytes = new Uint8Array(await input.file.arrayBuffer());
+        return invoke('file.sendClipboard', { ...base, bytes });
+      },
       accept: (input) => invoke('file.accept', input),
       reject: (input) => invoke('file.reject', input),
       cancel: (input) => invoke('file.cancel', input),
       open: (input) => invoke('file.open', input),
       reveal: (input) => invoke('file.reveal', input),
       listActive: (input) => invoke('file.listActive', input),
+    }),
+    externalLinks: Object.freeze({
+      open: (input) => invoke('externalLinks.open', input),
     }),
     preview: Object.freeze({
       get: (input) => invoke('preview.get', input),

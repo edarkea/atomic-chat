@@ -103,6 +103,18 @@ export class FileFacade {
   }
 
   async sendDropped(conversationId: string, files: ReadonlyArray<File>): Promise<void> {
+    await this.sendFiles(conversationId, files, 'drop');
+  }
+
+  async sendClipboard(conversationId: string, files: ReadonlyArray<File>): Promise<void> {
+    await this.sendFiles(conversationId, files, 'clipboard');
+  }
+
+  private async sendFiles(
+    conversationId: string,
+    files: ReadonlyArray<File>,
+    source: 'drop' | 'clipboard',
+  ): Promise<void> {
     if (!this.account || !conversationId) return;
     const batchGeneration = ++this.droppedBatchGeneration;
     if (this.droppedBatchInFlight) {
@@ -119,12 +131,14 @@ export class FileFacade {
     }
 
     const accountId = this.account;
+    const sendFile = (input: { version: 1; requestId: string; accountId: string; conversationId: string; file: File }) =>
+      source === 'clipboard' ? this.port.sendClipboard(input) : this.port.sendDropped(input);
     let failed = 0;
     this.droppedBatchInFlight = true;
     try {
       for (const file of files) {
         try {
-          const result = await this.port.sendDropped({
+          const result = await sendFile({
             version: 1,
             requestId: createOpaqueId('file-drop'),
             accountId,

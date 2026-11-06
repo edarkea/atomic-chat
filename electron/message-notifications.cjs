@@ -44,6 +44,7 @@ function createMessageNotifications({
   getRoster,
   getMucRoom,
   getIconPath,
+  onIncomingMessage,
 }) {
   const seenMessages = new Set();
   const activeNotifications = new Set();
@@ -93,6 +94,7 @@ function createMessageNotifications({
   }
 
   function show(title, body) {
+    if (title && body) onIncomingMessage?.();
     if (!title || !body || !isSupported() || isWindowFocused() || !notificationsEnabled())
       return false;
     try {

@@ -114,15 +114,71 @@ const PRESET_PALETTES: Readonly<Record<'atomic' | 'atomic-light', ThemePalette>>
   atomic: ATOMIC_THEME_PALETTE,
   'atomic-light': ATOMIC_LIGHT_THEME_PALETTE,
 });
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}(?:[0-9a-f]{2})?)$/i;
+const COLOR_FUNCTION = /^(?:rgba?|hsla?)\(\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?)?\s*\)$/i;
+const TRANSPARENT_COLOR = /^transparent$/i;
 
 export interface ThemeValidation {
   readonly valid: boolean;
   readonly message?: string;
 }
 
-function isHexColor(value: string): value is HexColor {
-  return HEX_COLOR.test(value);
+function parseNumber(value: string, max: number, percentageAllowed: boolean): number | null {
+  const isPercentage = value.endsWith('%');
+  if (isPercentage && !percentageAllowed) return null;
+  const numeric = Number.parseFloat(isPercentage ? value.slice(0, -1) : value);
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > (isPercentage ? 100 : max))
+    return null;
+  return isPercentage ? (numeric / 100) * max : numeric;
+}
+
+function parseColor(value: string): readonly [number, number, number] | null {
+  const normalized = value.trim();
+  if (TRANSPARENT_COLOR.test(normalized)) return [0, 0, 0];
+  if (HEX_COLOR.test(normalized)) {
+    const compact = normalized.slice(1);
+    const expanded = compact.length <= 4 ? compact.split('').map((channel) => channel + channel).join('') : compact;
+    return [
+      Number.parseInt(expanded.slice(0, 2), 16),
+      Number.parseInt(expanded.slice(2, 4), 16),
+      Number.parseInt(expanded.slice(4, 6), 16),
+    ];
+  }
+  const match = normalized.match(/^(rgba?|hsla?)\((.*)\)$/i);
+  if (!match || !COLOR_FUNCTION.test(normalized)) return null;
+  const components = match[2].replace(/,/g, ' ').replace(/\//g, ' ').trim().split(/\s+/);
+  if (components.length < 3 || components.length > 4) return null;
+  const kind = match[1].toLowerCase();
+  if (kind.startsWith('rgb')) {
+    const channels = components.slice(0, 3).map((component) => parseNumber(component, 255, true));
+    if (channels.some((channel) => channel === null)) return null;
+    if (components[3] !== undefined && parseNumber(components[3], 1, true) === null) return null;
+    return [channels[0]!, channels[1]!, channels[2]!];
+  }
+  if (!components[1].endsWith('%') || !components[2].endsWith('%')) return null;
+  const hue = Number.parseFloat(components[0]);
+  const saturation = parseNumber(components[1], 100, true);
+  const lightness = parseNumber(components[2], 100, true);
+  if (!Number.isFinite(hue) || saturation === null || lightness === null) return null;
+  if (components[3] !== undefined && parseNumber(components[3], 1, true) === null) return null;
+  const h = ((hue % 360) + 360) / 360;
+  const s = saturation / 100;
+  const l = lightness / 100;
+  if (s === 0) return [l * 255, l * 255, l * 255];
+  const hueToRgb = (p: number, q: number, t: number): number => {
+    const adjusted = t < 0 ? t + 1 : t > 1 ? t - 1 : t;
+    if (adjusted < 1 / 6) return p + (q - p) * 6 * adjusted;
+    if (adjusted < 1 / 2) return q;
+    if (adjusted < 2 / 3) return p + (q - p) * (2 / 3 - adjusted) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [hueToRgb(p, q, h + 1 / 3) * 255, hueToRgb(p, q, h) * 255, hueToRgb(p, q, h - 1 / 3) * 255];
+}
+
+function isThemeColor(value: string): value is HexColor {
+  return typeof value === 'string' && (HEX_COLOR.test(value.trim()) || COLOR_FUNCTION.test(value.trim()) || TRANSPARENT_COLOR.test(value.trim())) && parseColor(value) !== null;
 }
 
 export function isThemeId(value: string): value is ThemeId {
@@ -136,20 +192,12 @@ export function normalizeThemeId(value: unknown): ThemeId {
 }
 
 function luminance(value: HexColor): number {
-  const channels = [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16) / 255);
+  const rgb = parseColor(value) ?? [0, 0, 0];
+  const channels = rgb.map((channel) => channel / 255);
   const linear = channels.map((channel) =>
     channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
   );
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-}
-
-function contrast(first: HexColor, second: HexColor): number {
-  const firstLuminance = luminance(first);
-  const secondLuminance = luminance(second);
-  return (
-    (Math.max(firstLuminance, secondLuminance) + 0.05) /
-    (Math.min(firstLuminance, secondLuminance) + 0.05)
-  );
 }
 
 export function validateThemePalette(value: Readonly<Record<string, string>>): ThemeValidation {
@@ -160,36 +208,12 @@ export function validateThemePalette(value: Readonly<Record<string, string>>): T
   )
     return { valid: false, message: 'Completa todos los colores del tema.' };
   for (const { key, label } of THEME_COLOR_FIELDS)
-    if (!isHexColor(value[key]))
-      return { valid: false, message: `${label} debe usar el formato hexadecimal #RRGGBB.` };
+    if (!isThemeColor(value[key]))
+      return {
+        valid: false,
+        message: `${label} debe usar un color válido (#RGB, #RRGGBB, rgb(), rgba(), hsl() o hsla()).`,
+      };
 
-  const textChecks: ReadonlyArray<readonly [ThemeColorKey, ThemeColorKey, string]> = [
-    ['text', 'background', 'texto principal sobre el fondo'],
-    ['text', 'surface', 'texto principal sobre los paneles'],
-    ['text', 'surfaceRaised', 'texto principal sobre superficies elevadas'],
-    ['text', 'incomingBubble', 'texto principal sobre mensajes recibidos'],
-    ['text', 'outgoingBubble', 'texto principal sobre mensajes enviados'],
-    ['textSecondary', 'background', 'texto secundario sobre el fondo'],
-    ['textSecondary', 'surface', 'texto secundario sobre los paneles'],
-    ['textSecondary', 'incomingBubble', 'texto secundario sobre mensajes recibidos'],
-  ];
-  for (const [foreground, background, label] of textChecks)
-    if (contrast(value[foreground], value[background]) < 4.5)
-      return { valid: false, message: `Aumenta el contraste de ${label} (mínimo WCAG AA 4.5:1).` };
-  if (contrast(value['textSecondary'], value['outgoingBubble']) < 3)
-    return {
-      valid: false,
-      message: 'Aumenta el contraste del texto secundario sobre mensajes enviados (mínimo 3:1).',
-    };
-
-  const controlChecks: ReadonlyArray<readonly [ThemeColorKey, ThemeColorKey, string]> = [
-    ['accent', 'background', 'acento sobre el fondo'],
-    ['border', 'background', 'bordes sobre el fondo'],
-    ['focus', 'background', 'enfoque sobre el fondo'],
-  ];
-  for (const [foreground, background, label] of controlChecks)
-    if (contrast(value[foreground], value[background]) < 3)
-      return { valid: false, message: `Aumenta el contraste de ${label} (mínimo 3:1).` };
   return { valid: true };
 }
 
@@ -284,7 +308,7 @@ export class ThemeService {
   }
 
   async restoreOriginal(): Promise<boolean> {
-    return this.persistTheme('atomic');
+    return this.persistTheme('atomic', ATOMIC_THEME_PALETTE, true, true);
   }
 
   resetPreferences(): void {
@@ -303,6 +327,7 @@ export class ThemeService {
     theme: ThemeId,
     customPalette?: ThemePalette,
     persistCustomPalette = false,
+    resetCustomPalette = false,
   ): Promise<boolean> {
     const palette = theme === 'custom' ? customPalette : paletteFor(theme, this.customPalette());
     if (!palette) {
@@ -312,7 +337,11 @@ export class ThemeService {
     const sequence = ++this.persistenceSequence;
     const target: CommittedTheme = {
       themeId: theme,
-      customPalette: theme === 'custom' ? palette : this.customPalette(),
+      customPalette: resetCustomPalette
+        ? ATOMIC_THEME_PALETTE
+        : theme === 'custom'
+          ? palette
+          : this.customPalette(),
     };
     this.pendingSaves += 1;
     this.saving.set(true);
@@ -333,8 +362,9 @@ export class ThemeService {
     const save = async (): Promise<boolean> => {
       try {
         if (sequence !== this.persistenceSequence) return false;
-        const changes: Partial<Preferences> =
-          theme === 'custom' && persistCustomPalette ? { theme, customTheme: palette } : { theme };
+        const changes: Partial<Preferences> = persistCustomPalette
+          ? { theme, customTheme: target.customPalette ?? ATOMIC_THEME_PALETTE }
+          : { theme };
         const result = await preferencesPort.update({ accountId: '', changes });
         if (!result.ok) {
           if (sequence === this.persistenceSequence) {

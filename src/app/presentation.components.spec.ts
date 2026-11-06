@@ -85,6 +85,8 @@ describe('extracted Angular presentation components', () => {
     fixture.componentInstance.passwordChange.subscribe(passwordChange);
     fixture.componentInstance.submitted.subscribe(submit);
     fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.login-logo')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).not.toContain('P0');
     expect(fixture.nativeElement.querySelector('input[name="account"]')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('error visible');
     const submitButton = fixture.nativeElement.querySelector(

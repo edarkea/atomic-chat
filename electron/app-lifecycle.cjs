@@ -1,6 +1,7 @@
-function registerAppLifecycle({ app, BrowserWindow, createWindow, shutdown }) {
+function registerAppLifecycle({ app, BrowserWindow, createWindow, shutdown, openWindow }) {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else openWindow?.();
   });
 
   let closing = false;

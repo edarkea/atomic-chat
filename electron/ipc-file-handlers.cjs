@@ -1,6 +1,10 @@
 const path = require('node:path');
+const os = require('node:os');
+const fsp = require('node:fs/promises');
 
 const DROPPED_FILE_SOURCE = 'preload-webutils-file-v1';
+const CLIPBOARD_FILE_SOURCE = 'preload-clipboard-file-v1';
+const MAX_CLIPBOARD_FILE_BYTES = 128 * 1024 * 1024;
 
 function registerFileHandlers({
   ipcMain,
@@ -83,6 +87,40 @@ function registerFileHandlers({
       return await sendFileFromPath(event, input, input?.filePath);
     } catch (error) {
       return fileResultError(error, event, input);
+    }
+  });
+  ipcMain.handle('file.sendClipboard', async (event, input) => {
+    let temporaryDirectory;
+    try {
+      if (input?.source !== CLIPBOARD_FILE_SOURCE) throw new Error('INVALID_INPUT');
+      authorizeSendInput(event, input);
+      if (
+        typeof input.fileName !== 'string' ||
+        !input.fileName.trim() ||
+        input.fileName.length > 512 ||
+        input.fileName !== path.basename(input.fileName) ||
+        input.fileName.includes('\0')
+      )
+        throw new Error('INVALID_INPUT');
+      if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes < 0)
+        throw new Error('INVALID_INPUT');
+      if (input.sizeBytes > MAX_CLIPBOARD_FILE_BYTES)
+        throw new Error('MEDIA_SIZE_EXCEEDED');
+      const bytes = Buffer.isBuffer(input.bytes)
+        ? input.bytes
+        : input.bytes instanceof Uint8Array
+          ? Buffer.from(input.bytes)
+          : null;
+      if (!bytes || bytes.length > MAX_CLIPBOARD_FILE_BYTES) throw new Error('MEDIA_SIZE_EXCEEDED');
+      if (bytes.length !== input.sizeBytes) throw new Error('INVALID_INPUT');
+      temporaryDirectory = await fsp.mkdtemp(path.join(os.tmpdir(), 'atomic-chat-clipboard-'));
+      const filePath = path.join(temporaryDirectory, input.fileName);
+      await fsp.writeFile(filePath, bytes, { flag: 'wx' });
+      return await sendFileFromPath(event, input, filePath);
+    } catch (error) {
+      return fileResultError(error, event, input);
+    } finally {
+      if (temporaryDirectory) await fsp.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
   ipcMain.handle('file.accept', async (event, input) => {

@@ -112,7 +112,7 @@ function createUpdateService(options) {
       }),
     );
     activeUpdater.on('update-not-available', () =>
-      emit({ state: 'up-to-date', progressPercent: undefined, errorCode: undefined }),
+      emit({ state: 'up-to-date', availableVersion: undefined, progressPercent: undefined, errorCode: undefined }),
     );
     activeUpdater.on('download-progress', (progress) => {
       const percent = property(progress, 'percent');
@@ -157,6 +157,7 @@ function createUpdateService(options) {
       return status;
     } catch (cause) {
       const code = errorCode(cause) === 'CONFLICT' ? 'CONFLICT' : 'INTERNAL';
+      if (code === 'CONFLICT') throw cause;
       emit({ state: 'error', errorCode: code, progressPercent: undefined }, request.requestId);
       throw updateError(request.requestId, code, 'No fue posible completar la actualización.');
     }
@@ -174,6 +175,7 @@ function createUpdateService(options) {
     /** @param {UpdateRequest} request */
     check(request) {
       return execute(request, async () => {
+        if (['checking', 'downloading', 'downloaded'].includes(status.state)) return;
         const activeUpdater = updater;
         if (!activeUpdater)
           throw updateError(request.requestId, 'INTERNAL', 'Updater unavailable.');

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, input, output, signal, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, ElementRef, HostListener, input, output, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { EmojiPickerComponent } from './emoji-picker.component';
 
@@ -37,11 +37,20 @@ export class MessageComposerComponent {
   readonly messageSubmitted = output<void>();
   readonly stickerSend = output<string>();
   readonly attach = output<void>();
+  readonly filesPasted = output<ReadonlyArray<File>>();
   protected readonly emojiOpen = signal(false);
   @ViewChild('messageInput') private messageInput?: ElementRef<HTMLTextAreaElement>;
   private savedSelection = { start: 0, end: 0 };
 
-  constructor(private readonly host: ElementRef<HTMLElement>) {}
+  constructor(private readonly host: ElementRef<HTMLElement>) {
+    effect(() => {
+      if (this.draft()) return;
+      const input = this.messageInput?.nativeElement;
+      if (!input) return;
+      input.style.removeProperty('height');
+      input.style.overflowY = 'hidden';
+    });
+  }
 
   protected toggleEmoji(): void {
     if (this.disabled()) return;
@@ -73,6 +82,14 @@ export class MessageComposerComponent {
       if (this.draft().trim()) this.messageSubmitted.emit();
     }
   }
+  @HostListener('paste', ['$event'])
+  protected onPaste(event: ClipboardEvent): void {
+    if (this.disabled()) return;
+    const files = clipboardFiles(event);
+    if (!files.length) return;
+    event.preventDefault();
+    this.filesPasted.emit(files);
+  }
   protected resizeInput(): void {
     const input = this.messageInput?.nativeElement;
     if (!input) return;
@@ -95,4 +112,16 @@ export class MessageComposerComponent {
       this.messageInput?.nativeElement.focus();
     }
   }
+}
+
+export function clipboardFiles(event: ClipboardEvent): ReadonlyArray<File> {
+  const data = event.clipboardData;
+  if (!data) return [];
+  const files = new Set<File>(Array.from(data.files));
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== 'file') continue;
+    const file = item.getAsFile();
+    if (file) files.add(file);
+  }
+  return [...files];
 }

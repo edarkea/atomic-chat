@@ -1,7 +1,14 @@
 <main class="login-window">
   <div class="login-brand">
-    <svg class="ac-icon ac-icon-brand" aria-hidden="true" focusable="false"><use href="#ac-brand" /></svg
-    ><strong>ATOMIC CHAT</strong><span class="concept">P0</span>
+    <svg
+      class="ac-icon ac-icon-brand login-logo"
+      role="img"
+      aria-label="Logo de Atomic Chat"
+      focusable="false"
+    >
+      <use href="#ac-brand" />
+    </svg>
+    <strong>ATOMIC CHAT</strong>
   </div>
   <div class="login-symbol" aria-hidden="true">
     <svg class="ac-icon ac-icon--24" aria-hidden="true" focusable="false"><use href="#ac-login" /></svg>
@@ -135,6 +142,8 @@
       {{ busy() ? 'Conectando…' : 'Entrar' }}
     </button>
   </form>
+  <app-version-update [status]="updateStatus()" [busy]="updateBusy()" [error]="updateError()"
+    (download)="downloadUpdate.emit()" (install)="installUpdate.emit()" (check)="checkForUpdates.emit()" />
   <small class="login-footnote"
     >Servidor XMPP configurado · conexión protegida por la política del entorno</small
   >

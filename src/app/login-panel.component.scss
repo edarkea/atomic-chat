@@ -24,6 +24,10 @@
   grid-column: 1 / -1;
   justify-content: flex-start;
 }
+.login-brand .login-logo {
+  height: 38px;
+  width: 38px;
+}
 .login-symbol {
   align-items: center;
   background: var(--atomic-surface-soft);

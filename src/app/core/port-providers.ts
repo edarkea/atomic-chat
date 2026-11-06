@@ -6,6 +6,7 @@ import {
   ElectronBroadcastPort,
   ElectronCertificatePort,
   ElectronFileTransferPort,
+  ElectronExternalLinkPort,
   ElectronFileHistoryPort,
   ElectronHistoryPort,
   ElectronMediaPort,
@@ -25,6 +26,7 @@ import {
   BROADCAST_PORT,
   CERTIFICATE_PORT,
   FILE_TRANSFER_PORT,
+  EXTERNAL_LINK_PORT,
   FILE_HISTORY_PORT,
   PREVIEW_PORT,
   STICKER_LIBRARY_PORT,
@@ -43,6 +45,7 @@ import {
   UnavailableBroadcastPort,
   UnavailableCertificatePort,
   UnavailableFileTransferPort,
+  UnavailableExternalLinkPort,
   UnavailableFileHistoryPort,
   UnavailableHistoryPort,
   UnavailableMediaPort,
@@ -123,6 +126,12 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronFileTransferPort, unavailable: UnavailableFileTransferPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronFileTransferPort, UnavailableFileTransferPort],
+  },
+  {
+    provide: EXTERNAL_LINK_PORT,
+    useFactory: (electron: ElectronExternalLinkPort, unavailable: UnavailableExternalLinkPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronExternalLinkPort, UnavailableExternalLinkPort],
   },
   {
     provide: FILE_HISTORY_PORT,

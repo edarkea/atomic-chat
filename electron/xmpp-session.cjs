@@ -1,5 +1,6 @@
 const { client } = require('@xmpp/client');
 const crypto = require('node:crypto');
+const { loadDisplayName } = require('./xmpp-display-name.cjs');
 const { validateXmppTransport } = require('./security-policy.cjs');
 
 function createXmppResource() {
@@ -110,6 +111,7 @@ function createXmppSession(adapter) {
         since: new Date().toISOString(),
       };
       adapter.states.set(input.accountId, state);
+      void loadDisplayName(adapter, input.accountId, session);
       void adapter.carbons
         .negotiate(input.accountId, session, domain, adapter.sessionGenerations.get(input.accountId))
         .catch(() => undefined);

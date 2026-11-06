@@ -1,0 +1,32 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { describe, expect, it, vi } from 'vitest';
+import { MessageItemComponent, messageContentSegments } from './message-item.component';
+import { EXTERNAL_LINK_PORT } from './core/ports';
+
+describe('message links', () => {
+  it('segments safe HTTP links while preserving surrounding text', () => {
+    expect(messageContentSegments('Visita https://example.test/path.')).toEqual([
+      { kind: 'text', value: 'Visita ' },
+      { kind: 'link', value: 'https://example.test/path', href: 'https://example.test/path' },
+      { kind: 'text', value: '.' },
+    ]);
+  });
+
+  it('asks for confirmation before opening a link through the external-link port', async () => {
+    const open = vi.fn(async () => ({ ok: true as const, version: 1 as const, requestId: 'link', value: undefined }));
+    await TestBed.configureTestingModule({
+      imports: [MessageItemComponent],
+      providers: [{ provide: EXTERNAL_LINK_PORT, useValue: { open } }],
+    }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> = TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.test');
+    fixture.componentRef.setInput('body', 'https://example.test/notice');
+    fixture.componentRef.setInput('outgoing', false);
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.message-link') as HTMLAnchorElement).click();
+    expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('https://example.test/notice'));
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.test/notice' }));
+    confirmation.mockRestore();
+  });
+});

@@ -50,6 +50,9 @@ test('updater exposes available and downloaded states without auto-download', as
   const downloaded = await service.download({ version: 1, requestId: 'download-1' });
   assert.equal(downloaded.state, 'downloaded');
   assert.equal(wasInstalled(), false);
+  assert.equal(service.getStatus({ version: 1, requestId: 'retained' }).state, 'downloaded');
+  await service.check({ version: 1, requestId: 'periodic' });
+  assert.equal(service.getStatus({ version: 1, requestId: 'retained-after-check' }).state, 'downloaded');
   service.stop();
 });
 
@@ -80,6 +83,7 @@ test('installation is blocked while a critical transfer is active', async () => 
     service.install({ version: 1, requestId: 'install-1' }),
     (error) => error.code === 'CONFLICT',
   );
+  assert.equal(service.getStatus({ version: 1, requestId: 'still-ready' }).state, 'downloaded');
   assert.equal(wasInstalled(), false);
   service.stop();
 });

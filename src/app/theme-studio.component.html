@@ -35,7 +35,7 @@
                   <input
                     type="color"
                     [id]="'theme-' + field.key + '-picker'"
-                    [value]="color(field.key)"
+                    [value]="pickerColor(field.key)"
                     [attr.aria-label]="field.label + ' selector'"
                     (input)="changeColor(field.key, $event)"
                   />
@@ -44,10 +44,10 @@
                     [id]="'theme-' + field.key"
                     inputmode="text"
                     autocomplete="off"
-                    maxlength="7"
-                    pattern="^#[0-9a-fA-F]{6}$"
+                    maxlength="64"
+                    spellcheck="false"
                     [value]="color(field.key)"
-                    [attr.aria-label]="field.label + ' hexadecimal'"
+                    [attr.aria-label]="field.label + ' valor de color'"
                     (input)="changeColor(field.key, $event)"
                   />
                 </span>

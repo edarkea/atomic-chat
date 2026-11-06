@@ -50,6 +50,12 @@
             aria-labelledby="preferences-title"
           >
             <h3>General</h3>
+            <label class="preference-row" style="margin-bottom: 7px;">
+              <span><strong>Mantener en segundo plano al cerrar</strong>
+                <small>Continúa conectado. Abre Atomic Chat o sal completamente desde la bandeja del sistema.</small></span>
+              <input type="checkbox" [ngModel]="model().preferences.closeToTray ?? false"
+                (ngModelChange)="preferenceChange.emit({ closeToTray: $event })" />
+            </label>
             <label class="preference-row"
               ><span
                 ><strong>Inicio automático</strong

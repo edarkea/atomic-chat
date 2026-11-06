@@ -12,6 +12,7 @@ import {
   FileRequest,
   FileSendInput,
   FileDroppedSendInput,
+  FileClipboardSendInput,
   FileTransfer,
   ChatImageRecord,
   FileHistoryRequest,
@@ -45,6 +46,7 @@ import {
   RoomSendReceipt,
   RoomState,
   XmppConnectionProfile,
+  ExternalLinkOpenInput,
   XmppTransport,
   StickerDeleteRequest,
   StickerDraftCommitRequest,
@@ -143,12 +145,16 @@ export interface AtomicChatApi {
   file: {
     send(input: FileSendInput): Promise<Result<FileTransfer | null>>;
     sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>>;
+    sendClipboard(input: FileClipboardSendInput): Promise<Result<FileTransfer | null>>;
     accept(input: FileRequest): Promise<Result<FileTransfer>>;
     reject(input: FileRequest): Promise<Result<FileTransfer>>;
     cancel(input: FileRequest): Promise<Result<FileTransfer>>;
     open(input: FileRequest): Promise<Result<void>>;
     reveal(input: FileRequest): Promise<Result<void>>;
     listActive(input: FileActiveInput): Promise<Result<ReadonlyArray<FileTransfer>>>;
+  };
+  externalLinks: {
+    open(input: ExternalLinkOpenInput): Promise<Result<void>>;
   };
   preview: {
     get(input: ImagePreviewRequest): Promise<Result<ImagePreviewRef>>;

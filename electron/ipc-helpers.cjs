@@ -2,6 +2,7 @@ const { isTransferTimeout } = require('./transfer-timeout.cjs');
 const { isDownloadDirectory } = require('./download-directory.cjs');
 
 const preferenceDefaults = {
+  closeToTray: false,
   theme: 'atomic',
   notifications: true,
   autoAcceptFileTransfers: false,
@@ -11,6 +12,7 @@ const preferenceDefaults = {
   downloadDirectory: '',
 };
 const preferenceKeys = [
+  'closeToTray',
   'theme',
   'customTheme',
   'notifications',
@@ -37,8 +39,35 @@ function normalizeThemeId(value) {
   return value === 'dark' ? 'atomic' : value === 'light' ? 'atomic-light' : value;
 }
 
-function isHexColor(value) {
-  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}(?:[0-9a-f]{2})?)$/i;
+const COLOR_FUNCTION = /^(?:rgba?|hsla?)\(\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?)?\s*\)$/i;
+
+function parseThemeNumber(value, max) {
+  const percentage = value.endsWith('%');
+  const numeric = Number.parseFloat(percentage ? value.slice(0, -1) : value);
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > (percentage ? 100 : max)) return null;
+  return numeric;
+}
+
+function isThemeColor(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  if (HEX_COLOR.test(normalized) || /^transparent$/i.test(normalized)) return true;
+  if (!COLOR_FUNCTION.test(normalized)) return false;
+  const match = normalized.match(/^(rgba?|hsla?)\((.*)\)$/i);
+  if (!match) return false;
+  const components = match[2].replace(/[,/]/g, ' ').trim().split(/\s+/);
+  if (components.length < 3 || components.length > 4) return false;
+  if (match[1].toLowerCase().startsWith('rgb')) {
+    if (components.slice(0, 3).some((component) => parseThemeNumber(component, 255) === null))
+      return false;
+    return components[3] === undefined || parseThemeNumber(components[3], 1) !== null;
+  }
+  if (!components[1].endsWith('%') || !components[2].endsWith('%')) return false;
+  if (!Number.isFinite(Number.parseFloat(components[0]))) return false;
+  if (parseThemeNumber(components[1], 100) === null || parseThemeNumber(components[2], 100) === null)
+    return false;
+  return components[3] === undefined || parseThemeNumber(components[3], 1) !== null;
 }
 
 function validateThemePalette(value) {
@@ -46,7 +75,7 @@ function validateThemePalette(value) {
   const keys = Object.keys(value);
   if (keys.length !== themeColorKeys.length || keys.some((key) => !themeColorKeys.includes(key)))
     throw new Error('INVALID_INPUT');
-  for (const key of themeColorKeys) if (!isHexColor(value[key])) throw new Error('INVALID_INPUT');
+  for (const key of themeColorKeys) if (!isThemeColor(value[key])) throw new Error('INVALID_INPUT');
   return value;
 }
 
@@ -366,6 +395,7 @@ function createIpcHelpers({
       'TIMEOUT',
       'CONFLICT',
       'STORAGE_FAILED',
+      'MEDIA_SIZE_EXCEEDED',
       'TRANSPORT_FAILED',
       'UNSUPPORTED',
       'INTERNAL',
@@ -395,6 +425,8 @@ function createIpcHelpers({
               ? 'Esta acción no está disponible para este archivo.'
               : code === 'NOT_CONNECTED'
                 ? 'El destinatario ya no está disponible.'
+              : code === 'MEDIA_SIZE_EXCEEDED'
+                ? 'El archivo supera el tamaño máximo permitido.'
                 : 'No fue posible completar la transferencia.',
       },
     };
@@ -445,6 +477,7 @@ function createIpcHelpers({
 
   function validatePreferences(changes, allowLegacyTheme = false) {
     const allowed = {
+      closeToTray: (value) => typeof value === 'boolean',
       theme: (value) =>
         value === 'atomic' ||
         value === 'atomic-light' ||

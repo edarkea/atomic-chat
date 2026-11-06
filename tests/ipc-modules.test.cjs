@@ -16,6 +16,11 @@ const { registerAttentionHandlers } = require('../electron/ipc-attention-handler
 const { registerBroadcastHandlers } = require('../electron/ipc-broadcast-handlers.cjs');
 const { registerFileHistoryHandlers } = require('../electron/ipc-file-history-handlers.cjs');
 const { registerPreviewHandlers } = require('../electron/ipc-preview-handlers.cjs');
+const { registerStickerHandlers } = require('../electron/ipc-sticker-handlers.cjs');
+const { registerStickerPackHandlers } = require('../electron/ipc-sticker-pack-handlers.cjs');
+const { registerStickerMessageHandlers } = require('../electron/ipc-sticker-message-handlers.cjs');
+const { registerUpdateHandlers } = require('../electron/ipc-update-handlers.cjs');
+const { registerExternalLinkHandlers } = require('../electron/ipc-external-link-handlers.cjs');
 
 const channels = [
   'contract.version',
@@ -35,6 +40,7 @@ const channels = [
   'muc.sendMessage',
   'file.send',
   'file.sendDropped',
+  'file.sendClipboard',
   'file.accept',
   'file.reject',
   'file.cancel',
@@ -48,8 +54,32 @@ const channels = [
   'preview.revoke',
   'fileHistory.open',
   'fileHistory.reveal',
+  'stickers.import',
+  'stickers.list',
+  'stickers.delete',
+  'stickers.preview.get',
+  'stickers.preview.open',
+  'stickers.preview.read',
+  'stickers.preview.close',
+  'stickers.preview.revoke',
+  'stickerPacks.list',
+  'stickerPacks.get',
+  'stickerPacks.save',
+  'stickerPacks.delete',
+  'stickerDrafts.list',
+  'stickerDrafts.create',
+  'stickerDrafts.get',
+  'stickerDrafts.update',
+  'stickerDrafts.discard',
+  'stickerDrafts.commit',
+  'stickerMessages.discover',
+  'stickerMessages.send',
+  'stickerMessages.load',
+  'stickerMessages.save',
   'messages.list',
   'messages.page',
+  'messages.search',
+  'messages.around',
   'timeline.page',
   'conversations.list',
   'media.list',
@@ -63,6 +93,11 @@ const channels = [
   'account.forgetSecret',
   'attention.request',
   'attention.clear',
+  'updates.getStatus',
+  'updates.check',
+  'updates.download',
+  'updates.install',
+  'externalLinks.open',
 ];
 
 function createHarness() {
@@ -223,14 +258,19 @@ test('each domain registrar owns only its assigned channels', () => {
       ],
     ],
     [registerBroadcastHandlers, ['broadcast.send']],
-    [registerMucHandlers, channels.slice(11, 15)],
-    [registerFileHandlers, channels.slice(15, 23)],
-    [registerPreviewHandlers, channels.slice(23, 28)],
-    [registerFileHistoryHandlers, channels.slice(28, 30)],
-    [registerHistoryHandlers, channels.slice(30, 35)],
-    [registerPreferenceHandlers, channels.slice(35, 39)],
-    [registerConnectionProfileHandlers, channels.slice(39, 43)],
-    [registerAttentionHandlers, channels.slice(43, 45)],
+    [registerMucHandlers, ['muc.discover', 'muc.join', 'muc.leave', 'muc.sendMessage']],
+    [registerFileHandlers, ['file.send', 'file.sendDropped', 'file.sendClipboard', 'file.accept', 'file.reject', 'file.cancel', 'file.open', 'file.reveal', 'file.listActive']],
+    [registerPreviewHandlers, ['preview.get', 'preview.open', 'preview.read', 'preview.close', 'preview.revoke']],
+    [registerFileHistoryHandlers, ['fileHistory.open', 'fileHistory.reveal']],
+    [registerStickerHandlers, ['stickers.import', 'stickers.list', 'stickers.delete', 'stickers.preview.get', 'stickers.preview.open', 'stickers.preview.read', 'stickers.preview.close', 'stickers.preview.revoke']],
+    [registerStickerPackHandlers, ['stickerPacks.list', 'stickerPacks.get', 'stickerPacks.save', 'stickerPacks.delete', 'stickerDrafts.list', 'stickerDrafts.create', 'stickerDrafts.get', 'stickerDrafts.update', 'stickerDrafts.discard', 'stickerDrafts.commit']],
+    [registerStickerMessageHandlers, ['stickerMessages.discover', 'stickerMessages.send', 'stickerMessages.load', 'stickerMessages.save']],
+    [registerHistoryHandlers, ['messages.list', 'messages.page', 'messages.search', 'messages.around', 'timeline.page', 'conversations.list', 'media.list']],
+    [registerPreferenceHandlers, ['preferences.get', 'preferences.update', 'preferences.selectDownloadDirectory', 'preferences.reset']],
+    [registerConnectionProfileHandlers, ['connectionProfiles.list', 'connectionProfiles.save', 'connectionProfiles.delete', 'account.forgetSecret']],
+    [registerAttentionHandlers, ['attention.request', 'attention.clear']],
+    [registerUpdateHandlers, ['updates.getStatus', 'updates.check', 'updates.download', 'updates.install']],
+    [registerExternalLinkHandlers, ['externalLinks.open']],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();

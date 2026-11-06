@@ -38,6 +38,7 @@ function createHarness({
   roster,
   room,
   supported = true,
+  onIncomingMessage,
 } = {}) {
   const shown = [];
   const windows = [
@@ -66,6 +67,7 @@ function createHarness({
   }
 
   const notificationHandler = createMessageNotifications({
+    onIncomingMessage,
     Notification: FakeNotification,
     BrowserWindow: { getAllWindows: () => windows },
     getPreferences: () => ({ notifications }),
@@ -76,6 +78,17 @@ function createHarness({
 
   return { notificationHandler, shown };
 }
+
+test('background badge receives deduplicated messages even with OS notifications disabled', () => {
+  let received = 0;
+  const { notificationHandler, shown } = createHarness({ notifications: false, onIncomingMessage: () => { received++; } });
+  const event = { type: 'message.received', payload: directMessage() };
+  notificationHandler.handle(event);
+  notificationHandler.handle(event);
+  notificationHandler.handle({ type: 'message.received', payload: directMessage({ senderJid: accountId }) });
+  assert.equal(received, 1);
+  assert.equal(shown.length, 0);
+});
 
 test('muestra notificación directa con nombre conocido del roster', () => {
   const { notificationHandler, shown } = createHarness({

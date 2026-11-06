@@ -443,7 +443,13 @@ export class ChatFacade {
         return false;
       }
       if (!this.isCurrent(generation, requestedAccount)) return false;
-      this.connection.set(result.value);
+      const current = this.connection();
+      this.connection.set({
+        ...result.value,
+        displayName: result.value.displayName ??
+          (current.accountId === requestedAccount && current.since === result.value.since
+            ? current.displayName : undefined),
+      });
       const roster = await this.xmpp.listRoster(requestedAccount);
       if (roster.ok && this.isCurrent(generation, requestedAccount)) this.mergeRoster(roster.value);
       if (this.isCurrent(generation, requestedAccount)) {

@@ -8,6 +8,7 @@ function registerPreferenceHandlers({
   helpers,
   selectDownloadDirectory = async () => null,
   defaultDownloadDirectory = '',
+  onPreferencesChanged = () => undefined,
 }) {
   const { requestId, preferenceKeys, preferenceScope, validatePreferences, normalizeThemeId } =
     helpers;
@@ -60,6 +61,7 @@ function registerPreferenceHandlers({
     }
     for (const { target, values } of grouped.values())
       persistence.updatePreferences(target.scope, target.scopeId, values);
+    onPreferencesChanged();
     return { ok: true, value: input.changes, version: 1, requestId: requestId(event) };
   });
   ipcMain.handle('preferences.selectDownloadDirectory', async (event, input) => {
@@ -73,6 +75,7 @@ function registerPreferenceHandlers({
     const accountId = input?.accountId || [...xmpp.sessions.keys()][0] || '';
     persistence.resetPreferences('global', 'app');
     persistence.resetPreferences('account', accountId);
+    onPreferencesChanged();
     return { ok: true, value: defaults, version: 1, requestId: requestId(event, input) };
   });
 }

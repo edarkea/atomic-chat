@@ -7,6 +7,7 @@ import {
   FileRequest,
   FileSendInput,
   FileDroppedSendInput,
+  FileClipboardSendInput,
   FileTransfer,
   ChatImageRecord,
   FileHistoryRequest,
@@ -20,6 +21,7 @@ import {
   MessageSearchPage,
   MediaListInput,
   Message,
+  ExternalLinkOpenInput,
   Preferences,
   PreviewChunk,
   PreviewCloseRequest,
@@ -79,6 +81,7 @@ import {
   BroadcastPort,
   CertificatePort,
   FileTransferPort,
+  ExternalLinkPort,
   HistoryPort,
   MediaPort,
   FileHistoryPort,
@@ -274,6 +277,9 @@ export class UnavailableFileTransferPort implements FileTransferPort {
   sendDropped(input: FileDroppedSendInput): Promise<Result<FileTransfer | null>> {
     return Promise.resolve(unsupported(input.requestId));
   }
+  sendClipboard(input: FileClipboardSendInput): Promise<Result<FileTransfer | null>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
   accept(input: FileRequest): Promise<Result<FileTransfer>> {
     return Promise.resolve(unsupported(input.requestId));
   }
@@ -294,6 +300,13 @@ export class UnavailableFileTransferPort implements FileTransferPort {
   }
   subscribe(_listener: (event: TypedDomainEvent) => void): () => void {
     return () => undefined;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableExternalLinkPort implements ExternalLinkPort {
+  open(input: ExternalLinkOpenInput): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
   }
 }
 
