@@ -116,6 +116,12 @@
 
 @if (!chat.isConnected()) {
   <app-login-panel
+    [updateStatus]="updates.status()"
+    [updateBusy]="updates.busy()"
+    [updateError]="updates.error()"
+    (downloadUpdate)="updates.download()"
+    (installUpdate)="updates.install()"
+    (checkForUpdates)="updates.check()"
     [accountId]="login().accountId"
     [domain]="login().domain"
     [password]="login().password"
@@ -161,7 +167,8 @@
         <svg class="ac-icon ac-icon-brand" aria-hidden="true" focusable="false">
           <use href="#ac-brand" /></svg
         ><strong>ATOMIC CHAT</strong
-        ><span class="concept">v{{ updates.status().currentVersion }}</span>
+        ><app-version-update [status]="updates.status()" [busy]="updates.busy()" [error]="updates.error()"
+          (download)="updates.download()" (install)="updates.install()" (check)="updates.check()" />
       </div>
       @if (totalUnread() > 0) {
         <span class="global-unread" aria-label="Mensajes no leídos">{{ totalUnread() }}</span>

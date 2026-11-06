@@ -26,6 +26,7 @@ export type MessageStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed';
 export type MessagePersistenceStatus = 'persisted' | 'memory-only';
 export type MessageClassification = 'direct' | 'broadcast';
 export interface ConnectionState {
+  readonly displayName?: string;
   accountId: string;
   status: ConnectionStatus;
   reason?: string;
@@ -973,6 +974,8 @@ export type HexColor = string;
 export type ThemePalette = Readonly<Record<ThemeColorKey, HexColor>>;
 
 export interface Preferences {
+  /** Missing in older installations means disabled. */
+  closeToTray?: boolean;
   theme: ThemeId;
   customTheme?: ThemePalette;
   notifications: boolean;

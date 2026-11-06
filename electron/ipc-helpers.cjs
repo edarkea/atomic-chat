@@ -2,6 +2,7 @@ const { isTransferTimeout } = require('./transfer-timeout.cjs');
 const { isDownloadDirectory } = require('./download-directory.cjs');
 
 const preferenceDefaults = {
+  closeToTray: false,
   theme: 'atomic',
   notifications: true,
   autoAcceptFileTransfers: false,
@@ -11,6 +12,7 @@ const preferenceDefaults = {
   downloadDirectory: '',
 };
 const preferenceKeys = [
+  'closeToTray',
   'theme',
   'customTheme',
   'notifications',
@@ -448,6 +450,7 @@ function createIpcHelpers({
 
   function validatePreferences(changes, allowLegacyTheme = false) {
     const allowed = {
+      closeToTray: (value) => typeof value === 'boolean',
       theme: (value) =>
         value === 'atomic' ||
         value === 'atomic-light' ||

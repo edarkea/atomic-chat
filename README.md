@@ -105,6 +105,8 @@ npm run test:ci:focused
 
 ## Documentation, limitations and roadmap
 
+See [Desktop profile, background mode and version updates](docs/desktop-background-and-updates.md) for the new preferences, tray menu, login/chat update controls and validation results.
+
 See [CI, builds and updates](docs/ci-cd-and-updates.md) for the current release controls, dependency-security notes, manual build workflow and updater status.
 
 The main operational limitations are conditional MUC authorization, disabled sticker sending, incomplete installed-updater E2E validation, target-platform packaging/signing checks and dependence on the configured XMPP server's authentication, roster, presence, file-transfer and MUC capabilities.

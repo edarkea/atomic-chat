@@ -8,6 +8,8 @@ const {
   dialog,
   shell,
   nativeImage,
+  Tray,
+  screen,
 } = require('electron');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -31,6 +33,7 @@ const { registerIpcHandlers } = require('./ipc-handlers.cjs');
 const { createUpdateService } = require('./update-service.cjs');
 const { createApplicationAttention } = require('./application-attention.cjs');
 const { createMessageNotifications } = require('./message-notifications.cjs');
+const { createBackgroundMode } = require('./background-mode.cjs');
 const { createIncomingMessageProcessor } = require('./incoming-message-persistence.cjs');
 const { PreviewGrantRegistry } = require('./preview-grants.cjs');
 const { MediaStore } = require('./media-store.cjs');
@@ -163,7 +166,13 @@ updateService.onStatus((status) => {
 });
 
 const applicationAttention = createApplicationAttention({ BrowserWindow, app });
+const backgroundMode = createBackgroundMode({
+  app, BrowserWindow, Tray, nativeImage, screen, ipcMain,
+  getPreferences: () => runtime?.persistence.getPreferences('global', 'app') || {},
+  iconPath: path.join(__dirname, '..', 'build', 'icons', '128x128.png'),
+});
 const messageNotifications = createMessageNotifications({
+  onIncomingMessage: () => backgroundMode.markUnread(),
   Notification,
   BrowserWindow,
   getPreferences: () => runtime?.persistence.getPreferences('global', 'app') || {},
@@ -201,6 +210,7 @@ function createWindow() {
     },
   });
   mainWindow.on('focus', applicationAttention.acknowledge);
+  backgroundMode.attach(mainWindow);
   return mainWindow;
 }
 
@@ -217,6 +227,7 @@ function attachEventSources() {
   runtime.media.onEvent((event) => eventRouter.forwardTransferEvent(event));
   fileTransfers.onEvent((event) => {
     eventRouter.forwardTransferEvent(event);
+    if (event.type === 'file.offerReceived') backgroundMode.markUnread();
     if (event.type !== 'file.offerReceived' || !autoAcceptFileTransfers()) return;
     void fileTransfers
       .accept(event.payload.transferId, event.targetSenderId)
@@ -226,9 +237,11 @@ function attachEventSources() {
   });
   outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
   runtime.xmpp.onEvent((event) => {
+    if (event.type === 'connection.stateChanged') backgroundMode.updateMenu();
     if (event.type === 'sticker.messageReceived') {
       try {
         const persisted = runtime.stickerMessages.save(event.payload);
+        if (persisted.direction === 'incoming') backgroundMode.markUnread();
         eventRouter.forwardXmppEvent({ type: event.type, payload: persisted });
         const accountId = persisted.accountId;
         const generation = runtime.xmpp.sessionGenerations.get(accountId) || 0;
@@ -298,6 +311,7 @@ function initializeRuntime() {
 }
 
 async function shutdown() {
+  backgroundMode.dispose();
   updateService.stop();
   const activeRuntime = runtime;
   await Promise.all(
@@ -330,9 +344,10 @@ registerIpcHandlers({
   defaultDownloadDirectory,
   applicationAttention,
   updateService,
+  onPreferencesChanged: () => backgroundMode.syncPreferences(),
 });
 app.whenReady().then(() => {
   initializeRuntime();
   updateService.start();
 });
-registerAppLifecycle({ app, BrowserWindow, createWindow, shutdown });
+registerAppLifecycle({ app, BrowserWindow, createWindow, shutdown, openWindow: backgroundMode.open });

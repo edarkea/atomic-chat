@@ -47,6 +47,17 @@ const palette = {
   focus: '#baffc2',
 };
 
+test('close-to-tray is opt-in, global, boolean and resettable', () => {
+  const { handlers, values } = setup();
+  const event = { sender: { id: 1 } };
+  assert.equal(handlers.get('preferences.get')(event, {}).value.closeToTray, false);
+  handlers.get('preferences.update')(event, { changes: { closeToTray: true } });
+  assert.equal(values.get('global:app').closeToTray, true);
+  assert.equal(handlers.get('preferences.get')(event, { accountId: 'other' }).value.closeToTray, true);
+  assert.throws(() => handlers.get('preferences.update')(event, { changes: { closeToTray: 'yes' } }), /INVALID_INPUT/);
+  assert.equal(handlers.get('preferences.reset')(event, {}).value.closeToTray, false);
+});
+
 test('persists theme id and palette together while retaining preference scopes', () => {
   const { handlers, calls } = setup();
   handlers.get('preferences.update')(

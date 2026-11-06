@@ -1,0 +1,46 @@
+:root {
+  color-scheme: dark;
+  --background: #020d07;
+  --text: #d7f5dc;
+  --accent: #5ced79;
+  --border: #287744;
+  --surfaceRaised: #092818;
+  --focus: #8dffa0;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 8px;
+  background: var(--background);
+  color: var(--text);
+  font:
+    12px Consolas,
+    monospace;
+}
+nav {
+  display: grid;
+  gap: 2px;
+}
+button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 7px 8px;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+button:hover,
+button:focus-visible {
+  background: var(--surfaceRaised);
+  outline: 1px solid var(--focus);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

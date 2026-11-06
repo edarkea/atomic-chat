@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   effect,
   ElementRef,
   input,
@@ -12,6 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { PresenceOption } from './sidebar.models';
 
 export interface OperatorPresenceModel {
+  readonly displayName?: string;
   readonly accountId: string;
   readonly connectionLabel: string;
   readonly presenceLabel: string;
@@ -33,6 +35,17 @@ export class OperatorPresenceComponent {
   @ViewChild('presenceTrigger') private readonly presenceTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('presenceMenu') private readonly presenceMenu?: ElementRef<HTMLElement>;
   readonly model = input.required<OperatorPresenceModel>();
+  protected readonly displayName = computed(() => {
+    const { accountId, displayName } = this.model();
+    const username = accountId.split('/')[0].split('@')[0];
+    const profileName = displayName?.trim();
+    if (profileName && profileName !== username && profileName !== accountId) return profileName;
+    return username
+      .split(/[._-]+/u)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toLocaleUpperCase('es') + part.slice(1))
+      .join(' ') || username;
+  });
   readonly presenceToggle = output<void>();
   readonly presenceClose = output<void>();
   readonly presenceSelected = output<PresenceOption>();

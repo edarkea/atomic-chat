@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, input, output, signal, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, ElementRef, HostListener, input, output, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { EmojiPickerComponent } from './emoji-picker.component';
 
@@ -42,7 +42,15 @@ export class MessageComposerComponent {
   @ViewChild('messageInput') private messageInput?: ElementRef<HTMLTextAreaElement>;
   private savedSelection = { start: 0, end: 0 };
 
-  constructor(private readonly host: ElementRef<HTMLElement>) {}
+  constructor(private readonly host: ElementRef<HTMLElement>) {
+    effect(() => {
+      if (this.draft()) return;
+      const input = this.messageInput?.nativeElement;
+      if (!input) return;
+      input.style.removeProperty('height');
+      input.style.overflowY = 'hidden';
+    });
+  }
 
   protected toggleEmoji(): void {
     if (this.disabled()) return;

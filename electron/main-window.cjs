@@ -20,7 +20,9 @@ function createMainWindow({
     },
   });
   window.removeMenu();
-  window.webContents.on('destroyed', () => onDestroyed(window.webContents.id));
+  // Electron no longer permits access to webContents after it has been destroyed.
+  const senderId = window.webContents.id;
+  window.webContents.once('destroyed', () => onDestroyed(senderId));
   if (devServerUrl) window.loadURL(devServerUrl);
   else window.loadFile(productionHtmlPath);
   return window;

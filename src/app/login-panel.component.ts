@@ -12,16 +12,23 @@ import {
   QueryList,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { XmppConnectionProfile, XmppTransport } from './core/domain';
+import { UpdateStatus, XmppConnectionProfile, XmppTransport } from './core/domain';
+import { VersionUpdateComponent } from './version-update.component';
 
 @Component({
   selector: 'app-login-panel',
-  imports: [FormsModule],
+  imports: [FormsModule, VersionUpdateComponent],
   templateUrl: './login-panel.component.html',
   styleUrls: ['./login-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginPanelComponent {
+  readonly updateStatus = input<UpdateStatus>({ version: 1, state: 'idle', currentVersion: '0.0.0' });
+  readonly updateBusy = input(false);
+  readonly updateError = input<string | null>(null);
+  readonly downloadUpdate = output<void>();
+  readonly installUpdate = output<void>();
+  readonly checkForUpdates = output<void>();
   readonly accountId = input.required<string>();
   readonly domain = input('');
   readonly password = input.required<string>();

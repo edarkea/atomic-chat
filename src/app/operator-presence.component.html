@@ -4,7 +4,7 @@
       <use href="#ac-contact" /></svg
   ></span>
   <div>
-    <strong>{{ model().accountId }}</strong
+    <strong>{{ displayName() }}</strong
     ><small>{{ model().connectionLabel }} · {{ model().presenceLabel }}</small>
   </div>
   <span class="online-dot" [class]="'online-dot ' + model().presenceDot" aria-hidden="true"></span>

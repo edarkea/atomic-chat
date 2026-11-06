@@ -58,6 +58,7 @@ import {
 import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
 import { StickerMessageFacade } from './core/sticker-message.facade';
 import { UpdateFacade } from './core/update.facade';
+import { VersionUpdateComponent } from './version-update.component';
 
 export const STICKER_SENDING_DISABLED_MESSAGE =
   'El envío de stickers está temporalmente deshabilitado';
@@ -101,6 +102,7 @@ type BroadcastAttempt = Readonly<{ mode: BroadcastMode; body: string }>;
 @Component({
   selector: 'app-root',
   imports: [
+    VersionUpdateComponent,
     CertificateDialogComponent,
     ConnectionSettingsDialogComponent,
     ConversationViewComponent,
@@ -547,6 +549,7 @@ export class App {
   ];
   protected readonly sidebarModel = computed<SidebarModel>(() => ({
     operator: {
+      displayName: this.chat.connection().displayName,
       accountId: this.chat.accountId(),
       connectionLabel: this.connectionLabel(),
       presenceLabel: this.presenceLabel(),
