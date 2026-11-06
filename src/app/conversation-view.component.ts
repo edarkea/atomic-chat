@@ -91,6 +91,7 @@ export class ConversationViewComponent {
 
   readonly closeRequested = output<void>();
   readonly filesDropped = output<ReadonlyArray<File>>();
+  readonly filesPasted = output<ReadonlyArray<File>>();
   readonly dropRejected = output<string>();
   readonly draftChange = output<string>();
   readonly typingFocus = output<void>();

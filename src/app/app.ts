@@ -1226,6 +1226,14 @@ export class App {
     }
     void this.files.sendDropped(selection.jid, files);
   }
+  protected pasteFiles(files: ReadonlyArray<File>): void {
+    const selection = this.activeSelection();
+    if (selection.kind !== 'direct' || !this.selectedJid()) {
+      this.files.error.set('Selecciona una conversación individual para pegar archivos.');
+      return;
+    }
+    void this.files.sendClipboard(selection.jid, files);
+  }
   protected dropRejected(message: string): void {
     this.files.error.set(message);
   }

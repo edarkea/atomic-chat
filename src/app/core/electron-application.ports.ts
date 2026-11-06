@@ -9,6 +9,7 @@ import {
   FileRequest,
   FileSendInput,
   FileDroppedSendInput,
+  FileClipboardSendInput,
   FileTransfer,
   ChatImageRecord,
   FileHistoryRequest,
@@ -67,6 +68,7 @@ import {
   UpdateRequest,
   UpdateStatus,
   XmppConnectionProfile,
+  ExternalLinkOpenInput,
 } from './domain';
 import { subscribeToDomainEvents } from './domain-event.validation';
 import { getAtomicChatApi } from './electron-api';
@@ -77,6 +79,7 @@ import {
   BroadcastPort,
   CertificatePort,
   FileTransferPort,
+  ExternalLinkPort,
   HistoryPort,
   MediaPort,
   FileHistoryPort,
@@ -306,6 +309,11 @@ export class ElectronFileTransferPort implements FileTransferPort {
     return api ? api.file.sendDropped(input) : Promise.resolve(unavailable(input.requestId));
   }
 
+  sendClipboard(input: FileClipboardSendInput): Promise<Result<FileTransfer | null>> {
+    const api = getAtomicChatApi();
+    return api ? api.file.sendClipboard(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
   accept(input: FileRequest): Promise<Result<FileTransfer>> {
     const api = getAtomicChatApi();
     return api ? api.file.accept(input) : Promise.resolve(unavailable(input.requestId));
@@ -339,6 +347,14 @@ export class ElectronFileTransferPort implements FileTransferPort {
   subscribe(listener: (event: TypedDomainEvent) => void): () => void {
     const subscribe = getAtomicChatApi()?.subscribe;
     return subscribe ? subscribeToDomainEvents(subscribe, listener) : () => undefined;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronExternalLinkPort implements ExternalLinkPort {
+  open(input: ExternalLinkOpenInput): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api ? api.externalLinks.open(input) : Promise.resolve(unavailable(input.requestId));
   }
 }
 

@@ -115,6 +115,7 @@
     (inputBlur)="typingBlur.emit()"
     (messageSubmitted)="messageSend.emit()"
     (stickerSend)="stickerSend.emit($event)"
+    (filesPasted)="filesPasted.emit($event)"
     (attach)="attach.emit()"
   />
   @if (dropActive()) {

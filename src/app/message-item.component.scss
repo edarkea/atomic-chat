@@ -23,4 +23,12 @@
   margin-top: 6px;
 }
 .message-body { overflow-wrap: anywhere; white-space: pre-wrap; }
+.message-link {
+  color: var(--atomic-green);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.message-link:hover,
+.message-link:focus-visible { color: var(--atomic-text); }
 .message-time { color: var(--atomic-text-muted); display: block; font-size: 10px; margin-top: 4px; }

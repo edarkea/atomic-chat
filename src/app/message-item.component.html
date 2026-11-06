@@ -5,7 +5,15 @@
       <span class="broadcast-badge">DIFUSIÓN</span>
     }
   </div>
-  <p class="message-body">{{ body() }}</p>
+  <p class="message-body">
+    @for (segment of contentSegments(); track $index) {
+      @if (segment.kind === 'link') {
+        <a class="message-link" [href]="segment.href" rel="noreferrer noopener" (click)="openLink($event, segment.href)">{{ segment.value }}</a>
+      } @else {
+        {{ segment.value }}
+      }
+    }
+  </p>
   <time class="message-time" [attr.datetime]="createdAt() || null" [title]="fullDate(createdAt())" [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())">
     {{ time(createdAt()) }} · {{ date(createdAt()) }}
   </time>

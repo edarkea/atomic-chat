@@ -13,6 +13,7 @@ const { registerStickerHandlers } = require('./ipc-sticker-handlers.cjs');
 const { registerStickerPackHandlers } = require('./ipc-sticker-pack-handlers.cjs');
 const { registerStickerMessageHandlers } = require('./ipc-sticker-message-handlers.cjs');
 const { registerUpdateHandlers } = require('./ipc-update-handlers.cjs');
+const { registerExternalLinkHandlers } = require('./ipc-external-link-handlers.cjs');
 
 function registerIpcHandlers(options) {
   const helpers = createIpcHelpers(options);
@@ -31,6 +32,7 @@ function registerIpcHandlers(options) {
   registerConnectionProfileHandlers(dependencies);
   registerAttentionHandlers(dependencies);
   registerUpdateHandlers(dependencies);
+  registerExternalLinkHandlers(dependencies);
 }
 
 module.exports = { registerIpcHandlers };

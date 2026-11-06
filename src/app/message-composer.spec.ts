@@ -1,4 +1,4 @@
-import { insertTextAtSelection } from './message-composer.component';
+import { clipboardFiles, insertTextAtSelection } from './message-composer.component';
 
 describe('insertTextAtSelection', () => {
   it('inserts a complex Unicode sequence without fragmenting it', () => {
@@ -10,5 +10,18 @@ describe('insertTextAtSelection', () => {
   it('replaces the selected range and preserves the remaining text', () => {
     const result = insertTextAtSelection('uno dos tres', 4, 7, '✅');
     expect(result.text).toBe('uno ✅ tres');
+  });
+});
+
+describe('clipboardFiles', () => {
+  it('extracts copied files and images without consuming plain-text paste', () => {
+    const file = new File(['image'], 'capture.png', { type: 'image/png' });
+    const event = {
+      clipboardData: {
+        files: [file],
+        items: [{ kind: 'file', getAsFile: () => file }],
+      },
+    } as unknown as ClipboardEvent;
+    expect(clipboardFiles(event)).toEqual([file]);
   });
 });

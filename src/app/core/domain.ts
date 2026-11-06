@@ -273,6 +273,14 @@ export interface FileSendInput {
 export interface FileDroppedSendInput extends FileSendInput {
   readonly file: File;
 }
+export interface FileClipboardSendInput extends FileSendInput {
+  readonly file: File;
+}
+export interface ExternalLinkOpenInput {
+  readonly version: 1;
+  readonly requestId: RequestId;
+  readonly url: string;
+}
 export type StaticImageMimeType = 'image/png' | 'image/jpeg';
 export type ImagePreviewState = 'ready' | 'unsupported' | 'unavailable' | 'revoked' | 'failed';
 export type ImagePreviewFailureCode =

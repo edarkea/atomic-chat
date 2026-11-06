@@ -366,6 +366,7 @@ function createIpcHelpers({
       'TIMEOUT',
       'CONFLICT',
       'STORAGE_FAILED',
+      'MEDIA_SIZE_EXCEEDED',
       'TRANSPORT_FAILED',
       'UNSUPPORTED',
       'INTERNAL',
@@ -395,6 +396,8 @@ function createIpcHelpers({
               ? 'Esta acción no está disponible para este archivo.'
               : code === 'NOT_CONNECTED'
                 ? 'El destinatario ya no está disponible.'
+              : code === 'MEDIA_SIZE_EXCEEDED'
+                ? 'El archivo supera el tamaño máximo permitido.'
                 : 'No fue posible completar la transferencia.',
       },
     };
