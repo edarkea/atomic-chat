@@ -74,6 +74,7 @@
           [groupPosition]="display.position"
           [attr.data-message-id]="item.message.id"
           [messageId]="stableActionId(item.message)"
+          [activeOverlay]="overlayFor(item.message.id)"
           [replyTo]="item.message.replyTo"
           [replyAuthor]="replyAuthor(item.message.replyTo)"
           [replyText]="replyQuote(item.message.replyTo)"
@@ -81,6 +82,7 @@
           [reactions]="reactionFor(item.message.id)"
           [ownReactionEmojis]="ownReactionEmojis(item.message.id)"
           (replyRequested)="requestReply(item.message)"
+          (overlayRequested)="setOverlay(item.message.id, $event)"
           (replyNavigation)="scrollToMessage($event)"
           (reactionChanged)="reactionChanged.emit({ messageId: actionTargetId(item.message), emojis: $event })"
         />

@@ -695,8 +695,9 @@ class PersistenceStore {
         sender_jid AS senderJid, body, status, created_at AS createdAt, classification,
         message_id AS messageId, origin_id AS originId, stanza_ids_json AS stanzaIdsJson, reply_to_json AS replyToJson
        FROM messages WHERE account_id = ? AND conversation_id = ? AND
-       (id = ? OR client_message_id = ? OR message_id = ? OR origin_id = ?)`
-    ).get(accountId, conversationId, messageId, messageId, messageId, messageId);
+       (id = ? OR client_message_id = ? OR message_id = ? OR origin_id = ? OR
+        EXISTS (SELECT 1 FROM json_each(COALESCE(stanza_ids_json, '[]')) WHERE json_extract(json_each.value, '$.id') = ?))`
+    ).get(accountId, conversationId, messageId, messageId, messageId, messageId, messageId);
     if (!row) return null;
     return this.messageFromRow(row);
   }

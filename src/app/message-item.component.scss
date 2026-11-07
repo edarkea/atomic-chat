@@ -44,14 +44,20 @@
 .message-link:hover,
 .message-link:focus-visible { color: var(--atomic-text); }
 .message { position: relative; }
-.message-actions { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 999px; box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: flex; gap: 2px; opacity: 0; padding: 3px; pointer-events: none; position: absolute; right: 5px; top: 50%; transform: translateY(-50%) scale(.96); transition: opacity 120ms ease, transform 120ms ease; z-index: 5; }
-.message.incoming .message-actions { left: 5px; right: auto; }
-.message:hover .message-actions, .message:focus-within .message-actions, .message-actions:focus-within { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
+.message-actions { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 999px; box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: flex; gap: 2px; opacity: 0; padding: 3px; pointer-events: none; position: absolute; right: 0; top: -13px; transform: translateY(-4px) scale(.96); transition: opacity 120ms ease, transform 120ms ease; z-index: 5; }
+.message.incoming .message-actions { left: 0; right: auto; }
+.message:hover .message-actions, .message:focus-within .message-actions, .message-actions:focus-within { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
 .message-action, .message-reaction { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); color: var(--atomic-text-muted); cursor: pointer; }
 .message-action { border: 0; border-radius: 999px; font-size: 12px; min-height: 24px; min-width: 24px; padding: 2px 6px; }
 .message-action:hover, .message-action:focus-visible { background: var(--atomic-accent); color: var(--atomic-background); }
 .message-action--emoji { font-size: 15px; }
-.message-action-menu { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 6px; box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: grid; gap: 2px; padding: 4px; position: absolute; right: 0; top: calc(100% + 4px); }
+.message-action--compact { align-items: center; display: inline-flex; justify-content: center; padding: 4px; }
+.message-quick-reactions { align-items: center; background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 999px; bottom: calc(100% + 8px); box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: flex; gap: 2px; padding: 3px; position: absolute; right: 0; z-index: 6; }
+.message.incoming .message-quick-reactions { left: 0; right: auto; }
+.message.overlay-below .message-quick-reactions { bottom: auto; top: calc(100% + 8px); }
+.message-action-menu { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 6px; bottom: calc(100% + 8px); box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: grid; gap: 2px; padding: 4px; position: absolute; right: 0; z-index: 6; }
+.message.incoming .message-action-menu { left: 0; right: auto; }
+.message.overlay-below .message-action-menu { bottom: auto; top: calc(100% + 8px); }
 .message-action-menu button { background: transparent; border: 0; color: var(--atomic-text); cursor: pointer; padding: 6px 10px; text-align: left; white-space: nowrap; }
 .message-action-menu button:hover, .message-action-menu button:focus-visible { background: var(--atomic-accent); color: var(--atomic-background); }
 .message-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
@@ -63,7 +69,9 @@
 .message-reply-quote button { background: transparent; border: 0; color: var(--atomic-text); cursor: pointer; padding: 0; text-align: left; }
 .message-reply-quote button:hover, .message-reply-quote button:focus-visible { color: var(--atomic-green); }
 .message-reply-quote span { color: var(--atomic-text-muted); display: block; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.message-reaction-picker { max-width: min(92vw, 320px); position: absolute; right: 0; top: -8px; transform: translateY(-100%); z-index: 6; }
+.message-reaction-picker { bottom: calc(100% + 8px); max-width: min(92vw, 320px); position: absolute; right: 0; z-index: 6; }
+.message.incoming .message-reaction-picker { left: 0; right: auto; }
+.message.overlay-below .message-reaction-picker { bottom: auto; top: calc(100% + 8px); }
 .message-time { color: var(--atomic-text-muted); flex: 0 0 auto; font-size: 10px; white-space: nowrap; }
 .message-time-hidden {
   border: 0;

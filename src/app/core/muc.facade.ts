@@ -23,6 +23,7 @@ import {
 import { UnreadStore } from './unread.store';
 import { ActiveConversationStore } from './active-conversation.store';
 import { WindowFocusStore } from './window-focus.store';
+import { matchesRoomMessageReference } from './message-reference';
 
 @Injectable({ providedIn: 'root' })
 export class MucFacade {
@@ -61,6 +62,7 @@ export class MucFacade {
   readonly reactions = signal<ReadonlyMap<string, ReactionState>>(new Map());
   private readonly pendingReactionVersion = signal(0);
   private readonly pendingReactions = new Map<string, ReactionState>();
+  private readonly reactionOperationVersions = new Map<string, number>();
   readonly notices = signal<ReadonlyArray<MucNotice>>([]);
   readonly visibleNotices = computed<ReadonlyArray<MucNotice>>(() =>
     this.notices().filter((notice) => notice.roomJid === this.selectedRoomJid()),
@@ -116,6 +118,7 @@ export class MucFacade {
     this.clearAllMessages();
     this.reactions.set(new Map());
     this.pendingReactions.clear();
+    this.reactionOperationVersions.clear();
     this.notices.set([]);
     this.selectedRoomJid.set('');
     this.roomGenerations.clear();
@@ -182,6 +185,11 @@ export class MucFacade {
   }
 
   async sendReaction(accountId: string, roomJid: string, targetMessageId: string, emojis: ReadonlyArray<string>): Promise<boolean> {
+    const target = this.messages().find((message) => this.messageHasTargetId(message, targetMessageId, roomJid));
+    if (!target) {
+      this.error.set('El mensaje ya no está disponible para reaccionar.');
+      return false;
+    }
     const input: MucReactionInput = {
       version: 1,
       requestId: createOpaqueId('muc-reaction'),
@@ -190,12 +198,25 @@ export class MucFacade {
       targetMessageId,
       emojis,
     };
-    const result = await this.port.sendReaction(input);
-    if (!result.ok) {
-      this.error.set(result.error.message);
+    const key = this.reactionKey(roomJid, target.id);
+    const actorId = (this.selectedState()?.selfOccupantJid || accountId).trim().toLowerCase();
+    const previous = this.actorReactionEmojis(this.reactions().get(key), actorId);
+    const version = (this.reactionOperationVersions.get(key) || 0) + 1;
+    this.reactionOperationVersions.set(key, version);
+    this.applyLocalReaction(target, roomJid, emojis, actorId);
+    try {
+      const result = await this.port.sendReaction(input);
+      if (!result.ok) {
+        this.rollbackReaction(target, roomJid, key, version, previous, actorId);
+        this.error.set(result.error.message);
+        return false;
+      }
+      return true;
+    } catch {
+      this.rollbackReaction(target, roomJid, key, version, previous, actorId);
+      this.error.set('No fue posible enviar la reacción.');
       return false;
     }
-    return true;
   }
 
   select(roomJid: string): void {
@@ -358,25 +379,76 @@ export class MucFacade {
     return `${roomJid.toLowerCase()}|${messageId}`;
   }
   private matchesReactionTarget(message: RoomMessage, reaction: ReactionState): boolean {
-    return message.id === reaction.targetMessageId || message.messageId === reaction.targetMessageId ||
-      message.originId === reaction.targetMessageId ||
-      Boolean(message.stanzaIds?.some((item) => item.id === reaction.targetMessageId && item.by.toLowerCase() === message.roomJid.toLowerCase())) ||
-      Boolean(message.stanzaIds?.some((item) => reaction.target.stanzaIds.some((candidate) => candidate.by === item.by && candidate.id === item.id)));
+    return matchesRoomMessageReference(message, reaction.target, reaction.accountId, reaction.conversationId, false);
   }
   private setReactionForTarget(reaction: ReactionState, messageId: string): void {
     const key = this.reactionKey(reaction.conversationId, messageId);
     this.reactions.update((current) => {
       const next = new Map(current);
       const previous = next.get(key);
+      const reactions = reaction.actorId
+        ? this.mergeReactionActors(previous?.reactions || [], reaction.reactions, reaction.actorId, reaction.actorEmojis || [])
+        : reaction.reactions;
+      if (!reactions.length) {
+        next.delete(key);
+        return next;
+      }
       next.set(key, {
         ...reaction,
         targetMessageId: messageId,
-        reactions: previous && reaction.actorId
-          ? this.mergeReactionActors(previous.reactions, reaction.reactions, reaction.actorId, reaction.actorEmojis || [])
-          : reaction.reactions,
+        reactions,
       });
       return next;
     });
+  }
+
+  private applyLocalReaction(message: RoomMessage, roomJid: string, emojis: ReadonlyArray<string>, actorId: string): void {
+    this.setReactionForTarget({
+      accountId: message.accountId,
+      conversationId: roomJid,
+      targetMessageId: message.id,
+      target: {
+        ...(message.messageId ? { messageId: message.messageId } : {}),
+        ...(message.originId ? { originId: message.originId } : {}),
+        stanzaIds: message.stanzaIds || [],
+        authorJid: message.occupantJid,
+      },
+      reactions: this.reactions().get(this.reactionKey(roomJid, message.id))?.reactions || [],
+      updatedAt: new Date().toISOString(),
+      source: 'muc',
+      actorId,
+      actorEmojis: [...new Set(emojis)],
+    }, message.id);
+  }
+
+  private rollbackReaction(message: RoomMessage, roomJid: string, key: string, version: number, previous: ReadonlyArray<string>, actorId: string): void {
+    if (this.reactionOperationVersions.get(key) !== version) return;
+    this.setReactionForTarget({
+      accountId: message.accountId,
+      conversationId: roomJid,
+      targetMessageId: message.id,
+      target: {
+        ...(message.messageId ? { messageId: message.messageId } : {}),
+        ...(message.originId ? { originId: message.originId } : {}),
+        stanzaIds: message.stanzaIds || [],
+        authorJid: message.occupantJid,
+      },
+      reactions: this.reactions().get(key)?.reactions || [],
+      updatedAt: new Date().toISOString(),
+      source: 'muc',
+      actorId,
+      actorEmojis: previous,
+    }, message.id);
+  }
+
+  private actorReactionEmojis(state: ReactionState | undefined, actorId: string): ReadonlyArray<string> {
+    return state?.reactions.filter((reaction) => reaction.actors.some((actor) => actor.id.toLowerCase() === actorId)).map((reaction) => reaction.emoji) || [];
+  }
+
+  private messageHasTargetId(message: RoomMessage, targetId: string, roomJid: string): boolean {
+    if (!targetId.trim()) return false;
+    const room = roomJid.toLowerCase();
+    return Boolean(message.stanzaIds?.some((item) => item.id === targetId && item.by.toLowerCase() === room));
   }
   private mergeReactionActors(
     previous: ReactionState['reactions'],

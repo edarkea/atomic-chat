@@ -5,6 +5,7 @@ import {
   DestroyRef,
   ElementRef,
   effect,
+  HostListener,
   inject,
   input,
   output,
@@ -23,11 +24,12 @@ import {
 } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
-import { MessageItemComponent } from './message-item.component';
+import { MessageItemComponent, MessageOverlay } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
 import { formatMessageDay } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
+import { matchesDirectMessageReference } from './core/message-reference';
 
 export type ConversationTimelineItem =
   | {
@@ -123,6 +125,7 @@ export class ConversationViewComponent {
   readonly replyCancel = output<void>();
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly searchOpen = signal(false);
+  protected readonly activeOverlay = signal<{ readonly messageId: string; readonly overlay: MessageOverlay } | undefined>(undefined);
 
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
   private followLatest = true;
@@ -182,6 +185,20 @@ export class ConversationViewComponent {
   protected requestReply(message: Message): void {
     this.replyRequested.emit(message);
   }
+  protected overlayFor(messageId: string): MessageOverlay | undefined {
+    return this.activeOverlay()?.messageId === messageId ? this.activeOverlay()?.overlay : undefined;
+  }
+  protected setOverlay(messageId: string, overlay: MessageOverlay | undefined): void {
+    this.activeOverlay.set(overlay ? { messageId, overlay } : undefined);
+  }
+  @HostListener('document:pointerdown', ['$event'])
+  protected onDocumentPointerdown(event: PointerEvent): void {
+    const active = this.activeOverlay();
+    if (!active) return;
+    const host = (event.target as HTMLElement | null)?.closest('app-message-item');
+    if (host?.getAttribute('data-message-id') === active.messageId) return;
+    this.activeOverlay.set(undefined);
+  }
   protected reactionFor(messageId: string): ReactionState | undefined {
     const live = this.reactions().get(`${this.bareJid(this.selectedJid())}|${messageId}`);
     if (live) return live;
@@ -203,8 +220,9 @@ export class ConversationViewComponent {
     };
   }
   protected ownReactionEmojis(messageId: string): ReadonlyArray<string> {
+    const accountId = this.accountId().toLowerCase();
     return this.reactionFor(messageId)?.reactions
-      .filter((reaction) => reaction.actors.some((actor) => actor.id === this.accountId()))
+      .filter((reaction) => reaction.actors.some((actor) => actor.id.toLowerCase() === accountId))
       .map((reaction) => reaction.emoji) || [];
   }
   protected stableActionId(message: Message): string {
@@ -215,11 +233,7 @@ export class ConversationViewComponent {
   }
   protected replyTargetId(reference: Message['replyTo']): string {
     if (!reference) return '';
-    const target = this.timeline().find((item) => item.kind === 'text' && (
-      item.message.id === reference.messageId || item.message.id === reference.originId ||
-      item.message.messageId === reference.messageId || item.message.originId === reference.originId ||
-      item.message.stanzaIds?.some((id) => reference.stanzaIds.some((candidate) => candidate.id === id.id && candidate.by === id.by))
-    ));
+    const target = this.timeline().find((item) => item.kind === 'text' && matchesDirectMessageReference(item.message, reference, this.accountId(), this.selectedJid()));
     return target?.kind === 'text' ? target.message.id : '';
   }
   protected replyAuthor(reference: Message['replyTo']): string {

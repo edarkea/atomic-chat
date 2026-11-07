@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, HostListener, input, output, signal } from '@angular/core';
 import { MucNotice, ReactionState, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
-import { MessageItemComponent } from './message-item.component';
+import { MessageItemComponent, MessageOverlay } from './message-item.component';
 import { formatMessageDay } from './message-date-time';
+import { matchesRoomMessageReference } from './core/message-reference';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 
 @Component({
@@ -34,6 +35,7 @@ export class MucViewComponent {
   readonly replyRequested = output<RoomMessage>();
   readonly replyCancel = output<void>();
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
+  protected readonly activeOverlay = signal<{ readonly messageId: string; readonly overlay: MessageOverlay } | undefined>(undefined);
 
   protected readonly displayMessages = computed(() =>
     groupMessagesForDisplay(
@@ -65,6 +67,20 @@ export class MucViewComponent {
     return separator >= 0 ? occupantJid.slice(separator + 1).trim() : '';
   }
   protected dayLabel(receivedAt: string): string { return formatMessageDay(receivedAt); }
+  protected overlayFor(messageId: string): MessageOverlay | undefined {
+    return this.activeOverlay()?.messageId === messageId ? this.activeOverlay()?.overlay : undefined;
+  }
+  protected setOverlay(messageId: string, overlay: MessageOverlay | undefined): void {
+    this.activeOverlay.set(overlay ? { messageId, overlay } : undefined);
+  }
+  @HostListener('document:pointerdown', ['$event'])
+  protected onDocumentPointerdown(event: PointerEvent): void {
+    const active = this.activeOverlay();
+    if (!active) return;
+    const host = (event.target as HTMLElement | null)?.closest('app-message-item');
+    if (host?.getAttribute('data-message-id') === active.messageId) return;
+    this.activeOverlay.set(undefined);
+  }
   protected requestReply(message: RoomMessage): void {
     this.replyRequested.emit(message);
   }
@@ -84,9 +100,7 @@ export class MucViewComponent {
   }
   protected replyTargetId(reference: RoomMessage['replyTo']): string {
     if (!reference) return '';
-    return this.messages().find((message) => message.id === reference.messageId || message.id === reference.originId ||
-      message.messageId === reference.messageId || message.originId === reference.originId ||
-      message.stanzaIds?.some((id) => reference.stanzaIds.some((candidate) => candidate.id === id.id && candidate.by === id.by)))?.id || '';
+    return this.messages().find((message) => matchesRoomMessageReference(message, reference, this.roomState().accountId, this.roomState().room.jid))?.id || '';
   }
   protected replyAuthor(reference: RoomMessage['replyTo']): string {
     if (!reference) return '';

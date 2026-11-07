@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, signal } from '@angular/core';
 import { MessageClassification, MessagePersistenceStatus, ReactionState } from './core/domain';
 import { createOpaqueId } from './core/ids';
 import { EXTERNAL_LINK_PORT, ExternalLinkPort } from './core/ports';
@@ -11,6 +11,7 @@ export type MessageContentSegment =
 
 const LINK_PATTERN = /https?:\/\/[^\s<>"'`]+/giu;
 export const QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
+export type MessageOverlay = 'quick' | 'menu' | 'picker';
 const EMOJI_TOKEN_PATTERN = /(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?)*)/gu;
 
 /** Returns the number of emoji grapheme-like tokens when no other content is present. */
@@ -75,11 +76,15 @@ export class MessageItemComponent {
   readonly replyTargetId = input('');
   readonly reactions = input<ReactionState>();
   readonly ownReactionEmojis = input<ReadonlyArray<string>>([]);
+  readonly activeOverlay = input<MessageOverlay>();
   readonly replyRequested = output<string>();
   readonly replyNavigation = output<string>();
   readonly reactionChanged = output<ReadonlyArray<string>>();
-  protected readonly reactionOpen = signal(false);
-  protected readonly actionMenuOpen = signal(false);
+  readonly overlayRequested = output<MessageOverlay | undefined>();
+  protected readonly reactionOpen = computed(() => this.activeOverlay() === 'picker');
+  protected readonly actionMenuOpen = computed(() => this.activeOverlay() === 'menu');
+  protected readonly quickReactionOpen = computed(() => this.activeOverlay() === 'quick');
+  protected readonly overlayPlacement = signal<'above' | 'below'>('above');
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
   protected readonly emojiCount = computed(() => emojiOnlyCount(this.body()));
   private readonly externalLinks = inject<ExternalLinkPort>(EXTERNAL_LINK_PORT, { optional: true });
@@ -100,12 +105,13 @@ export class MessageItemComponent {
   }
   protected toggleReactionPicker(): void {
     if (!this.messageId()) return;
-    this.reactionOpen.update((open) => !open);
+    this.requestOverlay(this.quickReactionOpen() ? undefined : 'quick');
   }
   protected toggleActionMenu(): void {
     if (!this.messageId()) return;
-    this.actionMenuOpen.update((open) => !open);
+    this.requestOverlay(this.actionMenuOpen() ? undefined : 'menu');
   }
+  protected openFullPicker(): void { this.requestOverlay('picker'); }
   protected toggleQuickReaction(emoji: string): void {
     this.chooseReaction(emoji);
   }
@@ -115,9 +121,16 @@ export class MessageItemComponent {
     else current.add(emoji);
     this.reactionChanged.emit([...current]);
   }
-  protected closeReactionPicker(): void { this.reactionOpen.set(false); }
-  protected closeOverlays(): void {
-    this.reactionOpen.set(false);
-    this.actionMenuOpen.set(false);
+  protected closeReactionPicker(): void { this.requestOverlay(undefined); }
+  protected closeOverlays(): void { this.requestOverlay(undefined); }
+  protected requestOverlay(overlay: MessageOverlay | undefined): void {
+    if (overlay && !this.messageId()) return;
+    if (overlay) {
+      const element = this.host.nativeElement.querySelector('.message') as HTMLElement | null;
+      const bounds = element?.getBoundingClientRect();
+      this.overlayPlacement.set(bounds && bounds.top < 190 ? 'below' : 'above');
+    }
+    this.overlayRequested.emit(overlay);
   }
+  private readonly host = inject(ElementRef<HTMLElement>);
 }

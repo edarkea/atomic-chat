@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ChatFacade } from './chat.facade';
-import { CertificateTrustRequest } from './domain';
+import { CertificateTrustRequest, Message } from './domain';
 import { ActiveConversationStore } from './active-conversation.store';
 import { UnreadStore } from './unread.store';
 import { WindowFocusStore } from './window-focus.store';
@@ -63,6 +63,7 @@ describe('ChatFacade roster reconciliation', () => {
             : [],
         ),
       sendMessage: async () => ok({}),
+      sendReaction: vi.fn(async () => ok(undefined)),
       subscribe: (listener: (event: unknown) => void) => {
         emitEvent = listener;
         return () => undefined;
@@ -141,6 +142,18 @@ describe('ChatFacade roster reconciliation', () => {
     port.listRoster = async () => ok([]);
     await facade.refreshRoster();
     expect(facade.contacts().map((contact) => contact.jid)).toEqual(['old@example.invalid']);
+  });
+
+  it('keeps rapid reaction updates as the latest complete actor set', async () => {
+    const facade = TestBed.inject(ChatFacade);
+    await facade.connect('a@example.invalid');
+    facade.messages.set([historyMessage('a@example.invalid', 'friend@example.invalid', 1)] as unknown as Message[]);
+
+    const first = facade.sendReaction('friend@example.invalid', 'message-1', ['👍']);
+    const second = facade.sendReaction('friend@example.invalid', 'message-1', ['👍', '❤️']);
+    expect(facade.reactionFor('friend@example.invalid', 'message-1')?.reactions.map((item) => item.emoji)).toEqual(['👍', '❤️']);
+    await Promise.all([first, second]);
+    expect(facade.reactionFor('friend@example.invalid', 'message-1')?.reactions.map((item) => item.emoji)).toEqual(['👍', '❤️']);
   });
 
   it('does not apply a stale roster result after the active account changes', async () => {

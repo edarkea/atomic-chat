@@ -72,6 +72,7 @@
         [timestampLabel]="display.timestampLabel"
         [groupPosition]="display.position"
         [messageId]="stableActionId(message)"
+        [activeOverlay]="overlayFor(message.id)"
         [replyTo]="message.replyTo"
         [replyAuthor]="replyAuthor(message.replyTo)"
         [replyText]="replyQuote(message.replyTo)"
@@ -80,6 +81,7 @@
         [ownReactionEmojis]="ownReactionEmojis(message.id)"
         [attr.data-message-id]="message.id"
         (replyRequested)="requestReply(message)"
+        (overlayRequested)="setOverlay(message.id, $event)"
         (replyNavigation)="navigateToMessage($event)"
         (reactionChanged)="reactionChanged.emit({ messageId: actionTargetId(message), emojis: $event })"
       />

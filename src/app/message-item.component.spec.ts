@@ -55,4 +55,35 @@ describe('message links', () => {
     fixture.detectChanges();
     expect(body.classList.contains('emoji-only-single')).toBe(false);
   });
+
+  it('keeps hover controls compact and emits quick reactions and menu actions', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> = TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.test');
+    fixture.componentRef.setInput('body', 'Hola');
+    fixture.componentRef.setInput('outgoing', false);
+    fixture.componentRef.setInput('messageId', 'wire-1');
+    const overlays: Array<'quick' | 'menu' | 'picker' | undefined> = [];
+    const reactions: ReadonlyArray<string>[] = [];
+    fixture.componentInstance.overlayRequested.subscribe((value) => overlays.push(value));
+    fixture.componentInstance.reactionChanged.subscribe((value) => reactions.push(value));
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('.message-action--compact')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelectorAll('.message-action--emoji')).toHaveLength(0);
+    (fixture.nativeElement.querySelector('.message-action--compact') as HTMLButtonElement).click();
+    expect(overlays.at(-1)).toBe('quick');
+
+    fixture.componentRef.setInput('activeOverlay', 'quick');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.message-action--emoji')).toHaveLength(6);
+    (fixture.nativeElement.querySelector('.message-action--emoji') as HTMLButtonElement).click();
+    expect(reactions.at(-1)).toEqual(['👍']);
+
+    fixture.componentRef.setInput('activeOverlay', 'menu');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('[role="menuitem"]')).toHaveLength(2);
+    fixture.nativeElement.querySelector('article').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(overlays.at(-1)).toBeUndefined();
+  });
 });
