@@ -80,7 +80,7 @@
           [replyTargetId]="replyTargetId(item.message.replyTo)"
           [reactions]="reactionFor(item.message.id)"
           [ownReactionEmojis]="ownReactionEmojis(item.message.id)"
-          (replyRequested)="replyRequested.emit($event)"
+          (replyRequested)="requestReply(item.message)"
           (replyNavigation)="scrollToMessage($event)"
           (reactionChanged)="reactionChanged.emit({ messageId: item.message.id, emojis: $event })"
         />

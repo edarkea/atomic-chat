@@ -79,7 +79,7 @@
         [reactions]="reactionFor(message.id)"
         [ownReactionEmojis]="ownReactionEmojis(message.id)"
         [attr.data-message-id]="message.id"
-        (replyRequested)="replyRequested.emit($event)"
+        (replyRequested)="requestReply(message)"
         (replyNavigation)="navigateToMessage($event)"
         (reactionChanged)="reactionChanged.emit({ messageId: message.id, emojis: $event })"
       />

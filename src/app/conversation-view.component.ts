@@ -119,7 +119,7 @@ export class ConversationViewComponent {
   readonly searchScopeChange = output<'all' | 'conversation'>();
   readonly searchResultSelected = output<MessageSearchHit>();
   readonly searchLoadMore = output<void>();
-  readonly replyRequested = output<string>();
+  readonly replyRequested = output<Message>();
   readonly replyCancel = output<void>();
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly searchOpen = signal(false);
@@ -179,6 +179,9 @@ export class ConversationViewComponent {
     this.searchOpen.update((open) => !open);
   }
   protected dayLabel(sortAt: string): string { return formatMessageDay(sortAt); }
+  protected requestReply(message: Message): void {
+    this.replyRequested.emit(message);
+  }
   protected reactionFor(messageId: string): ReactionState | undefined {
     const live = this.reactions().get(`${this.bareJid(this.selectedJid())}|${messageId}`);
     if (live) return live;

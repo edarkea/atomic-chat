@@ -31,7 +31,7 @@ export class MucViewComponent {
   readonly nextParticipantPage = output<void>();
   readonly draftChange = output<string>();
   readonly send = output<void>();
-  readonly replyRequested = output<string>();
+  readonly replyRequested = output<RoomMessage>();
   readonly replyCancel = output<void>();
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
 
@@ -65,6 +65,9 @@ export class MucViewComponent {
     return separator >= 0 ? occupantJid.slice(separator + 1).trim() : '';
   }
   protected dayLabel(receivedAt: string): string { return formatMessageDay(receivedAt); }
+  protected requestReply(message: RoomMessage): void {
+    this.replyRequested.emit(message);
+  }
   protected reactionFor(messageId: string): ReactionState | undefined {
     return this.reactions().get(`${this.roomState().room.jid.toLowerCase()}|${messageId}`);
   }

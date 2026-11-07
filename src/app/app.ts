@@ -26,6 +26,7 @@ import {
   MessageSearchHit,
   Preferences,
   RoomState,
+  RoomMessage,
   XmppTransport,
 } from './core/domain';
 import { BroadcastFacade, bareBroadcastJid } from './core/broadcast.facade';
@@ -1311,14 +1312,12 @@ export class App {
       this.replyingTo.set(undefined);
     }
   }
-  protected startReply(messageId: string, muc: boolean): void {
+  protected startReply(message: Message | RoomMessage, muc: boolean): void {
     if (muc) {
-      const message = this.muc.messages().find((item) => item.id === messageId);
-      if (message) this.replyingTo.set({ id: message.id, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
+      if ('roomJid' in message) this.replyingTo.set({ id: message.id, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
       return;
     }
-    const message = this.visibleMessages().find((item) => item.id === messageId);
-    if (message) this.replyingTo.set({ id: message.id, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
+    if ('conversationId' in message) this.replyingTo.set({ id: message.id, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
   }
   protected cancelReply(): void { this.replyingTo.set(undefined); }
   protected async changeReaction(messageId: string, emojis: ReadonlyArray<string>, muc: boolean): Promise<void> {
