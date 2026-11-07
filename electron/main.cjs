@@ -82,9 +82,9 @@ const localFileActions = new FileLocalActionRegistry({ shell });
 const previewGrants = new PreviewGrantRegistry({
   nativeImage,
   resolveSource: (senderId, input) =>
-    input.mediaId
-      ? runtime.media.resolveForPreview(senderId, input)
-      : localFileActions.resolveForPreview(senderId, input),
+    runtime.media
+      .resolveForPreview(senderId, input)
+      .catch(() => localFileActions.resolveForPreview(senderId, input)),
 });
 const stickerGrants = new StickerGrantRegistry({
   resolveSource: (accountId, stickerId) => {

@@ -1,9 +1,19 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { MessageItemComponent, messageContentSegments } from './message-item.component';
+import { MessageItemComponent, emojiOnlyCount, messageContentSegments } from './message-item.component';
 import { EXTERNAL_LINK_PORT } from './core/ports';
 
 describe('message links', () => {
+  it('counts emoji-only messages without treating text as an emoji', () => {
+    expect(emojiOnlyCount('😀')).toBe(1);
+    expect(emojiOnlyCount('😎😎')).toBe(2);
+    expect(emojiOnlyCount('😂 😂 😂')).toBe(3);
+    expect(emojiOnlyCount('👩🏽‍💻')).toBe(1);
+    expect(emojiOnlyCount('©')).toBe(0);
+    expect(emojiOnlyCount('Hola 😎')).toBe(0);
+    expect(emojiOnlyCount('😂😂😂😂')).toBe(4);
+  });
+
   it('segments safe HTTP links while preserving surrounding text', () => {
     expect(messageContentSegments('Visita https://example.test/path.')).toEqual([
       { kind: 'text', value: 'Visita ' },
@@ -28,5 +38,21 @@ describe('message links', () => {
     expect(confirmation).toHaveBeenCalledWith(expect.stringContaining('https://example.test/notice'));
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.test/notice' }));
     confirmation.mockRestore();
+  });
+
+  it('applies the large-emoji classes only for one to three emoji-only messages', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> = TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.test');
+    fixture.componentRef.setInput('body', '😀');
+    fixture.componentRef.setInput('outgoing', false);
+    fixture.detectChanges();
+    const body = fixture.nativeElement.querySelector('.message-body') as HTMLElement;
+    expect(body.classList.contains('emoji-only-single')).toBe(true);
+    expect(body.classList.contains('emoji-only-double')).toBe(false);
+
+    fixture.componentRef.setInput('body', 'Hola 😎');
+    fixture.detectChanges();
+    expect(body.classList.contains('emoji-only-single')).toBe(false);
   });
 });

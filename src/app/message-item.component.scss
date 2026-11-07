@@ -25,6 +25,16 @@
   margin-top: 6px;
 }
 .message-body { overflow-wrap: anywhere; white-space: pre-wrap; }
+.message-body.emoji-only-single,
+.message-body.emoji-only-double,
+.message-body.emoji-only-triple {
+  line-height: 1.1;
+  overflow-wrap: normal;
+  white-space: normal;
+}
+.message-body.emoji-only-single { font-size: clamp(40px, 10vw, 64px); }
+.message-body.emoji-only-double { font-size: clamp(32px, 8vw, 48px); }
+.message-body.emoji-only-triple { font-size: clamp(28px, 6vw, 38px); }
 .message-link {
   color: var(--atomic-green);
   text-decoration: underline;

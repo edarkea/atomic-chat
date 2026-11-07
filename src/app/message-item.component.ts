@@ -9,6 +9,15 @@ export type MessageContentSegment =
   | { readonly kind: 'link'; readonly value: string; readonly href: string };
 
 const LINK_PATTERN = /https?:\/\/[^\s<>"'`]+/giu;
+const EMOJI_TOKEN_PATTERN = /(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?)*)/gu;
+
+/** Returns the number of emoji grapheme-like tokens when no other content is present. */
+export function emojiOnlyCount(value: string): number {
+  const normalized = value.trim().replace(/\s/gu, '');
+  if (!normalized) return 0;
+  const tokens = normalized.match(EMOJI_TOKEN_PATTERN);
+  return tokens && tokens.join('') === normalized ? tokens.length : 0;
+}
 
 export function messageContentSegments(value: string): ReadonlyArray<MessageContentSegment> {
   const segments: MessageContentSegment[] = [];
@@ -56,6 +65,7 @@ export class MessageItemComponent {
   readonly timestampLabel = input<string>();
   readonly groupPosition = input<'single' | 'first' | 'middle' | 'last'>('single');
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
+  protected readonly emojiCount = computed(() => emojiOnlyCount(this.body()));
   private readonly externalLinks = inject<ExternalLinkPort>(EXTERNAL_LINK_PORT, { optional: true });
   protected time(value: string | undefined): string { return formatMessageTime(value); }
   protected date(value: string | undefined): string { return formatMessageDate(value); }

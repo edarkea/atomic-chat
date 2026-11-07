@@ -28,7 +28,12 @@
       {{ time(createdAt()) }} · {{ date(createdAt()) }}
     </time>
   }
-  <p class="message-body">
+  <p
+    class="message-body"
+    [class.emoji-only-single]="emojiCount() === 1"
+    [class.emoji-only-double]="emojiCount() === 2"
+    [class.emoji-only-triple]="emojiCount() === 3"
+  >
     @for (segment of contentSegments(); track $index) {
       @if (segment.kind === 'link') {
         <a class="message-link" [href]="segment.href" rel="noreferrer noopener" (click)="openLink($event, segment.href)">{{ segment.value }}</a>

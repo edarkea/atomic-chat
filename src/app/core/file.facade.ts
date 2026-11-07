@@ -1,7 +1,14 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
 import { ChatImageRecord, FileHistoryRequest, FileTransfer, TypedDomainEvent } from './domain';
-import { FILE_HISTORY_PORT, FILE_TRANSFER_PORT, FileHistoryPort, FileTransferPort } from './ports';
+import {
+  FILE_HISTORY_PORT,
+  FILE_TRANSFER_PORT,
+  MEDIA_PORT,
+  FileHistoryPort,
+  FileTransferPort,
+  MediaPort,
+} from './ports';
 
 const MAX_DROPPED_FILES = 8;
 
@@ -10,6 +17,7 @@ export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
   private readonly historyPort = inject<FileHistoryPort>(FILE_HISTORY_PORT);
+  private readonly mediaPort = inject<MediaPort | null>(MEDIA_PORT, { optional: true });
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
   private readonly liveMediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
@@ -47,6 +55,14 @@ export class FileFacade {
       requestId: createOpaqueId('file-list'),
       accountId,
     });
+    const mediaResult = this.mediaPort
+      ? await this.mediaPort.list({
+          version: 1,
+          requestId: createOpaqueId('media-list'),
+          accountId,
+          limit: 100,
+        })
+      : undefined;
     if (this.account !== accountId || this.accountGeneration !== generation) return;
     if (result.ok) {
       const active = new Map(result.value.map((item) => [item.offer.transferId, item]));
@@ -54,6 +70,8 @@ export class FileFacade {
         if (current.offer.accountId === accountId) active.set(current.offer.transferId, current);
       this.items.set([...active.values()]);
     } else this.error.set(result.error.message);
+    if (mediaResult?.ok) this.liveMediaItems.set(mediaResult.value);
+    else if (mediaResult && !mediaResult.ok && !result.ok) this.error.set(mediaResult.error.message);
   }
 
   async accept(transferId: string): Promise<void> {
@@ -330,6 +348,8 @@ export class FileFacade {
     if (event.type === 'file.stateChanged') {
       const transfer = event.payload;
       if (transfer.offer.accountId === this.account) this.upsert(transfer);
+      if (transfer.offer.accountId === this.account && transfer.state === 'completed')
+        void this.refreshMedia(transfer.offer.accountId, this.accountGeneration);
     }
     if (event.type === 'media.available') {
       const media = event.payload;
@@ -359,6 +379,18 @@ export class FileFacade {
         ? items.map((item) => (item.mediaId === media.mediaId ? media : item))
         : [...items, media],
     );
+  }
+
+  private async refreshMedia(accountId: string, generation: number): Promise<void> {
+    if (!this.mediaPort) return;
+    const result = await this.mediaPort.list({
+      version: 1,
+      requestId: createOpaqueId('media-refresh'),
+      accountId,
+      limit: 100,
+    });
+    if (this.account !== accountId || this.accountGeneration !== generation || !result.ok) return;
+    this.liveMediaItems.set(result.value);
   }
 
   private isValidDroppedFile(file: File): boolean {

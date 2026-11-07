@@ -66,7 +66,6 @@ export class MessageComposerComponent {
     const inserted = insertTextAtSelection(this.draft(), this.savedSelection.start, this.savedSelection.end, emoji);
     this.draftChange.emit(inserted.text);
     this.savedSelection = { start: inserted.cursor, end: inserted.cursor };
-    this.emojiOpen.set(false);
     queueMicrotask(() => {
       const input = this.messageInput?.nativeElement;
       if (!input) return;
@@ -83,8 +82,13 @@ export class MessageComposerComponent {
   protected onKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
-      if (this.draft().trim()) this.messageSubmitted.emit();
+      this.submitMessage();
     }
+  }
+  protected submitMessage(): void {
+    if (this.disabled() || !this.draft().trim()) return;
+    this.emojiOpen.set(false);
+    this.messageSubmitted.emit();
   }
   @HostListener('paste', ['$event'])
   protected onPaste(event: ClipboardEvent): void {
@@ -123,14 +127,6 @@ export class MessageComposerComponent {
     this.emojiOpen.set(false);
   }
 
-  @HostListener('document:keydown', ['$event'])
-  protected onDocumentKeydown(event: KeyboardEvent): void {
-    if (this.emojiOpen() && event.key === 'Escape' && !event.isComposing) {
-      event.preventDefault();
-      this.emojiOpen.set(false);
-      this.messageInput?.nativeElement.focus();
-    }
-  }
 }
 
 export function clipboardFiles(event: ClipboardEvent): ReadonlyArray<File> {

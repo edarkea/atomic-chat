@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const path = require('node:path');
 const { xml } = require('@xmpp/client');
 const {
   parseOffer,
@@ -124,6 +125,13 @@ function createFileService(adapter) {
         generation,
       );
       const conversationId = adapter.bareJid(recipientJid);
+      const extension = path.extname(input.fileName).toLowerCase();
+      const mimeType =
+        extension === '.png'
+          ? 'image/png'
+          : extension === '.jpg' || extension === '.jpeg'
+            ? 'image/jpeg'
+            : undefined;
       const offer = {
         transferId: `file_${crypto.randomUUID()}`,
         accountId,
@@ -131,6 +139,7 @@ function createFileService(adapter) {
         senderJid: accountId,
         recipientJid,
         name: input.fileName,
+        ...(mimeType ? { mimeType } : {}),
         sizeBytes: '0',
         transport: 'ibb',
         offeredAt: new Date().toISOString(),
