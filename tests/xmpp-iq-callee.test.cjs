@@ -13,6 +13,7 @@ const FEATURE = 'http://jabber.org/protocol/feature-neg';
 const FORM = 'jabber:x:data';
 const IBB = 'http://jabber.org/protocol/ibb';
 const STANZA = 'urn:ietf:params:xml:ns:xmpp-stanzas';
+const FILE_CANCEL = 'urn:atomic-chat:file-transfer:1';
 const accountId = 'account@example.invalid';
 const from = 'sender@example.invalid/Spark';
 
@@ -93,6 +94,56 @@ test('C5-INC-02 correlation includes account, generation and full sender JID', a
   assert.equal(coordinator.records.size, 4);
   for (const id of [...coordinator.records.keys()]) await coordinator.reject(id);
   await Promise.all(responses);
+});
+
+test('C5-INC-05 sender cancellation message rejects a pending SI offer in Atomic Chat', async () => {
+  const coordinator = new FileTransferCoordinator();
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  const session = { send: async () => undefined };
+  adapter.sessions.set(accountId, session);
+  adapter.sessionGenerations.set(accountId, 1);
+  adapter.fileOwners.set(accountId, 42);
+
+  const pendingReply = adapter.handleFileIq(accountId, offer('sender-cancel-message', 'cancel-message-sid'));
+  const record = [...coordinator.records.values()][0];
+  assert.equal(record.state, 'offered');
+
+  adapter.handleStanza(accountId, xml('message', { type: 'chat', from },
+    xml('body', {}, 'La transferencia fue cancelada por el emisor.'),
+    xml('cancel', { xmlns: FILE_CANCEL, sid: 'cancel-message-sid' })));
+
+  const response = await pendingReply;
+  await flush();
+  assert.ok(response.getChild('not-acceptable', STANZA));
+  assert.equal(record.state, 'cancelled');
+  assert.equal(record.endReason, 'cancelled_by_sender');
+  assert.equal(coordinator.records.size, 0);
+});
+
+test('C5-INC-05 sender cancellation message cancels an accepted offer before IBB opens', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-si-cancel-accepted-'));
+  try {
+    const coordinator = new FileTransferCoordinator({
+      selectDestination: async () => path.join(root, 'received.bin'),
+    });
+    const adapter = new XmppAdapter(false, null, [], coordinator);
+    adapter.fileOwners.set(accountId, 42);
+    const recordPromise = adapter.handleFileIq(accountId, offer('accepted-cancel-message', 'accepted-cancel-sid'));
+    const record = [...coordinator.records.values()][0];
+    const accepted = await coordinator.accept(record.offer.transferId, 42);
+    assert.equal(accepted.state, 'accepted');
+    await recordPromise;
+
+    adapter.handleStanza(accountId, xml('message', { type: 'chat', from },
+      xml('body', {}, 'La transferencia fue cancelada por el emisor.'),
+      xml('cancel', { xmlns: FILE_CANCEL, sid: 'accepted-cancel-sid' })));
+    for (let index = 0; index < 100 && coordinator.records.size; index += 1)
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+    assert.equal(record.state, 'cancelled');
+    assert.equal(record.endReason, 'cancelled_by_sender');
+    assert.equal(coordinator.records.size, 0);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('C5-INC-02 bounded terminal memory never evicts an active negotiation', async () => {

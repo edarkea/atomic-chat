@@ -136,7 +136,10 @@ export class MessageComposerComponent {
 export function clipboardFiles(event: ClipboardEvent): ReadonlyArray<File> {
   const data = event.clipboardData;
   if (!data) return [];
-  const files = [...Array.from(data.files)];
+  // Chromium may expose the same clipboard file through both collections, with
+  // different metadata. Prefer the complete FileList and use items only as fallback.
+  const files = Array.from(data.files);
+  if (files.length) return files;
   for (const item of Array.from(data.items)) {
     if (item.kind !== 'file') continue;
     const file = item.getAsFile();

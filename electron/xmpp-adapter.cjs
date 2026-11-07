@@ -178,8 +178,17 @@ class XmppAdapter {
   sendOutgoingOffer(accountId, session, generation, record) {
     return this.fileService.sendOutgoingOffer(accountId, session, generation, record);
   }
-  sendOutgoingTimeoutNotice(accountId, session, generation, record) {
-    return this.fileService.sendOutgoingTimeoutNotice(accountId, session, generation, record);
+  sendOutgoingCancellationNotice(accountId, session, generation, record, reason) {
+    return this.fileService.sendOutgoingCancellationNotice(
+      accountId,
+      session,
+      generation,
+      record,
+      reason,
+    );
+  }
+  handleFileCancellationMessage(accountId, stanza) {
+    return this.fileService.handleFileCancellationMessage(accountId, stanza);
   }
   sendOutgoingOpen(accountId, session, generation, record, blockSize) {
     return this.fileService.sendOutgoingOpen(accountId, session, generation, record, blockSize);
@@ -298,6 +307,7 @@ class XmppAdapter {
       return;
     if (this.handleMucStanza(accountId, stanza)) return;
     if (this.handleFileStanza(accountId, stanza)) return;
+    if (stanza.is('message') && this.handleFileCancellationMessage(accountId, stanza)) return;
     if (stanza.is('message') && this.carbons.handleMessage(accountId, stanza)) return;
     if (stanza.is('message') && this.stickerService.handleMessage(accountId, stanza)) return;
     if (stanza.is('presence')) {

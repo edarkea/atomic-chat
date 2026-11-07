@@ -359,7 +359,7 @@ test('C5-OUT-06 SI timeout is terminal and does not retain the source handle', a
       },
       cancelTimeout: ({ timer }) => clearTimeout(timer),
     });
-    const result = await coordinator.start({ filePath, offer: offer('file-timeout'), ownerSenderId: 1, siSessionId: 'si-timeout', transport: { sendOffer: async () => new Promise(() => undefined), sendTimeoutNotice: async () => { timeoutNoticeCount += 1; } } });
+    const result = await coordinator.start({ filePath, offer: offer('file-timeout'), ownerSenderId: 1, siSessionId: 'si-timeout', transport: { sendOffer: async () => new Promise(() => undefined), sendCancellationNotice: async () => { timeoutNoticeCount += 1; } } });
     assert.equal(result.state, 'failed'); assert.equal(result.endReason, 'timed_out'); assert.equal(coordinator.records.size, 0);
     assert.equal(timeoutNoticeCount, 1);
     await fs.rm(filePath);
@@ -435,15 +435,16 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfte
   return { adapter, outgoing, sent, sentMessages, timeouts, session };
 }
 
-test('C5-OUT-14 SI timeout notice is sent as a normal chat message to the offered resource', async () => {
+test('C5-OUT-14 SI cancellation notifies the offered resource and includes the Atomic Chat cancel marker', async () => {
   const { adapter, session, sentMessages } = adapterFixture();
-  const record = { offer: { name: 'bg-dev.png', recipientJid: RECIPIENT } };
-  await adapter.sendOutgoingTimeoutNotice(ACCOUNT, session, 1, record);
+  const record = { offer: { name: 'bg-dev.png', recipientJid: RECIPIENT }, siSessionId: 'si-timeout' };
+  await adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, 'timed_out');
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].name, 'message');
   assert.equal(sentMessages[0].attrs.type, 'chat');
   assert.equal(sentMessages[0].attrs.to, RECIPIENT);
   assert.match(sentMessages[0].getChildText('body'), /bg-dev\.png.*venció el tiempo de espera/);
+  assert.equal(sentMessages[0].getChild('cancel', 'urn:atomic-chat:file-transfer:1')?.attrs.sid, 'si-timeout');
 });
 
 test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data and close', async () => {

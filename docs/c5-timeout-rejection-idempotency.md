@@ -150,10 +150,12 @@ vencer el timeout. Su permanencia concreta depende del cliente y no fue observad
 en esta validación. Una stanza ya entregada a `entity.send` tampoco puede retirarse.
 
 La implementación deja de enviar nuevas fases tras el terminal y no utiliza
-`IBB close` para simular una retirada de SI. Si ya se abrió IBB, el receptor puede
-conservar su estado hasta su propio timeout al cancelar localmente. No se añaden
-stanzas propietarias ni reintentos automáticos. Debe validarse este comportamiento
-con la versión real de Spark/Openfire antes de declarar resuelta la interoperabilidad.
+`IBB close` para simular una retirada de SI. Si ya se abrió IBB, usa el cierre
+definido por XEP-0047. Para una SI aún pendiente, Atomic Chat envía una notificación
+`chat` con una extensión propia que otro Atomic Chat reconoce para cerrar la oferta.
+Otros clientes reciben el texto, pero solo pueden cerrar su diálogo si implementan
+esa extensión. No hay retirada SI interoperable ni reintentos automáticos. Debe
+validarse este comportamiento con clientes reales antes de afirmar interoperabilidad.
 
 Fuentes primarias consultadas: [XEP-0095, negociación y errores SI](https://xmpp.org/extensions/xep-0095.html),
 [XEP-0096, perfil de archivos](https://xmpp.org/extensions/xep-0096.html) y
@@ -177,35 +179,46 @@ Si ya recibió todos los bytes, mantiene el cierre exitoso normal. XEP-0047 comu
 que el stream se cerró, no ofrece un campo separado para explicar el motivo. Spark
 recibirá el cierre estándar si sigue conectado; su presentación de una transferencia
 incompleta aún requiere una prueba con Spark real. Una oferta SI sin aceptar puede
-seguir visible hasta que el receptor la resuelva, porque no hay un retiro estándar.
+seguir visible en clientes que no entienden la extensión de Atomic Chat, porque no
+hay un retiro SI estándar.
 
-Cuando vence el timeout mientras se espera la aceptación SI, Atomic Chat también
-envía un mensaje XMPP `chat` normal indicando que la oferta expiró. Esto avisa al
-contacto en Spark y Atomic Chat, pero no cierra ni retira el diálogo SI pendiente de
-Spark; el mensaje es informativo y el receptor aún debe resolver su solicitud local.
+Cuando vence el timeout mientras se espera la aceptación SI, Atomic Chat envía al
+recurso destinatario un mensaje XMPP `chat` normal con un marcador de cancelación
+que incluye el SID SI. Cualquier cliente muestra el texto; Atomic Chat encuentra la
+oferta pendiente por el JID completo y SID, responde al IQ SI con error, y cambia el
+estado entrante a `cancelled_by_sender`, incluso si ya se había aceptado SI pero IBB
+no había comenzado. Spark no implementa este marcador y puede seguir mostrando su
+solicitud hasta que el usuario la resuelva.
+
+Al pegar archivos, se usa `clipboardData.files` como lista principal y `items` solo
+como fallback. Chromium puede exponer el mismo archivo en ambas colecciones con
+metadatos distintos; concatenarlas podía iniciar dos transferencias por un único
+pegado.
 
 Las pruebas focalizadas cubren el cierre tras cancelar durante datos, tras timeout
-de ACK y la recepción por Atomic Chat. La validación C5 previa pasó **62/62**; en la
-actualización del aviso SI, `tests/file-transfer.outgoing.test.cjs` pasó **35/35** y
-`git diff --check` pasa. El build Angular de la
-entrega anterior no se repitió porque este addendum solo cambia CommonJS, pruebas
-de Electron y documentación.
+de ACK, la cancelación de una oferta SI en Atomic Chat y la selección única de los
+archivos pegados. En esta actualización pasan **65/65** pruebas CJS focalizadas,
+**23/23** pruebas Angular enfocadas, `npm run typecheck` y `npm run build`; también
+pasa `git diff --check`. El build aún muestra el presupuesto inicial excedido por
+98.64 kB.
 
 ## Archivos y actualización de tareas
 
 Producción: `electron/file-transfer-outgoing.cjs`, `electron/xmpp-file.cjs`,
 `electron/file-protocol.cjs`, `electron/ipc-file-handlers.cjs`,
-`electron/xmpp-session.cjs`, `src/app/core/file.facade.ts`.
+`electron/xmpp-session.cjs`, `electron/xmpp-adapter.cjs`,
+`src/app/core/file.facade.ts`, `src/app/message-composer.component.ts`.
 
 Pruebas modificadas: `tests/file-transfer.outgoing.test.cjs`,
 `tests/xmpp-iq-callee.test.cjs`, `tests/clipboard-and-external-links.test.cjs`,
-`src/app/core/file.facade.spec.ts`. Documentación: este archivo.
+`src/app/core/file.facade.spec.ts`, `src/app/message-composer.spec.ts`.
+Documentación: este archivo.
 
 | Tarea | Estado de esta entrega | Reserva |
 | --- | --- | --- |
-| C5-INC-01…04 | Implementadas y validadas focalizadamente | Garantía acotada de correlación; interoperabilidad real pendiente |
+| C5-INC-01…05 | Implementadas y validadas focalizadamente | Cancelación SI propietaria solo en Atomic Chat; interoperabilidad real pendiente |
 | C5 global / C5-SI-RECV-006 | Abierta | Esta corrección no certifica el cliente Spark ni todas las funciones de archivos |
-| B8 | Referenciada, sin cierre | Negociación SI/IBB del transporte existente; sin nuevas capacidades XMPP |
+| B8 | Referenciada, sin cierre | Transporte SI/IBB existente; la retirada SI pendiente usa una extensión Atomic Chat |
 | B9 | Referenciada, sin cierre | Invalida operaciones antiguas; sin cola offline ni nueva política de reconexión |
 | E5 | Referenciada, sin cierre | Terminalidad y correlación preservadas bajo los eventos IPC existentes |
 

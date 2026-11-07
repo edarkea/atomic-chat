@@ -89,6 +89,25 @@ describe('clipboardFiles', () => {
 
     expect(clipboardFiles(event)).toEqual([first]);
   });
+
+  it('uses clipboard files as the authoritative list when item metadata differs', () => {
+    const listed = new File(['image'], 'capture.png', {
+      type: 'image/png',
+      lastModified: 1234,
+    });
+    const itemRepresentation = new File(['image'], 'capture.png', {
+      type: 'image/png',
+      lastModified: 0,
+    });
+    const event = {
+      clipboardData: {
+        files: [listed],
+        items: [{ kind: 'file', getAsFile: () => itemRepresentation }],
+      },
+    } as unknown as ClipboardEvent;
+
+    expect(clipboardFiles(event)).toEqual([listed]);
+  });
 });
 
 describe('clipboard paste deduplication', () => {

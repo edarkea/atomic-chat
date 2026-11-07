@@ -13,6 +13,7 @@ const {
 
 const DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info';
 const MAX_PENDING_BINARY_BYTES = 256 * 1024;
+const FILE_CANCEL_NS = 'urn:atomic-chat:file-transfer:1';
 
 function fileTrace(phase, direction, details = {}) {
   if (process.env.ATOMIC_XMPP_FILE_TRACE !== 'true') return;
@@ -141,8 +142,8 @@ function createFileService(adapter) {
         ownerSenderId: input.ownerSenderId,
         transport: {
           sendOffer: (record) => adapter.sendOutgoingOffer(accountId, session, generation, record),
-          sendTimeoutNotice: (record) =>
-            adapter.sendOutgoingTimeoutNotice(accountId, session, generation, record),
+          sendCancellationNotice: (record, reason) =>
+            adapter.sendOutgoingCancellationNotice(accountId, session, generation, record, reason),
           sendOpen: (record, blockSize) =>
             adapter.sendOutgoingOpen(accountId, session, generation, record, blockSize),
           sendData: (record, block, sequence) =>
@@ -352,7 +353,23 @@ function createFileService(adapter) {
         throw taggedError('UNSUPPORTED_METHOD', 'El receptor no seleccionó IBB.', 'file.si');
       return response;
     },
-    async sendOutgoingTimeoutNotice(accountId, session, generation, record) {
+    handleFileCancellationMessage(accountId, stanza) {
+      const cancellation = stanza?.getChild?.('cancel', FILE_CANCEL_NS);
+      const senderJid = stanza?.attrs?.from;
+      const sid = cancellation?.attrs?.sid;
+      if (!adapter.fileTransfers || !senderJid || !sid) return false;
+      const match = [...siReplies.entries()].find(
+        ([, entry]) =>
+          entry.active &&
+          entry.accountId === accountId &&
+          entry.senderJid === senderJid &&
+          entry.siSid === sid,
+      );
+      if (!match) return false;
+      void adapter.fileTransfers.cancelBySender(match[0]).catch(() => undefined);
+      return true;
+    },
+    async sendOutgoingCancellationNotice(accountId, session, generation, record, reason) {
       if (adapter.sessions.get(accountId) !== session) return;
       if (adapter.states.get(accountId)?.status !== 'connected') return;
       adapter.assertSessionCurrent(
@@ -361,16 +378,16 @@ function createFileService(adapter) {
         generation,
         adapter.sessionDomains.get(accountId) || '',
       );
-      const id = `file_timeout_${crypto.randomUUID()}`;
+      const id = `file_cancel_${crypto.randomUUID()}`;
+      const body = reason === 'timed_out'
+        ? `La transferencia de «${record.offer.name}» se canceló porque venció el tiempo de espera.`
+        : `La transferencia de «${record.offer.name}» fue cancelada por el emisor.`;
       await session.send(
         xml(
           'message',
           { type: 'chat', to: record.offer.recipientJid, id },
-          xml(
-            'body',
-            {},
-            `La transferencia de «${record.offer.name}» se canceló porque venció el tiempo de espera.`,
-          ),
+          xml('body', {}, body),
+          xml('cancel', { xmlns: FILE_CANCEL_NS, sid: record.siSessionId }),
           xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id }),
         ),
       );
