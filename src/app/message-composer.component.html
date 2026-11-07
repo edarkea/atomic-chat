@@ -1,4 +1,10 @@
 <form class="composer" (ngSubmit)="submitMessage()">
+  @if (replyPreview(); as reply) {
+    <div class="reply-preview" role="status">
+      <span><strong>Respondiendo a {{ reply.author }}</strong><small>{{ reply.quote }}</small></span>
+      <button type="button" aria-label="Cancelar respuesta" (click)="replyCancel.emit()">×</button>
+    </div>
+  }
   @if (showAttach()) {
     <button
       class="composer-icon"

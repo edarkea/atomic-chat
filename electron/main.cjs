@@ -238,6 +238,19 @@ function attachEventSources() {
   outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
   runtime.xmpp.onEvent((event) => {
     if (event.type === 'connection.stateChanged') backgroundMode.updateMenu();
+    if (event.type === 'reaction.changed') {
+      try {
+        runtime.persistence.saveReaction(event.payload);
+      } catch (error) {
+        console.error('[REACTION_PERSISTENCE] Could not save reaction state:', error?.message || 'STORAGE_FAILED');
+      }
+      eventRouter.forwardXmppEvent(event);
+      return;
+    }
+    if (event.type === 'reaction.rejected') {
+      eventRouter.forwardXmppEvent(event);
+      return;
+    }
     if (event.type === 'sticker.messageReceived') {
       try {
         const persisted = runtime.stickerMessages.save(event.payload);

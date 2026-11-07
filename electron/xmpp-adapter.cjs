@@ -5,6 +5,8 @@ const { createXmppCarbons } = require('./xmpp-carbons.cjs');
 const { createMucService } = require('./xmpp-muc.cjs');
 const { createFileService } = require('./xmpp-file.cjs');
 const { createXmppStickerService } = require('./xmpp-stickers.cjs');
+const { xml } = require('@xmpp/client');
+const { REACTIONS_NS, REPLY_NS, FALLBACK_NS, SID_NS } = require('./xmpp-message-features.cjs');
 
 class XmppAdapter {
   constructor(
@@ -41,6 +43,10 @@ class XmppAdapter {
     this.fileIqHandled = new WeakSet();
     this.fileTraceAttempts = new WeakMap();
     this.mucPolicies = new Map();
+    this.reactionStates = new Map();
+    this.pendingReactions = new Map();
+    this.reactionEventKeys = new Set();
+    this.messageCapabilities = new Map();
 
     this.transport = createXmppTransport(this);
     this.sessionService = createXmppSession(this);
@@ -93,6 +99,20 @@ class XmppAdapter {
   requireConnected(accountId) {
     return this.sessionService.requireConnected(accountId);
   }
+  async discoverMessageCapabilities(accountId, session, domain, generation) {
+    const local = [REACTIONS_NS, REPLY_NS, FALLBACK_NS, SID_NS];
+    try {
+      const response = await session.iqCaller.request(xml('iq', { type: 'get', to: domain }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' })));
+      const remote = response.getChild('query', 'http://jabber.org/protocol/disco#info')?.getChildren('feature').map((feature) => feature.attrs.var).filter(Boolean) || [];
+      const capabilities = { accountId, generation, local, server: remote, remote: 'unknown' };
+      if (this.sessionGenerations.get(accountId) === generation) this.messageCapabilities.set(accountId, capabilities);
+      return capabilities;
+    } catch {
+      const capabilities = { accountId, generation, local, server: [], remote: 'unknown' };
+      if (this.sessionGenerations.get(accountId) === generation) this.messageCapabilities.set(accountId, capabilities);
+      return capabilities;
+    }
+  }
   bareJid(jid) {
     return this.sessionService.bareJid(jid);
   }
@@ -137,6 +157,9 @@ class XmppAdapter {
   }
   sendMessage(accountId, input) {
     return this.rosterMessaging.sendMessage(accountId, input);
+  }
+  sendReaction(accountId, input) {
+    return this.rosterMessaging.sendReaction(accountId, input);
   }
   sendChatState(accountId, input) {
     return this.rosterMessaging.sendChatState(accountId, input);
@@ -245,6 +268,75 @@ class XmppAdapter {
   }
   sendMucMessage(input) {
     return this.mucService.sendMucMessage(input);
+  }
+  sendMucReaction(input) {
+    return this.mucService.sendMucReaction(input);
+  }
+  applyReaction({ accountId, conversationId, target, emojis, actorJid, source, sessionGeneration }) {
+    const targetId = target?.originId || target?.stanzaIds?.[0]?.id || target?.messageId;
+    if (!targetId || !actorJid) return;
+    const key = `${accountId}|${source}|${conversationId.toLowerCase()}|${targetId}`;
+    const eventKey = `${key}|${actorJid.toLowerCase()}|${[...new Set(emojis)].sort().join('\u001f')}`;
+    if (this.reactionEventKeys.has(eventKey)) return;
+    this.reactionEventKeys.add(eventKey);
+    if (this.reactionEventKeys.size > 4096)
+      this.reactionEventKeys.delete(this.reactionEventKeys.values().next().value);
+    const current = this.reactionStates.get(key) || new Map();
+    const participant = source === 'muc'
+      ? this.mucRooms.get(accountId)?.get(conversationId.toLowerCase())?.participants.get(actorJid)
+      : undefined;
+    current.set(actorJid.toLowerCase(), {
+      id: actorJid.toLowerCase(),
+      label: source === 'muc' ? participant?.nick || actorJid.split('/').slice(1).join('/') || actorJid : actorJid,
+      ...(source === 'muc' ? { occupantJid: actorJid } : {}),
+      identifiable: source === 'direct' || participant?.identityVerified === true,
+      emojis: [...new Set(emojis)],
+    });
+    const reactions = [];
+    for (const emoji of [...new Set([...current.values()].flatMap((actor) => actor.emojis))]) {
+      const actors = [...current.values()]
+        .filter((actor) => actor.emojis.includes(emoji))
+        .map(({ emojis: _emojis, ...actor }) => actor);
+      reactions.push({ emoji, actors });
+    }
+    this.reactionStates.set(key, current);
+    this.emit({
+      type: 'reaction.changed',
+      correlationId: targetId,
+      payload: {
+        accountId,
+        conversationId,
+        targetMessageId: targetId,
+        target,
+        reactions,
+        updatedAt: new Date().toISOString(),
+        source,
+        ...(sessionGeneration ? { sessionGeneration } : {}),
+      },
+    });
+  }
+  trackReaction(clientMessageId, context) {
+    const pending = { ...context };
+    this.pendingReactions.set(clientMessageId, pending);
+    setTimeout(() => {
+      if (this.pendingReactions.get(clientMessageId) === pending) this.pendingReactions.delete(clientMessageId);
+    }, 30000).unref?.();
+  }
+  rejectReaction(clientMessageId, reason = 'not-acceptable') {
+    const pending = this.pendingReactions.get(clientMessageId);
+    if (!pending) return;
+    this.pendingReactions.delete(clientMessageId);
+    this.emit({
+      type: 'reaction.rejected',
+      correlationId: clientMessageId,
+      payload: {
+        accountId: pending.accountId,
+        conversationId: pending.conversationId,
+        targetMessageId: pending.targetMessageId,
+        reason,
+        message: 'El servidor rechazó la actualización de reacciones; se restauró el estado anterior.',
+      },
+    });
   }
   createMucRoom(accountId, room, generation, nickname, requestId) {
     return this.mucService.createMucRoom(accountId, room, generation, nickname, requestId);

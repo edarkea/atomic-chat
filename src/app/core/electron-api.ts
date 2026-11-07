@@ -28,11 +28,13 @@ import {
   TimelinePage,
   TimelinePageInput,
   Message,
+  MessageReactionInput,
   MessageSendInput,
   MucDiscoverInput,
   MucJoinInput,
   MucLeaveInput,
   MucSendInput,
+  MucReactionInput,
   Presence,
   PreviewChunk,
   PreviewCloseRequest,
@@ -134,13 +136,17 @@ export interface AtomicChatApi {
   session: { getState(accountId: string): Promise<Result<ConnectionState>> };
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };
-  messaging: { send(input: MessageSendInput): Promise<Result<Message>> };
+  messaging: {
+    send(input: MessageSendInput): Promise<Result<Message>>;
+    react(input: MessageReactionInput): Promise<Result<void>>;
+  };
   chatState: { send(input: ChatStateInput): Promise<Result<void>> };
   muc: {
     discover(input: MucDiscoverInput): Promise<Result<ReadonlyArray<RoomRef>>>;
     join(input: MucJoinInput): Promise<Result<RoomState>>;
     leave(input: MucLeaveInput): Promise<Result<RoomState>>;
     sendMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>>;
+    react(input: MucReactionInput): Promise<Result<void>>;
   };
   file: {
     send(input: FileSendInput): Promise<Result<FileTransfer | null>>;

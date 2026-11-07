@@ -69,12 +69,14 @@ import {
   MessageSearchPage,
   MediaListInput,
   Message,
+  MessageReactionInput,
   MessageSendInput,
   ExternalLinkOpenInput,
   MucDiscoverInput,
   MucJoinInput,
   MucLeaveInput,
   MucSendInput,
+  MucReactionInput,
   Presence,
   PresenceInput,
   Preferences,
@@ -97,6 +99,7 @@ export interface XmppPort {
   setPresence(input: PresenceInput): Promise<Result<Presence>>;
   listRoster(accountId: string): Promise<Result<Contact[]>>;
   sendMessage(input: MessageSendInput): Promise<Result<Message>>;
+  sendReaction(input: MessageReactionInput): Promise<Result<void>>;
   sendChatState?(input: ChatStateInput): Promise<Result<void>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
@@ -106,6 +109,7 @@ export interface MucPort {
   join(input: MucJoinInput): Promise<Result<RoomState>>;
   leave(input: MucLeaveInput): Promise<Result<RoomState>>;
   sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>>;
+  sendReaction(input: MucReactionInput): Promise<Result<void>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
 }
 

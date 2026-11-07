@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
-import { MucNotice, RoomMessage, RoomParticipant, RoomState } from './core/domain';
+import { MucNotice, ReactionState, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent } from './message-item.component';
 import { formatMessageDay } from './message-date-time';
@@ -21,6 +21,9 @@ export class MucViewComponent {
   readonly hasMoreParticipants = input.required<boolean>();
   readonly messages = input.required<ReadonlyArray<RoomMessage>>();
   readonly draft = input.required<string>();
+  readonly error = input<string | null>(null);
+  readonly reactions = input<ReadonlyMap<string, ReactionState>>(new Map());
+  readonly replyingTo = input<{ readonly id: string; readonly author: string; readonly quote: string }>();
 
   readonly leave = output<void>();
   readonly closeRequested = output<void>();
@@ -28,6 +31,9 @@ export class MucViewComponent {
   readonly nextParticipantPage = output<void>();
   readonly draftChange = output<string>();
   readonly send = output<void>();
+  readonly replyRequested = output<string>();
+  readonly replyCancel = output<void>();
+  readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
 
   protected readonly displayMessages = computed(() =>
     groupMessagesForDisplay(
@@ -59,4 +65,24 @@ export class MucViewComponent {
     return separator >= 0 ? occupantJid.slice(separator + 1).trim() : '';
   }
   protected dayLabel(receivedAt: string): string { return formatMessageDay(receivedAt); }
+  protected reactionFor(messageId: string): ReactionState | undefined {
+    return this.reactions().get(`${this.roomState().room.jid.toLowerCase()}|${messageId}`);
+  }
+  protected ownReactionEmojis(messageId: string): ReadonlyArray<string> {
+    return this.reactionFor(messageId)?.reactions
+      .filter((reaction) => reaction.actors.some((actor) => actor.occupantJid === this.roomState().selfOccupantJid || actor.id === this.roomState().accountId))
+      .map((reaction) => reaction.emoji) || [];
+  }
+  protected stableActionId(message: RoomMessage): string {
+    return message.stanzaIds?.some((item) => item.by.toLowerCase() === this.roomState().room.jid.toLowerCase()) ? message.id : '';
+  }
+  protected replyTargetId(reference: RoomMessage['replyTo']): string {
+    if (!reference) return '';
+    return this.messages().find((message) => message.id === reference.messageId || message.id === reference.originId ||
+      message.messageId === reference.messageId || message.originId === reference.originId ||
+      message.stanzaIds?.some((id) => reference.stanzaIds.some((candidate) => candidate.id === id.id && candidate.by === id.by)))?.id || '';
+  }
+  protected navigateToMessage(messageId: string): void {
+    document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 }

@@ -33,6 +33,7 @@ export class MessageComposerComponent {
   readonly showAttach = input(false);
   readonly showEmoji = input(false);
   readonly stickersAccountId = input('');
+  readonly replyPreview = input<{ readonly author: string; readonly quote: string }>();
   readonly draftChange = output<string>();
   readonly inputFocus = output<void>();
   readonly inputBlur = output<void>();
@@ -40,6 +41,7 @@ export class MessageComposerComponent {
   readonly stickerSend = output<string>();
   readonly attach = output<void>();
   readonly filesPasted = output<ReadonlyArray<File>>();
+  readonly replyCancel = output<void>();
   protected readonly emojiOpen = signal(false);
   @ViewChild('messageInput') private messageInput?: ElementRef<HTMLTextAreaElement>;
   private savedSelection = { start: 0, end: 0 };

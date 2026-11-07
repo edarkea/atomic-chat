@@ -25,6 +25,45 @@ export type ConnectionStatus =
 export type MessageStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed';
 export type MessagePersistenceStatus = 'persisted' | 'memory-only';
 export type MessageClassification = 'direct' | 'broadcast';
+export interface XmppStanzaId {
+  readonly id: string;
+  readonly by: string;
+}
+export interface MessageReference {
+  readonly messageId?: string;
+  readonly originId?: string;
+  readonly stanzaIds: ReadonlyArray<XmppStanzaId>;
+  readonly authorJid: string;
+  readonly quote?: string;
+}
+export interface ReactionActor {
+  readonly id: string;
+  readonly label: string;
+  readonly occupantJid?: string;
+  readonly realJid?: string;
+  readonly identifiable: boolean;
+}
+export interface MessageReaction {
+  readonly emoji: string;
+  readonly actors: ReadonlyArray<ReactionActor>;
+}
+export interface ReactionState {
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly targetMessageId: string;
+  readonly target: MessageReference;
+  readonly reactions: ReadonlyArray<MessageReaction>;
+  readonly updatedAt: string;
+  readonly source: 'direct' | 'muc';
+  readonly sessionGeneration?: number;
+}
+export interface ReactionRejected {
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly targetMessageId: string;
+  readonly reason: 'not-acceptable' | 'unsupported' | 'not-found' | 'unauthorized' | 'conflict';
+  readonly message: string;
+}
 export interface ConnectionState {
   readonly displayName?: string;
   accountId: string;
@@ -62,6 +101,11 @@ export interface Message {
   classification?: MessageClassification;
   errorCode?: AppError['code'];
   persistenceStatus?: MessagePersistenceStatus;
+  messageId?: string;
+  originId?: string;
+  stanzaIds?: ReadonlyArray<XmppStanzaId>;
+  replyTo?: MessageReference;
+  reactions?: ReadonlyArray<MessageReaction>;
 }
 export interface HistoryPageInput {
   version: 1;
@@ -757,6 +801,8 @@ export interface RoomRef {
 export interface RoomParticipant {
   occupantJid: OccupantId;
   nick: string;
+  realJid?: string;
+  identityVerified?: boolean;
   role: MucRole;
   affiliation: MucAffiliation;
   availability: Availability;
@@ -787,6 +833,7 @@ export interface MucSendInput extends MucRequest {
   roomJid: RoomId;
   clientMessageId: ClientMessageId;
   body: { kind: 'text'; text: string };
+  replyToMessageId?: string;
 }
 export interface RoomMessage {
   id: string;
@@ -798,6 +845,11 @@ export interface RoomMessage {
   clientMessageId?: ClientMessageId;
   source: 'live' | 'server-history';
   sessionGeneration: number;
+  messageId?: string;
+  originId?: string;
+  stanzaIds?: ReadonlyArray<XmppStanzaId>;
+  replyTo?: MessageReference;
+  reactions?: ReadonlyArray<MessageReaction>;
 }
 export type MucNoticeCode = 'IDENTITY_VISIBLE' | 'PUBLIC_LOGGING' | 'SERVER_NICKNAME';
 export interface MucNotice {
@@ -832,6 +884,8 @@ export interface DomainEventPayloadMap {
   'roster.changed': unknown;
   'message.stateChanged': Message;
   'message.received': Message;
+  'reaction.changed': ReactionState;
+  'reaction.rejected': ReactionRejected;
   'chatState.changed': ChatStateEvent;
   'certificate.trustRequired': CertificateTrustRequest;
   'muc.stateChanged': RoomState;
@@ -928,6 +982,23 @@ export interface MessageSendInput {
   conversationId: string;
   clientMessageId: ClientMessageId;
   body: { kind: 'text'; text: string };
+  replyToMessageId?: string;
+}
+export interface MessageReactionInput {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly targetMessageId: string;
+  readonly emojis: ReadonlyArray<string>;
+}
+export interface MucReactionInput {
+  readonly version: ContractVersion;
+  readonly requestId: RequestId;
+  readonly accountId: string;
+  readonly roomJid: RoomId;
+  readonly targetMessageId: string;
+  readonly emojis: ReadonlyArray<string>;
 }
 export type BroadcastMode = 'normal' | 'alert';
 export interface BroadcastRequest {

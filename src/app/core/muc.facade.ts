@@ -4,6 +4,8 @@ import {
   MucJoinInput,
   MucNotice,
   MucSendInput,
+  MucReactionInput,
+  ReactionState,
   RoomMessage,
   RoomParticipant,
   RoomRef,
@@ -56,6 +58,7 @@ export class MucFacade {
     this.states().find((state) => state.room.jid === this.selectedRoomJid()),
   );
   readonly error = signal<string | null>(null);
+  readonly reactions = signal<ReadonlyMap<string, ReactionState>>(new Map());
   readonly notices = signal<ReadonlyArray<MucNotice>>([]);
   readonly visibleNotices = computed<ReadonlyArray<MucNotice>>(() =>
     this.notices().filter((notice) => notice.roomJid === this.selectedRoomJid()),
@@ -97,6 +100,7 @@ export class MucFacade {
     this.services.set([]);
     this.states.set([]);
     this.clearAllMessages();
+    this.reactions.set(new Map());
     this.notices.set([]);
     this.selectedRoomJid.set('');
     this.roomGenerations.clear();
@@ -141,7 +145,7 @@ export class MucFacade {
     } else this.error.set(result.error.message);
   }
 
-  async send(accountId: string, roomJid: string, text: string): Promise<boolean> {
+  async send(accountId: string, roomJid: string, text: string, replyToMessageId?: string): Promise<boolean> {
     this.activeAccountId.set(accountId);
     const body = text;
     if (!body.trim()) return false;
@@ -152,8 +156,26 @@ export class MucFacade {
       roomJid,
       clientMessageId: createOpaqueId('muc-client'),
       body: { kind: 'text', text: body },
+      ...(replyToMessageId ? { replyToMessageId } : {}),
     };
     const result = await this.port.sendRoomMessage(input);
+    if (!result.ok) {
+      this.error.set(result.error.message);
+      return false;
+    }
+    return true;
+  }
+
+  async sendReaction(accountId: string, roomJid: string, targetMessageId: string, emojis: ReadonlyArray<string>): Promise<boolean> {
+    const input: MucReactionInput = {
+      version: 1,
+      requestId: createOpaqueId('muc-reaction'),
+      accountId,
+      roomJid,
+      targetMessageId,
+      emojis,
+    };
+    const result = await this.port.sendReaction(input);
     if (!result.ok) {
       this.error.set(result.error.message);
       return false;
@@ -277,6 +299,22 @@ export class MucFacade {
         });
       }
     }
+    if (event.type === 'reaction.changed') {
+      const reaction = event.payload;
+      if (reaction.accountId !== this.accountId() || reaction.source !== 'muc') return;
+      const target = this.messages().find((message) =>
+        message.id === reaction.targetMessageId || message.messageId === reaction.targetMessageId ||
+        message.originId === reaction.targetMessageId ||
+        message.stanzaIds?.some((item) => item.id === reaction.targetMessageId) ||
+        message.stanzaIds?.some((item) => reaction.target.stanzaIds.some((candidate) => candidate.by === item.by && candidate.id === item.id)),
+      );
+      if (!target) return;
+      this.reactions.update((current) => {
+        const next = new Map(current);
+        next.set(this.reactionKey(reaction.conversationId, target.id), { ...reaction, targetMessageId: target.id });
+        return next;
+      });
+    }
     if (event.type === 'muc.notice') {
       const notice = event.payload;
       if (
@@ -300,6 +338,12 @@ export class MucFacade {
   }
   private accountId(): string {
     return this.activeAccountId() || this.account.getConfig()?.accountId || '';
+  }
+  reactionFor(roomJid: string, messageId: string): ReactionState | undefined {
+    return this.reactions().get(this.reactionKey(roomJid, messageId));
+  }
+  private reactionKey(roomJid: string, messageId: string): string {
+    return `${roomJid.toLowerCase()}|${messageId}`;
   }
   private activateAccount(accountId: string): void {
     if (this.activeAccountId() !== accountId) {

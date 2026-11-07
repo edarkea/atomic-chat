@@ -42,6 +42,45 @@
       }
     }
   </p>
+  @if (replyTo(); as reply) {
+    <div class="message-reply-quote" role="note">
+      @if (replyTargetId()) {
+        <button type="button" (click)="replyNavigation.emit(replyTargetId())"><strong>Respuesta a {{ reply.authorJid }}</strong></button>
+      } @else {
+        <strong>Respuesta a {{ reply.authorJid }} · original no disponible</strong>
+      }
+      <span>{{ reply.quote || 'Mensaje original' }}</span>
+    </div>
+  }
+  @if (reactions(); as reactionState) {
+    @if (reactionState.reactions.length) {
+      <div class="message-reactions" aria-label="Reacciones">
+        @for (reaction of reactionState.reactions; track reaction.emoji) {
+          <details class="message-reaction-details">
+            <summary class="message-reaction" [attr.aria-label]="reaction.emoji + ', ' + reaction.actors.length + ' reacciones'">
+            <span>{{ reaction.emoji }}</span><small>{{ reaction.actors.length }}</small>
+            </summary>
+            <ul>
+              @for (actor of reaction.actors; track actor.id) {
+                <li>{{ actor.identifiable ? actor.label : 'Participante no verificado' }}</li>
+              }
+            </ul>
+          </details>
+        }
+      </div>
+    }
+  }
+  @if (messageId()) {
+    <div class="message-actions">
+      <button type="button" class="message-action" (click)="replyRequested.emit(messageId())" aria-label="Responder a este mensaje">Responder</button>
+      <button type="button" class="message-action" (click)="toggleReactionPicker()" [attr.aria-expanded]="reactionOpen()" aria-label="Reaccionar a este mensaje">Reaccionar</button>
+    </div>
+    @if (reactionOpen()) {
+      <div class="message-reaction-picker" role="dialog" aria-label="Selector de reacciones">
+        <app-emoji-picker (emojiSelected)="chooseReaction($event)" (closed)="closeReactionPicker()" />
+      </div>
+    }
+  }
   @if (persistenceStatus() === 'memory-only') {
     <small class="message-persistence-warning"
       >Mensaje no guardado; solo disponible en esta sesión.</small

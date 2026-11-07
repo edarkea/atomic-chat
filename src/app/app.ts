@@ -132,6 +132,7 @@ export class App {
   protected readonly fileActionPending = (transferId: string): boolean =>
     this.files.isLocalActionPending(transferId);
   protected readonly draft = signal('');
+  protected readonly replyingTo = signal<{ readonly id: string; readonly author: string; readonly quote: string } | undefined>(undefined);
   protected readonly login = signal({
     accountId: '',
     domain: '',
@@ -988,9 +989,13 @@ export class App {
   }
   protected async send(): Promise<void> {
     const sentDraft = this.draft();
+    const replyId = this.replyingTo()?.id;
     try {
-      const accepted = await this.chat.send(sentDraft, this.selectedJid());
-      if (accepted && this.draft() === sentDraft) this.draft.set('');
+      const accepted = await this.chat.sendMessageWithReply(sentDraft, this.selectedJid(), replyId);
+      if (accepted && this.draft() === sentDraft) {
+        this.draft.set('');
+        this.replyingTo.set(undefined);
+      }
     } catch {
       this.chat.error.set('No fue posible enviar el mensaje.');
     }
@@ -1299,10 +1304,34 @@ export class App {
     const sent = this.mucDraft();
     if (
       selection.kind === 'muc' &&
-      (await this.muc.send(selection.accountId, selection.roomJid, sent)) &&
+      (await this.muc.send(selection.accountId, selection.roomJid, sent, this.replyingTo()?.id)) &&
       this.mucDraft() === sent
-    )
+    ) {
       this.mucDraft.set('');
+      this.replyingTo.set(undefined);
+    }
+  }
+  protected startReply(messageId: string, muc: boolean): void {
+    if (muc) {
+      const message = this.muc.messages().find((item) => item.id === messageId);
+      if (message) this.replyingTo.set({ id: message.id, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
+      return;
+    }
+    const message = this.visibleMessages().find((item) => item.id === messageId);
+    if (message) this.replyingTo.set({ id: message.id, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
+  }
+  protected cancelReply(): void { this.replyingTo.set(undefined); }
+  protected async changeReaction(messageId: string, emojis: ReadonlyArray<string>, muc: boolean): Promise<void> {
+    const selection = this.activeSelection();
+    if (muc && selection.kind === 'muc') await this.muc.sendReaction(selection.accountId, selection.roomJid, messageId, emojis);
+    if (!muc && selection.kind === 'direct') await this.chat.sendReaction(selection.jid, messageId, emojis);
+  }
+  private mucLabel(message: import('./core/domain').RoomMessage): string {
+    return message.occupantJid.split('/').slice(1).join('/') || message.occupantJid;
+  }
+  private replyQuote(value: string): string {
+    const text = Array.from(value);
+    return text.length > 180 ? `${text.slice(0, 179).join('')}…` : value;
   }
   protected updatePreferences(changes: Partial<Preferences>): void {
     void this.chat.updatePreferences(changes);

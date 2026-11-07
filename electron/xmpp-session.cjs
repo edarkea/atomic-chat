@@ -120,6 +120,12 @@ function createXmppSession(adapter) {
           adapter.sessionGenerations.get(input.accountId),
         )
         .catch(() => undefined);
+      void adapter.discoverMessageCapabilities(
+        input.accountId,
+        session,
+        domain,
+        adapter.sessionGenerations.get(input.accountId),
+      ).catch(() => undefined);
       return state;
     },
     async disconnect(accountId) {

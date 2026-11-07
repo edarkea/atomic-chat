@@ -1,5 +1,12 @@
 const crypto = require('node:crypto');
 const { xml } = require('@xmpp/client');
+const {
+  REACTIONS_NS,
+  reactionEmojis,
+  reactionTarget,
+  referenceFromMessage,
+  replyReference,
+} = require('./xmpp-message-features.cjs');
 
 const CARBONS_NS = 'urn:xmpp:carbons:2';
 const FORWARD_NS = 'urn:xmpp:forward:0';
@@ -40,7 +47,22 @@ function createXmppCarbons(adapter) {
     const body = original.getChildText('body');
     const from = String(original.attrs.from || '');
     const to = String(original.attrs.to || '');
-    if (!body || !from || !to) return null;
+    if (!from || !to) return null;
+    const emojis = reactionEmojis(original);
+    if (emojis !== undefined) {
+      if (emojis === null) return null;
+      const actor = direction === 'received' ? from : from;
+      const target = reactionTarget(original, actor);
+      return target ? {
+        reaction: {
+          actorJid: actor,
+          conversationId: adapter.bareJid(direction === 'received' ? from : to),
+          target,
+          emojis,
+        },
+      } : null;
+    }
+    if (!body) return null;
 
     if (direction === 'received') {
       if (sameBareJid(from, accountId) || !sameBareJid(to, accountId)) return null;
@@ -59,6 +81,8 @@ function createXmppCarbons(adapter) {
         body: { kind: 'text', text: body },
         status: 'sent',
         createdAt: new Date().toISOString(),
+        ...(referenceFromMessage(original, conversationId) || {}),
+        ...(replyReference(original, conversationId) ? { replyTo: replyReference(original, conversationId) } : {}),
       };
     }
 
@@ -77,6 +101,8 @@ function createXmppCarbons(adapter) {
       body: { kind: 'text', text: body },
       status: 'sent',
       createdAt: new Date().toISOString(),
+      ...(referenceFromMessage(original, accountId) || {}),
+      ...(replyReference(original, accountId) ? { replyTo: replyReference(original, accountId) } : {}),
     };
   };
 
@@ -137,6 +163,19 @@ function createXmppCarbons(adapter) {
       if (!message) return true;
       if (message.sticker) {
         adapter.emit({ type: 'sticker.messageReceived', payload: message.sticker });
+        return true;
+      }
+      if (message.reaction) {
+        const conversationId = message.reaction.conversationId;
+        if (conversationId)
+          adapter.applyReaction({
+            accountId,
+            conversationId,
+            target: message.reaction.target,
+            emojis: message.reaction.emojis,
+            actorJid: message.reaction.actorJid,
+            source: 'direct',
+          });
         return true;
       }
       adapter.emit({ type: 'message.received', payload: message });

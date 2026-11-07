@@ -43,6 +43,18 @@
 }
 .message-link:hover,
 .message-link:focus-visible { color: var(--atomic-text); }
+.message-actions { display: flex; gap: 6px; margin-top: 6px; opacity: 0; }
+.message:hover .message-actions, .message:focus-within .message-actions { opacity: 1; }
+.message-action, .message-reaction { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); color: var(--atomic-text-muted); cursor: pointer; }
+.message-action { font-size: 10px; padding: 3px 6px; }
+.message-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.message-reaction { border-radius: 999px; display: inline-flex; gap: 4px; padding: 2px 7px; }
+.message-reaction-details { position: relative; }
+.message-reaction-details summary { list-style: none; }
+.message-reaction-details ul { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); list-style: none; margin: 4px 0 0; min-width: 150px; padding: 6px 8px; position: absolute; z-index: 4; }
+.message-reply-quote { border-left: 3px solid var(--atomic-green); display: grid; gap: 2px; margin-top: 6px; padding-left: 8px; }
+.message-reply-quote span { color: var(--atomic-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-reaction-picker { position: absolute; z-index: 3; }
 .message-time { color: var(--atomic-text-muted); flex: 0 0 auto; font-size: 10px; white-space: nowrap; }
 .message-time-hidden {
   border: 0;

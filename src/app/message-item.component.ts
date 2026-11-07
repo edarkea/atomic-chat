@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { MessageClassification, MessagePersistenceStatus } from './core/domain';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { MessageClassification, MessagePersistenceStatus, ReactionState } from './core/domain';
 import { createOpaqueId } from './core/ids';
 import { EXTERNAL_LINK_PORT, ExternalLinkPort } from './core/ports';
 import { formatMessageDate, formatMessageDateTime, formatMessageTime } from './message-date-time';
+import { EmojiPickerComponent } from './emoji-picker.component';
 
 export type MessageContentSegment =
   | { readonly kind: 'text'; readonly value: string }
@@ -50,6 +51,7 @@ export function messageContentSegments(value: string): ReadonlyArray<MessageCont
   selector: 'app-message-item',
   templateUrl: './message-item.component.html',
   styleUrls: ['./message-item.component.scss'],
+  imports: [EmojiPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MessageItemComponent {
@@ -64,6 +66,15 @@ export class MessageItemComponent {
   readonly showTime = input(true);
   readonly timestampLabel = input<string>();
   readonly groupPosition = input<'single' | 'first' | 'middle' | 'last'>('single');
+  readonly messageId = input('');
+  readonly replyTo = input<{ readonly authorJid: string; readonly quote?: string }>();
+  readonly replyTargetId = input('');
+  readonly reactions = input<ReactionState>();
+  readonly ownReactionEmojis = input<ReadonlyArray<string>>([]);
+  readonly replyRequested = output<string>();
+  readonly replyNavigation = output<string>();
+  readonly reactionChanged = output<ReadonlyArray<string>>();
+  protected readonly reactionOpen = signal(false);
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
   protected readonly emojiCount = computed(() => emojiOnlyCount(this.body()));
   private readonly externalLinks = inject<ExternalLinkPort>(EXTERNAL_LINK_PORT, { optional: true });
@@ -82,4 +93,15 @@ export class MessageItemComponent {
     if (!confirmed) return;
     void this.externalLinks.open({ version: 1, requestId: createOpaqueId('external-link'), url: href });
   }
+  protected toggleReactionPicker(): void {
+    if (!this.messageId()) return;
+    this.reactionOpen.update((open) => !open);
+  }
+  protected chooseReaction(emoji: string): void {
+    const current = new Set(this.ownReactionEmojis());
+    if (current.has(emoji)) current.delete(emoji);
+    else current.add(emoji);
+    this.reactionChanged.emit([...current]);
+  }
+  protected closeReactionPicker(): void { this.reactionOpen.set(false); }
 }

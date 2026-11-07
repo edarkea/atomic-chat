@@ -1,5 +1,16 @@
 const crypto = require('node:crypto');
 const { xml } = require('@xmpp/client');
+const {
+  FALLBACK_NS,
+  REPLY_NS,
+  SID_NS,
+  REACTIONS_NS,
+  reactionEmojis,
+  reactionTarget,
+  referenceFromMessage,
+  replyBody,
+  replyReference,
+} = require('./xmpp-message-features.cjs');
 
 const BROADCAST_NAMESPACE = 'urn:atomic-chat:message:broadcast:1';
 const JIVE_PROPERTIES_NAMESPACE = 'http://www.jivesoftware.com/xmlns/xmpp/properties';
@@ -147,6 +158,7 @@ function createRosterMessaging(adapter) {
     async sendMessage(accountId, input) {
       if (adapter.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
       const session = adapter.require(accountId);
+      const composed = replyBody(input.body.text, input.replyTo);
       await session.send(
         xml(
           'message',
@@ -155,12 +167,40 @@ function createRosterMessaging(adapter) {
             to: input.to,
             id: input.clientMessageId,
           },
-          xml('body', {}, input.body.text),
+          xml('body', {}, composed.body),
           xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }),
+          ...(input.replyTo ? [
+            xml('reply', {
+              xmlns: REPLY_NS,
+              id: input.replyTo.originId || input.replyTo.stanzaIds?.[0]?.id || input.replyTo.messageId,
+              ...(input.replyTo.authorJid ? { to: input.replyTo.authorJid } : {}),
+            }),
+            ...(composed.fallback ? [
+              xml('fallback', { xmlns: FALLBACK_NS, for: REPLY_NS },
+                xml('body', { start: String(composed.fallback.start), end: String(composed.fallback.end) })),
+            ] : []),
+          ] : []),
           ...(input.broadcast ? [xml('broadcast', { xmlns: BROADCAST_NAMESPACE })] : []),
         ),
       );
       return { ...input, status: 'sent', createdAt: new Date().toISOString() };
+    },
+    async sendReaction(accountId, input) {
+      if (adapter.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
+      const targetId = input.target.originId || input.target.stanzaIds?.[0]?.id || input.target.messageId;
+      if (!targetId) throw new Error('INVALID_INPUT');
+      adapter.trackReaction(input.clientMessageId, {
+        accountId,
+        conversationId: input.to,
+        targetMessageId: input.targetMessageId || targetId,
+      });
+      await adapter.require(accountId).send(xml('message', {
+        type: 'chat', to: input.to, id: input.clientMessageId,
+      },
+      xml('reactions', { xmlns: REACTIONS_NS, id: targetId },
+        ...input.emojis.map((emoji) => xml('reaction', {}, emoji))),
+      xml('origin-id', { xmlns: SID_NS, id: input.clientMessageId })));
+      return { status: 'sent' };
     },
     async sendChatState(accountId, input) {
       if (adapter.states.get(accountId)?.status !== 'connected') throw new Error('not_connected');
@@ -189,6 +229,11 @@ function createRosterMessaging(adapter) {
     },
     handleMessage(accountId, stanza) {
       const senderJid = adapter.bareJid(stanza.attrs.from || accountId);
+      if (stanza.attrs.type === 'error') {
+        const condition = stanza.getChild('error')?.getChildren()?.find((child) => child.name !== 'text')?.name;
+        if (condition === 'not-acceptable' && stanza.attrs.id) adapter.rejectReaction(stanza.attrs.id, condition);
+        return true;
+      }
       if (stanza.attrs.type === 'groupchat' || senderJid.toLowerCase() === accountId.toLowerCase())
         return false;
       const chatState = stateFromStanza(stanza);
@@ -202,6 +247,20 @@ function createRosterMessaging(adapter) {
             state: chatState,
           },
         });
+      }
+      const emojis = reactionEmojis(stanza);
+      if (emojis !== undefined) {
+        if (emojis === null) return true;
+        const target = reactionTarget(stanza, senderJid);
+        if (target) adapter.applyReaction({
+          accountId,
+          conversationId: senderJid,
+          target,
+          emojis,
+          actorJid: senderJid,
+          source: 'direct',
+        });
+        return true;
       }
       if (!stanza.getChildText('body')) return Boolean(chatState);
       const bodyText = stanza.getChildText('body');
@@ -224,6 +283,9 @@ function createRosterMessaging(adapter) {
           status: 'sent',
           createdAt: new Date().toISOString(),
           classification,
+          ...(stanza.attrs.id ? { messageId: stanza.attrs.id } : {}),
+          ...(referenceFromMessage(stanza, senderJid) || {}),
+          ...(replyReference(stanza, senderJid) ? { replyTo: replyReference(stanza, senderJid) } : {}),
         },
       });
       if (process.env.ATOMIC_XMPP_DEBUG === 'true')

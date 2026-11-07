@@ -73,6 +73,14 @@
           [timestampLabel]="display.timestampLabel"
           [groupPosition]="display.position"
           [attr.data-message-id]="item.message.id"
+          [messageId]="stableActionId(item.message)"
+          [replyTo]="item.message.replyTo"
+          [replyTargetId]="replyTargetId(item.message.replyTo)"
+          [reactions]="reactionFor(item.message.id)"
+          [ownReactionEmojis]="ownReactionEmojis(item.message.id)"
+          (replyRequested)="replyRequested.emit($event)"
+          (replyNavigation)="scrollToMessage($event)"
+          (reactionChanged)="reactionChanged.emit({ messageId: item.message.id, emojis: $event })"
         />
       } @else if (item.kind === 'sticker') {
         <app-sticker-message-card
@@ -114,6 +122,7 @@
     [showAttach]="true"
     [showEmoji]="true"
     [stickersAccountId]="accountId()"
+    [replyPreview]="replyingTo() ? { author: replyingTo()!.author, quote: replyingTo()!.quote } : undefined"
     (draftChange)="draftChange.emit($event)"
     (inputFocus)="typingFocus.emit()"
     (inputBlur)="typingBlur.emit()"
@@ -121,6 +130,7 @@
     (stickerSend)="stickerSend.emit($event)"
     (filesPasted)="filesPasted.emit($event)"
     (attach)="attach.emit()"
+    (replyCancel)="replyCancel.emit()"
   />
   @if (dropActive()) {
     <div class="drop-overlay" aria-hidden="true">Suelta aquí tus archivos</div>

@@ -18,6 +18,7 @@ import {
   FileTransfer,
   Message,
   MessageSearchHit,
+  ReactionState,
   StickerMessageRef,
 } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
@@ -89,6 +90,8 @@ export class ConversationViewComponent {
   readonly searchLoading = input(false);
   readonly searchError = input<string | null>(null);
   readonly searchHasMore = input(false);
+  readonly reactions = input<ReadonlyMap<string, ReactionState>>(new Map());
+  readonly replyingTo = input<{ readonly id: string; readonly author: string; readonly quote: string }>();
 
   readonly closeRequested = output<void>();
   readonly filesDropped = output<ReadonlyArray<File>>();
@@ -116,6 +119,9 @@ export class ConversationViewComponent {
   readonly searchScopeChange = output<'all' | 'conversation'>();
   readonly searchResultSelected = output<MessageSearchHit>();
   readonly searchLoadMore = output<void>();
+  readonly replyRequested = output<string>();
+  readonly replyCancel = output<void>();
+  readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly searchOpen = signal(false);
 
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
@@ -173,6 +179,43 @@ export class ConversationViewComponent {
     this.searchOpen.update((open) => !open);
   }
   protected dayLabel(sortAt: string): string { return formatMessageDay(sortAt); }
+  protected reactionFor(messageId: string): ReactionState | undefined {
+    const live = this.reactions().get(`${this.bareJid(this.selectedJid())}|${messageId}`);
+    if (live) return live;
+    const item = this.timeline().find((candidate) => candidate.kind === 'text' && candidate.message.id === messageId);
+    if (item?.kind !== 'text' || !item.message.reactions?.length) return undefined;
+    return {
+      accountId: this.accountId(),
+      conversationId: item.message.conversationId,
+      targetMessageId: messageId,
+      target: {
+        ...(item.message.messageId ? { messageId: item.message.messageId } : {}),
+        ...(item.message.originId ? { originId: item.message.originId } : {}),
+        stanzaIds: item.message.stanzaIds || [],
+        authorJid: item.message.senderJid,
+      },
+      reactions: item.message.reactions,
+      updatedAt: item.message.createdAt,
+      source: 'direct',
+    };
+  }
+  protected ownReactionEmojis(messageId: string): ReadonlyArray<string> {
+    return this.reactionFor(messageId)?.reactions
+      .filter((reaction) => reaction.actors.some((actor) => actor.id === this.accountId()))
+      .map((reaction) => reaction.emoji) || [];
+  }
+  protected stableActionId(message: Message): string {
+    return message.originId || message.messageId || message.stanzaIds?.[0]?.id ? message.id : '';
+  }
+  protected replyTargetId(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const target = this.timeline().find((item) => item.kind === 'text' && (
+      item.message.id === reference.messageId || item.message.id === reference.originId ||
+      item.message.messageId === reference.messageId || item.message.originId === reference.originId ||
+      item.message.stanzaIds?.some((id) => reference.stanzaIds.some((candidate) => candidate.id === id.id && candidate.by === id.by))
+    ));
+    return target?.kind === 'text' ? target.message.id : '';
+  }
 
   protected onDragEnter(event: DragEvent): void {
     if (!this.isFileDrag(event)) return;

@@ -62,3 +62,7 @@
 .send {
   transform: rotate(-25deg);
 }
+.reply-preview { align-items: center; border-left: 3px solid var(--atomic-green); display: flex; gap: 8px; justify-content: space-between; padding: 6px 8px; }
+.reply-preview span { display: grid; min-width: 0; }
+.reply-preview small { color: var(--atomic-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-preview button { background: transparent; border: 0; color: var(--atomic-text-muted); cursor: pointer; }

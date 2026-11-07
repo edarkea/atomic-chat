@@ -1,5 +1,17 @@
 const crypto = require('node:crypto');
 const { xml } = require('@xmpp/client');
+const {
+  FALLBACK_NS,
+  REACTIONS_NS,
+  REPLY_NS,
+  SID_NS,
+  reactionEmojis,
+  reactionTarget,
+  referenceFromMessage,
+  replyBody,
+  replyReference,
+  stanzaIds,
+} = require('./xmpp-message-features.cjs');
 
 const DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items';
 const DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info';
@@ -285,14 +297,26 @@ function createMucService(adapter) {
         record.state.selfOccupantJid && record.participants.get(record.state.selfOccupantJid);
       if (!self || !['participant', 'moderator'].includes(self.role))
         throw taggedError('UNAUTHORIZED', 'El usuario no tiene voz en la sala.', 'muc.send');
+      const composed = replyBody(input.body.text, input.replyTo);
       await adapter
         .requireConnected(input.accountId)
         .send(
           xml(
             'message',
             { type: 'groupchat', to: roomJid, id: input.clientMessageId },
-            xml('body', {}, input.body.text),
+            xml('body', {}, composed.body),
             xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id: input.clientMessageId }),
+            ...(input.replyTo ? [
+              xml('reply', {
+                xmlns: REPLY_NS,
+                id: input.replyTo.stanzaIds?.find((item) => item.by === roomJid)?.id,
+                to: input.replyTo.authorJid,
+              }),
+              ...(composed.fallback ? [
+                xml('fallback', { xmlns: FALLBACK_NS, for: REPLY_NS },
+                  xml('body', { start: String(composed.fallback.start), end: String(composed.fallback.end) })),
+              ] : []),
+            ] : []),
           ),
         );
       return {
@@ -301,6 +325,27 @@ function createMucService(adapter) {
         clientMessageId: input.clientMessageId,
         status: 'sent',
       };
+    },
+    async sendMucReaction(input) {
+      const roomJid = adapter.validateRoomJid(input.roomJid);
+      const record = adapter.mucRooms.get(input.accountId)?.get(roomJid.toLowerCase());
+      if (!record || record.state.status !== 'joined') throw taggedError('NOT_CONNECTED', 'La sala no está confirmada como ingresada.', 'muc.react');
+      const self = record.state.selfOccupantJid && record.participants.get(record.state.selfOccupantJid);
+      if (!self || !['participant', 'moderator'].includes(self.role)) throw taggedError('UNAUTHORIZED', 'El usuario no tiene voz en la sala.', 'muc.react');
+      const targetId = input.target.stanzaIds?.find((item) => item.by === roomJid)?.id;
+      if (!targetId) throw taggedError('INVALID_INPUT', 'La reacción MUC requiere un stanza-id asignado por la sala.', 'muc.react');
+      adapter.trackReaction(input.clientMessageId, {
+        accountId: input.accountId,
+        conversationId: roomJid,
+        targetMessageId: input.targetMessageId || targetId,
+      });
+      await adapter.requireConnected(input.accountId).send(xml('message', {
+        type: 'groupchat', to: roomJid, id: input.clientMessageId,
+      },
+      xml('reactions', { xmlns: REACTIONS_NS, id: targetId },
+        ...input.emojis.map((emoji) => xml('reaction', {}, emoji))),
+      xml('origin-id', { xmlns: SID_NS, id: input.clientMessageId })));
+      return { status: 'sent' };
     },
     createMucRoom(accountId, room, generation, nickname, requestId) {
       let resolveJoin;
@@ -493,6 +538,7 @@ function createMucService(adapter) {
       const participant = {
         occupantJid: from,
         nick: from.split('/').slice(1).join('/') || '',
+        ...(item?.attrs?.jid ? { realJid: adapter.bareJid(item.attrs.jid), identityVerified: true } : {}),
         role: adapter.mucRole(item?.attrs.role),
         affiliation: adapter.mucAffiliation(item?.attrs.affiliation),
         availability: type === 'unavailable' ? 'unavailable' : 'available',
@@ -580,13 +626,36 @@ function createMucService(adapter) {
       const roomJid = adapter.bareJid(from);
       const record = adapter.mucRooms.get(accountId)?.get(roomJid.toLowerCase());
       if (!record || record.generation !== adapter.sessionGenerations.get(accountId)) return;
+      if (stanza.attrs.type === 'error') {
+        const condition = stanza.getChild('error')?.getChildren()?.find((child) => child.name !== 'text')?.name;
+        if (condition === 'not-acceptable' && stanza.attrs.id) adapter.rejectReaction(stanza.attrs.id, condition);
+        return;
+      }
       const body = stanza.getChildText('body');
+      const allStanzaIds = stanzaIds(stanza);
+      const roomStanzaIds = allStanzaIds.filter((item) => item.by.toLowerCase() === roomJid.toLowerCase());
+      const emojis = reactionEmojis(stanza);
+      if (emojis !== undefined) {
+        if (emojis === null) return;
+        const target = reactionTarget(stanza, from, (item) => item.by.toLowerCase() === roomJid.toLowerCase());
+        if (target) adapter.applyReaction({
+          accountId,
+          conversationId: roomJid,
+          target,
+          emojis,
+          actorJid: from,
+          source: 'muc',
+          sessionGeneration: record.generation,
+        });
+        return;
+      }
       if (typeof body !== 'string') return;
-      const explicitId = stanza.attrs.id || stanza.getChild('origin-id')?.attrs?.id || '';
-      const identity = explicitId
-        ? `${accountId}|${roomJid}|${from}|${explicitId}`
+      const origin = stanza.getChild('origin-id', SID_NS)?.attrs?.id || '';
+      const stableRoomId = roomStanzaIds[0]?.id;
+      const identity = stableRoomId
+        ? `${accountId}|${roomJid}|${from}|${stableRoomId}`
         : `muc_${crypto.randomUUID()}`;
-      const id = explicitId
+      const id = stableRoomId
         ? `room_${crypto.createHash('sha256').update(identity).digest('hex')}`
         : identity;
       if (record.seenMessageIds.has(id)) return;
@@ -597,9 +666,7 @@ function createMucService(adapter) {
         stanza.getChild('delay', DELAY_NS) || stanza.getChild('x', LEGACY_DELAY_NS)
           ? 'server-history'
           : 'live';
-      const clientMessageId =
-        stanza.getChild('origin-id')?.attrs?.id ||
-        (from === record.state.selfOccupantJid ? explicitId || undefined : undefined);
+      const clientMessageId = origin || (from === record.state.selfOccupantJid ? stanza.attrs.id || undefined : undefined);
       const message = {
         id,
         accountId,
@@ -608,6 +675,13 @@ function createMucService(adapter) {
         body: { kind: 'text', text: body },
         receivedAt: new Date().toISOString(),
         ...(clientMessageId ? { clientMessageId } : {}),
+        ...(stanza.attrs.id ? { messageId: stanza.attrs.id } : {}),
+        ...(origin ? { originId: origin } : {}),
+        ...(allStanzaIds.length ? { stanzaIds: allStanzaIds } : {}),
+        ...(referenceFromMessage(stanza, from) ? {
+          ...referenceFromMessage(stanza, from),
+        } : {}),
+        ...(replyReference(stanza, from) ? { replyTo: replyReference(stanza, from) } : {}),
         source,
         sessionGeneration: record.generation,
       };
@@ -620,6 +694,13 @@ function createMucService(adapter) {
         correlationId: clientMessageId || id,
         payload: message,
       });
+    },
+    resolveMucMessage(accountId, roomJid, messageId) {
+      const record = adapter.mucRooms.get(accountId)?.get(roomJid.toLowerCase());
+      return (record?.messageBuffer || []).find((message) =>
+        message.id === messageId || message.messageId === messageId || message.originId === messageId ||
+        message.stanzaIds?.some((item) => item.by.toLowerCase() === roomJid.toLowerCase() && item.id === messageId),
+      );
     },
     mucRole(value) {
       return ['none', 'visitor', 'participant', 'moderator'].includes(value) ? value : 'none';

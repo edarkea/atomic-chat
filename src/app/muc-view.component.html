@@ -71,12 +71,22 @@
         [showTime]="display.showHeader"
         [timestampLabel]="display.timestampLabel"
         [groupPosition]="display.position"
+        [messageId]="stableActionId(message)"
+        [replyTo]="message.replyTo"
+        [replyTargetId]="replyTargetId(message.replyTo)"
+        [reactions]="reactionFor(message.id)"
+        [ownReactionEmojis]="ownReactionEmojis(message.id)"
+        [attr.data-message-id]="message.id"
+        (replyRequested)="replyRequested.emit($event)"
+        (replyNavigation)="navigateToMessage($event)"
+        (reactionChanged)="reactionChanged.emit({ messageId: message.id, emojis: $event })"
       />
     }
     @if (!messages().length) {
       <p class="reference-message empty-state">No hay mensajes todavía.</p>
     }
   </div>
+  @if (error()) { <p class="composer-error" role="alert">{{ error() }}</p> }
   <app-message-composer
     [inputName]="'muc-message'"
     [placeholder]="'Escribir en la sala...'"
@@ -84,7 +94,9 @@
     [disabled]="false"
     [showEmoji]="true"
     [stickersAccountId]="roomState().accountId"
+    [replyPreview]="replyingTo() ? { author: replyingTo()!.author, quote: replyingTo()!.quote } : undefined"
     (draftChange)="draftChange.emit($event)"
     (messageSubmitted)="send.emit()"
+    (replyCancel)="replyCancel.emit()"
   />
 </section>

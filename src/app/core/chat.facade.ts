@@ -14,6 +14,9 @@ import {
   HistoryPage,
   MessageAroundInput,
   Message,
+  MessageReactionInput,
+  MessageReference,
+  ReactionState,
   MessageSearchHit,
   MessageSearchScope,
   MessageSendInput,
@@ -124,6 +127,7 @@ export class ChatFacade {
   readonly unreadCounts = this.unread.counts.asReadonly();
   readonly unreadTotal = this.unread.total;
   readonly chatStates = signal<ReadonlyMap<string, ChatState>>(new Map());
+  readonly reactions = signal<ReadonlyMap<string, ReactionState>>(new Map());
   private identityGeneration = 0;
   private contactsOwner = '';
   private olderCursor: string | null = null;
@@ -139,6 +143,7 @@ export class ChatFacade {
   private messageSearchGeneration = 0;
   private readonly accountContactReset = effect(() => {
     this.accountId();
+    this.reactions.set(new Map());
     this.contacts.set([]);
     this.conversationSummaries.set([]);
     this.messageSearchGeneration += 1;
@@ -198,6 +203,20 @@ export class ChatFacade {
           }
         }
       }
+      if (event.type === 'reaction.changed') {
+        const reaction = event.payload;
+        if (reaction.accountId !== this.accountId()) return;
+        const target = this.messages().find((message) => this.matchesReference(message, reaction.target));
+        if (!target) return;
+        const local = { ...reaction, targetMessageId: target.id };
+        this.reactions.update((current) => {
+          const next = new Map(current);
+          next.set(this.reactionKey(reaction.conversationId, target.id), local);
+          return next;
+        });
+      }
+      if (event.type === 'reaction.rejected' && event.payload.accountId === this.accountId())
+        this.error.set(event.payload.message);
       if (event.type === 'sticker.messageReceived' || event.type === 'sticker.stateChanged') {
         const sticker = event.payload;
         if (sticker.accountId === this.accountId()) this.upsertStickerMessage(sticker);
@@ -775,6 +794,48 @@ export class ChatFacade {
     }
   }
 
+  async sendMessageWithReply(text: string, conversationId: string, replyToMessageId?: string): Promise<boolean> {
+    const cleanText = text;
+    const recipient = conversationId.trim();
+    if (!cleanText.trim() || !recipient || !this.accountId().trim()) return false;
+    try {
+      const result = await this.sendMessageInput({
+        version: 1,
+        requestId: createOpaqueId('req'),
+        accountId: this.accountId(),
+        conversationId: recipient,
+        clientMessageId: createOpaqueId('client-msg'),
+        body: { kind: 'text', text: cleanText },
+        ...(replyToMessageId ? { replyToMessageId } : {}),
+      });
+      if (!result.ok) {
+        this.error.set(result.error.message);
+        return false;
+      }
+      return true;
+    } catch {
+      this.error.set('No fue posible enviar el mensaje.');
+      return false;
+    }
+  }
+
+  async sendReaction(conversationId: string, targetMessageId: string, emojis: ReadonlyArray<string>): Promise<boolean> {
+    const input: MessageReactionInput = {
+      version: 1,
+      requestId: createOpaqueId('reaction'),
+      accountId: this.accountId(),
+      conversationId,
+      targetMessageId,
+      emojis,
+    };
+    const result = await this.xmpp.sendReaction(input);
+    if (!result.ok) {
+      this.error.set(result.error.message);
+      return false;
+    }
+    return true;
+  }
+
   upsertStickerMessage(sticker: StickerMessageRef): void {
     const activeConversation = this.historyContext?.conversationId;
     if (activeConversation && this.bareConversation(sticker.conversationId) !== activeConversation) {
@@ -798,6 +859,23 @@ export class ChatFacade {
       this.upsertMessage(result.value, input.conversationId);
     }
     return result;
+  }
+
+  reactionFor(conversationId: string, messageId: string): ReactionState | undefined {
+    return this.reactions().get(this.reactionKey(conversationId, messageId));
+  }
+
+  private reactionKey(conversationId: string, messageId: string): string {
+    return `${this.bareConversation(conversationId)}|${messageId}`;
+  }
+
+  private matchesReference(message: Message, reference: MessageReference): boolean {
+    return message.id === reference.messageId || message.id === reference.originId ||
+      message.clientMessageId === reference.messageId || message.clientMessageId === reference.originId ||
+      message.messageId === reference.messageId || message.messageId === reference.originId ||
+      message.originId === reference.messageId || message.originId === reference.originId ||
+      Boolean(message.stanzaIds?.some((item) => item.id === reference.messageId || item.id === reference.originId)) ||
+      Boolean(message.stanzaIds?.some((item) => reference.stanzaIds.some((candidate) => candidate.id === item.id && candidate.by === item.by)));
   }
 
   async updateTypingState(conversationId: string, draft: string): Promise<void> {
