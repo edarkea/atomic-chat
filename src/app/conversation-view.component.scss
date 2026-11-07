@@ -28,6 +28,13 @@
 .conversation-profile-copy {
   min-width: 0;
 }
+.conversation-profile-copy strong,
+.conversation-profile-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .conversation-profile:hover,
 .conversation-profile:focus-visible {
   border-color: var(--atomic-border);
@@ -44,16 +51,6 @@
 .conversation-profile:not(:disabled):hover,
 .conversation-profile:not(:disabled):focus-visible {
   color: var(--atomic-green);
-}
-.conversation-profile-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.conversation-profile-copy strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .conversation-profile:focus-visible {
   background: var(--atomic-surface-active);

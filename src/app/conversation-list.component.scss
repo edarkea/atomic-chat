@@ -89,11 +89,14 @@
   background: transparent;
   border: 0;
   border-radius: var(--atomic-radius-sm);
+  box-sizing: border-box;
   color: inherit;
   cursor: pointer;
   display: flex;
   gap: 10px;
   min-height: 54px;
+  min-width: 0;
+  max-width: 100%;
   padding: 9px;
   text-align: left;
   width: 100%;
@@ -103,6 +106,7 @@
   background: var(--atomic-surface-active);
 }
 .conversation-item:focus-visible {
+  outline-offset: -2px;
   position: relative;
   z-index: 1;
 }
@@ -110,10 +114,18 @@
   color: var(--atomic-text);
 }
 .conversation-item strong {
+  align-items: center;
   color: var(--atomic-text);
-  display: block;
+  display: flex;
   font-size: 14px;
   font-weight: 700;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -128,7 +140,8 @@
   white-space: nowrap;
 }
 .contact-copy {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  max-width: 100%;
   min-width: 0;
 }
 .contact-groups {

@@ -163,6 +163,11 @@ export class ConversationViewComponent {
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
   }
+  protected profileTooltip(): string {
+    const name = this.activeContact()?.name?.trim() || this.selectedJid() || 'Selecciona un contacto';
+    const jid = this.selectedJid();
+    return jid && jid !== name ? `${name}\n${jid}` : name;
+  }
   protected toggleSearch(): void {
     if (!this.isSelected()) return;
     this.searchOpen.update((open) => !open);
