@@ -160,21 +160,67 @@ for (const phase of ['open', 'data']) {
       sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
       sendOpen: (record, blockSize) => adapter.sendOutgoingOpen(ACCOUNT, session, 1, record, blockSize),
       sendData: (record, block, sequence) => adapter.sendOutgoingData(ACCOUNT, session, 1, record, block, sequence),
-      sendClose: (record) => adapter.sendOutgoingClose(ACCOUNT, session, 1, record),
+      sendClose: (record, options) => adapter.sendOutgoingClose(ACCOUNT, session, 1, record, options),
     } });
     try {
       const request = await started.promise;
       const result = await outgoing.cancel('file-test');
       await operation;
       assert.equal(result.state, 'cancelled');
-      assert.equal(session.iqCaller.handlers.size, 0);
       assert.equal(outgoing.records.size, 0);
+      for (let index = 0; index < 100 && sent.every((item) => item.children[0].name !== 'close'); index += 1)
+        await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(session.iqCaller.handlers.size, 0);
       session.emit('element', xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }));
       await new Promise((resolve) => setImmediate(resolve));
-      assert.deepEqual(sent.map((request) => request.children[0].name), phase === 'open' ? ['si', 'open'] : ['si', 'open', 'data']);
+      assert.ok(sent.some((item) => item.children[0].name === 'close'));
+      assert.deepEqual(sent.map((request) => request.children[0].name), phase === 'open'
+        ? ['si', 'open', 'close'] : ['si', 'open', 'data', 'close']);
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 }
+
+test('C5-INC-01 data acknowledgement timeout closes an already open IBB stream', async () => {
+  const { root, filePath } = await fixture(Buffer.from('abcdef'));
+  const dataStarted = deferred();
+  const cleanupStarted = deferred();
+  const sent = [];
+  const activeTimers = new Set();
+  const { adapter, outgoing, session } = realIqFixture(async (request, client) => {
+    sent.push(request);
+    const name = request.children[0].name;
+    if (name === 'data') { dataStarted.resolve(); return; }
+    if (name === 'close') cleanupStarted.resolve();
+    const children = name === 'si' ? [xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE },
+      xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB)))))] : [];
+    queueMicrotask(() => client.emit('element', xml('iq',
+      { type: 'result', id: request.attrs.id, from: RECIPIENT }, ...children)));
+  });
+  outgoing.scheduleTimeout = (callback) => {
+    const timer = { callback };
+    activeTimers.add(timer);
+    return timer;
+  };
+  outgoing.cancelTimeout = (timer) => activeTimers.delete(timer);
+  const operation = outgoing.start({ filePath, offer: offer(), siSessionId: 'timeout-close', transport: {
+    sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
+    sendOpen: (record, blockSize) => adapter.sendOutgoingOpen(ACCOUNT, session, 1, record, blockSize),
+    sendData: (record, block, sequence) => adapter.sendOutgoingData(ACCOUNT, session, 1, record, block, sequence),
+    sendClose: (record, options) => adapter.sendOutgoingClose(ACCOUNT, session, 1, record, options),
+  } });
+  try {
+    await dataStarted.promise;
+    [...activeTimers][0].callback();
+    const result = await operation;
+    assert.equal(result.state, 'failed');
+    assert.equal(result.endReason, 'timed_out');
+    await cleanupStarted.promise;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(sent.map((request) => request.children[0].name), ['si', 'open', 'data', 'close']);
+    assert.equal(session.iqCaller.handlers.size, 0);
+    assert.equal(outgoing.records.size, 0);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test('C5-INC-04 repeated IPC intention produces one actual SI offer and one completion', async () => {
   const { root, filePath } = await fixture();

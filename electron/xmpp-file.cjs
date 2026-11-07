@@ -145,7 +145,8 @@ function createFileService(adapter) {
             adapter.sendOutgoingOpen(accountId, session, generation, record, blockSize),
           sendData: (record, block, sequence) =>
             adapter.sendOutgoingData(accountId, session, generation, record, block, sequence),
-          sendClose: (record) => adapter.sendOutgoingClose(accountId, session, generation, record),
+          sendClose: (record, options) =>
+            adapter.sendOutgoingClose(accountId, session, generation, record, options),
         },
       });
     },
@@ -214,9 +215,9 @@ function createFileService(adapter) {
         );
       return recipientJid;
     },
-    async requestOutgoingIq(accountId, session, generation, record, child, phase) {
+    async requestOutgoingIq(accountId, session, generation, record, child, phase, signalOverride) {
       const assertActive = () => {
-        if (record.terminalRequested)
+        if (record.terminalRequested && !signalOverride)
           throw taggedError('CANCELLED', 'La transferencia ya terminó.', `file.${phase}`);
       };
       assertActive();
@@ -234,7 +235,7 @@ function createFileService(adapter) {
           `file.${phase}`,
         );
       const id = `file_${phase}_${crypto.randomUUID()}`;
-      const signal = record.abortController?.signal;
+      const signal = signalOverride || record.abortController?.signal;
       const retire = () => {
         // @xmpp/iq 0.14 has no abort API. Retire only this request's Deferred.
         // Resolve (rather than reject) even if entity.send is still pending, to avoid
@@ -378,7 +379,7 @@ function createFileService(adapter) {
         'data',
       );
     },
-    sendOutgoingClose(accountId, session, generation, record) {
+    sendOutgoingClose(accountId, session, generation, record, options = {}) {
       return adapter.requestOutgoingIq(
         accountId,
         session,
@@ -386,6 +387,7 @@ function createFileService(adapter) {
         record,
         xml('close', { xmlns: IBB_NS, sid: record.siSessionId }),
         'close',
+        options.signal,
       );
     },
     isFileIq(stanza) {
@@ -795,6 +797,15 @@ function createFileService(adapter) {
         if (!pending.sid || pending.record.state !== 'transferring')
           throw new Error('NOT_ACCEPTED');
         fileTrace('IBB_CLOSE', 'RX', { iqType: 'set', correlation: pending.attempt });
+        if (pending.record.bytes < BigInt(pending.record.offer.sizeBytes)) {
+          await adapter.fileTransfers.cancelBySender(pending.record.offer.transferId);
+          fileTrace('IBB_CLOSE', 'TX', {
+            iqType: 'result',
+            result: 'cancelled',
+            correlation: pending.attempt,
+          });
+          return {};
+        }
         await adapter.fileTransfers.complete(pending.record.offer.transferId);
         fileTrace('IBB_CLOSE', 'TX', {
           iqType: 'result',

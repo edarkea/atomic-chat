@@ -161,6 +161,30 @@ Fuentes primarias consultadas: [XEP-0095, negociación y errores SI](https://xmp
 La evidencia de la dependencia procede del código instalado 0.14.0, no de asumir
 que la documentación de otra versión describe su comportamiento.
 
+### Addendum — cierre de un IBB abierto
+
+XEP-0047 permite a cualquiera de las partes cerrar un bytestream IBB mediante un
+IQ `set` con `<close/>`. Al cancelar o fallar después de abrir IBB, Atomic Chat
+ahora intenta ese cierre con un controlador y el timeout configurado del IQ
+independientes. El estado local y la liberación de recursos no esperan la respuesta.
+Un fallo de envío queda como mejor esfuerzo. No se envía `<close/>` mientras una
+oferta SI aún espera aceptación ni se repite cuando el cierre normal ya está en
+curso.
+
+Como receptor, Atomic Chat responde con IQ `result` a un `<close/>` válido que llega
+antes de recibir todos los bytes, elimina el temporal y marca `cancelled_by_sender`.
+Si ya recibió todos los bytes, mantiene el cierre exitoso normal. XEP-0047 comunica
+que el stream se cerró, no ofrece un campo separado para explicar el motivo. Spark
+recibirá el cierre estándar si sigue conectado; su presentación de una transferencia
+incompleta aún requiere una prueba con Spark real. Una oferta SI sin aceptar puede
+seguir visible hasta que el receptor la resuelva, porque no hay un retiro estándar.
+
+Las pruebas focalizadas cubren el cierre tras cancelar durante datos, tras timeout
+de ACK y la recepción por Atomic Chat. Los cinco archivos de Node usados en la
+validación C5 pasan ahora **62/62**; `git diff --check` pasa. El build Angular de la
+entrega anterior no se repitió porque este addendum solo cambia CommonJS, pruebas
+de Electron y documentación.
+
 ## Archivos y actualización de tareas
 
 Producción: `electron/file-transfer-outgoing.cjs`, `electron/xmpp-file.cjs`,

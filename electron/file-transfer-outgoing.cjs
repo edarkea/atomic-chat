@@ -116,6 +116,8 @@ class OutgoingFileTransferCoordinator {
       progressLastEmittedAt: undefined,
       terminalRequested: false,
       abortController: new AbortController(),
+      ibbOpened: false,
+      activePhase: undefined,
       cleanupReady: false,
       timeoutSeconds: this.getTimeoutSeconds
         ? normalizeTransferTimeout(this.getTimeoutSeconds())
@@ -135,6 +137,7 @@ class OutgoingFileTransferCoordinator {
         () => record.transport.sendOffer(record),
         this.timeoutMilliseconds(record, this.siTimeout),
         'SI acceptance timed out',
+        'si',
       );
       if (record.terminalRequested) return transferView(record);
       record.state = 'accepted';
@@ -145,8 +148,10 @@ class OutgoingFileTransferCoordinator {
         () => record.transport.sendOpen(record, this.blockSize),
         this.timeoutMilliseconds(record, this.iqTimeout),
         'IBB open timed out',
+        'open',
       );
       if (record.terminalRequested) return transferView(record);
+      record.ibbOpened = true;
       record.state = 'transferring';
       record.updatedAt = new Date().toISOString();
       this.emit(record);
@@ -170,7 +175,9 @@ class OutgoingFileTransferCoordinator {
           () => record.transport.sendData(record, block, sequence),
           this.timeoutMilliseconds(record, this.iqTimeout),
           'IBB data acknowledgement timed out',
+          'data',
         );
+        record.activePhase = undefined;
         if (record.terminalRequested) return transferView(record);
         record.bytes += BigInt(read.bytesRead);
         record.updatedAt = new Date().toISOString();
@@ -190,6 +197,7 @@ class OutgoingFileTransferCoordinator {
         () => record.transport.sendClose(record),
         this.timeoutMilliseconds(record, this.iqTimeout),
         'IBB close acknowledgement timed out',
+        'close',
       );
       if (record.terminalRequested) return transferView(record);
       record.state = 'completed';
@@ -238,6 +246,10 @@ class OutgoingFileTransferCoordinator {
           : 'TRANSPORT_FAILED';
     record.failureMessage = cause?.message;
     record.updatedAt = new Date().toISOString();
+    const canClosePeerStream =
+      record.ibbOpened ||
+      (record.activePhase === 'open' && ['cancelled_by_sender', 'timed_out'].includes(reason));
+    if (canClosePeerStream && record.activePhase !== 'close') this.closeAbortedStream(record);
     record.abortController.abort();
     this.emit(record);
     return true;
@@ -289,6 +301,21 @@ class OutgoingFileTransferCoordinator {
     record.progressPending = false;
   }
 
+  closeAbortedStream(record) {
+    const sendClose = record.transport?.sendClose;
+    if (!sendClose) return;
+    const controller = new AbortController();
+    const timer = this.scheduleTimeout(
+      () => controller.abort(),
+      this.timeoutMilliseconds(record, this.iqTimeout),
+    );
+    timer?.unref?.();
+    void Promise.resolve()
+      .then(() => sendClose(record, { signal: controller.signal }))
+      .catch(() => undefined)
+      .finally(() => this.cancelTimeout(timer));
+  }
+
   async cleanup(record) {
     this.clearProgressTimer(record);
     try {
@@ -306,7 +333,8 @@ class OutgoingFileTransferCoordinator {
     delete record.sourceStats;
   }
 
-  withTimeout(record, operation, milliseconds, message) {
+  withTimeout(record, operation, milliseconds, message, phase) {
+    record.activePhase = phase;
     return new Promise((resolve, reject) => {
       let settled = false;
       const signal = record.abortController.signal;

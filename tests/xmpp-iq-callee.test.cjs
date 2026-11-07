@@ -241,3 +241,40 @@ test('C5-IQ-03 real client middleware serializes accepted IBB open and close', a
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('C5-INC-01 premature IBB close reports sender cancellation and removes the partial file', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-iq-cancel-'));
+  const sent = [];
+  const session = require('@xmpp/client').client({ service: 'xmpp://example.invalid', domain: 'example.invalid' });
+  session.send = async (stanza) => { sent.push(stanza); };
+  const coordinator = new FileTransferCoordinator({ root, selectDestination: async () => path.join(root, 'received.bin') });
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  adapter.sessions.set(accountId, session);
+  adapter.sessionGenerations.set(accountId, 1);
+  adapter.fileOwners.set(accountId, 42);
+  adapter.installFileIqHandlers(accountId, session);
+  session.on('element', (stanza) => { if (adapter.isFileIq(stanza)) adapter.fileIqHandled.add(stanza); });
+  session.on('stanza', (stanza) => adapter.handleStanza(accountId, stanza));
+  try {
+    const incoming = offer('sender-cancel-si', 'sender-cancel-sid', '3');
+    session.emit('element', incoming);
+    session.emit('stanza', incoming);
+    const transfer = [...coordinator.records.values()][0];
+    await coordinator.accept(transfer.offer.transferId, 42);
+    for (const child of [
+      xml('open', { xmlns: IBB, sid: 'sender-cancel-sid', 'block-size': '1024' }),
+      xml('close', { xmlns: IBB, sid: 'sender-cancel-sid' }),
+    ]) {
+      const stanza = xml('iq', { type: 'set', id: `sender-cancel-${child.name}`, from }, child);
+      session.emit('element', stanza);
+      session.emit('stanza', stanza);
+      for (let index = 0; index < 100 && !sent.some((reply) => reply.attrs.id === stanza.attrs.id); index += 1)
+        await tick();
+    }
+    assert.equal(transfer.state, 'cancelled');
+    assert.equal(transfer.endReason, 'cancelled_by_sender');
+    assert.equal(sent.find((reply) => reply.attrs.id === 'sender-cancel-close')?.attrs.type, 'result');
+    assert.equal(coordinator.records.size, 0);
+    await assert.rejects(fs.readFile(path.join(root, 'received.bin')), { code: 'ENOENT' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

@@ -164,8 +164,16 @@ class XmppAdapter {
   resolveFileRecipient(accountId, conversationId, session, generation) {
     return this.fileService.resolveFileRecipient(accountId, conversationId, session, generation);
   }
-  requestOutgoingIq(accountId, session, generation, record, child, phase) {
-    return this.fileService.requestOutgoingIq(accountId, session, generation, record, child, phase);
+  requestOutgoingIq(accountId, session, generation, record, child, phase, signalOverride) {
+    return this.fileService.requestOutgoingIq(
+      accountId,
+      session,
+      generation,
+      record,
+      child,
+      phase,
+      signalOverride,
+    );
   }
   sendOutgoingOffer(accountId, session, generation, record) {
     return this.fileService.sendOutgoingOffer(accountId, session, generation, record);
@@ -183,8 +191,8 @@ class XmppAdapter {
       sequence,
     );
   }
-  sendOutgoingClose(accountId, session, generation, record) {
-    return this.fileService.sendOutgoingClose(accountId, session, generation, record);
+  sendOutgoingClose(accountId, session, generation, record, options) {
+    return this.fileService.sendOutgoingClose(accountId, session, generation, record, options);
   }
   isFileIq(stanza) {
     return this.fileService.isFileIq(stanza);
