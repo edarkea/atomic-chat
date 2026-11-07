@@ -116,12 +116,16 @@ test('reaction persistence is account-isolated and empty sets remove an actor', 
   const store = new PersistenceStore(directory);
   for (const accountId of ['one@example.invalid', 'two@example.invalid'])
     store.upsertAccount({ accountId, host: 'example.invalid', port: 5222, tls: 1, credentialRef: null, createdAt: new Date().toISOString() });
-  store.saveMessage({ id: 'one-msg', accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', clientMessageId: 'one-client', senderJid: 'bob@example.invalid', messageId: 'wire-1', originId: 'origin-1', stanzaIds: [], body: { kind: 'text', text: 'hola' }, status: 'sent', createdAt: new Date().toISOString() });
+  store.saveMessage({ id: 'one-msg', accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', clientMessageId: 'one-client', senderJid: 'bob@example.invalid', messageId: 'wire-1', originId: 'origin-1', stanzaIds: [], replyTo: { messageId: 'wire-0', stanzaIds: [], authorJid: 'bob@example.invalid', quote: 'anterior' }, body: { kind: 'text', text: 'hola' }, status: 'sent', createdAt: new Date().toISOString() });
   store.saveReaction({ accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', source: 'direct', target: { originId: 'origin-1', stanzaIds: [], authorJid: 'bob@example.invalid' }, reactions: [{ emoji: '👍', actors: [{ id: 'bob@example.invalid', label: 'bob', identifiable: true }] }], updatedAt: new Date().toISOString() });
   assert.equal(store.listMessages('one@example.invalid', 'bob@example.invalid')[0].reactions[0].emoji, '👍');
   assert.equal(store.listMessages('two@example.invalid', 'bob@example.invalid').length, 0);
   store.saveReaction({ accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', source: 'direct', target: { originId: 'origin-1', stanzaIds: [], authorJid: 'bob@example.invalid' }, reactions: [], updatedAt: new Date().toISOString() });
   assert.equal(store.listMessages('one@example.invalid', 'bob@example.invalid')[0].reactions, undefined);
+  const timeline = store.listTimelinePage('one@example.invalid', 'bob@example.invalid', 10, 'older', null);
+  assert.equal(timeline.items[0].message.messageId, 'wire-1');
+  assert.equal(timeline.items[0].message.originId, 'origin-1');
+  assert.equal(timeline.items[0].message.replyTo.quote, 'anterior');
   store.close();
   fs.rmSync(directory, { recursive: true, force: true });
 });
