@@ -141,6 +141,8 @@ function createFileService(adapter) {
         ownerSenderId: input.ownerSenderId,
         transport: {
           sendOffer: (record) => adapter.sendOutgoingOffer(accountId, session, generation, record),
+          sendTimeoutNotice: (record) =>
+            adapter.sendOutgoingTimeoutNotice(accountId, session, generation, record),
           sendOpen: (record, blockSize) =>
             adapter.sendOutgoingOpen(accountId, session, generation, record, blockSize),
           sendData: (record, block, sequence) =>
@@ -349,6 +351,29 @@ function createFileService(adapter) {
       )
         throw taggedError('UNSUPPORTED_METHOD', 'El receptor no seleccionó IBB.', 'file.si');
       return response;
+    },
+    async sendOutgoingTimeoutNotice(accountId, session, generation, record) {
+      if (adapter.sessions.get(accountId) !== session) return;
+      if (adapter.states.get(accountId)?.status !== 'connected') return;
+      adapter.assertSessionCurrent(
+        accountId,
+        session,
+        generation,
+        adapter.sessionDomains.get(accountId) || '',
+      );
+      const id = `file_timeout_${crypto.randomUUID()}`;
+      await session.send(
+        xml(
+          'message',
+          { type: 'chat', to: record.offer.recipientJid, id },
+          xml(
+            'body',
+            {},
+            `La transferencia de «${record.offer.name}» se canceló porque venció el tiempo de espera.`,
+          ),
+          xml('origin-id', { xmlns: 'urn:xmpp:sid:0', id }),
+        ),
+      );
     },
     sendOutgoingOpen(accountId, session, generation, record, blockSize) {
       return adapter.requestOutgoingIq(

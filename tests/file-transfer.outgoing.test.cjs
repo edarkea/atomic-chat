@@ -349,6 +349,7 @@ test('C5-OUT-05 remote rejection and source mutation fail safely and release res
 
 test('C5-OUT-06 SI timeout is terminal and does not retain the source handle', async () => {
   const { root, filePath } = await fixture(Buffer.from('timeout'));
+  let timeoutNoticeCount = 0;
   try {
     const coordinator = new OutgoingFileTransferCoordinator({
       siTimeout: 5,
@@ -358,8 +359,9 @@ test('C5-OUT-06 SI timeout is terminal and does not retain the source handle', a
       },
       cancelTimeout: ({ timer }) => clearTimeout(timer),
     });
-    const result = await coordinator.start({ filePath, offer: offer('file-timeout'), ownerSenderId: 1, siSessionId: 'si-timeout', transport: { sendOffer: async () => new Promise(() => undefined) } });
+    const result = await coordinator.start({ filePath, offer: offer('file-timeout'), ownerSenderId: 1, siSessionId: 'si-timeout', transport: { sendOffer: async () => new Promise(() => undefined), sendTimeoutNotice: async () => { timeoutNoticeCount += 1; } } });
     assert.equal(result.state, 'failed'); assert.equal(result.endReason, 'timed_out'); assert.equal(coordinator.records.size, 0);
+    assert.equal(timeoutNoticeCount, 1);
     await fs.rm(filePath);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
@@ -410,8 +412,9 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfte
   });
   const adapter = new XmppAdapter(false, null, [], null, outgoing);
   const sent = [];
+  const sentMessages = [];
   const timeouts = [];
-  const session = { iqCaller: { request: async (request, timeout) => {
+  const session = { send: async (message) => sentMessages.push(message), iqCaller: { request: async (request, timeout) => {
     sent.push(request);
     const child = request.children[0];
     timeouts.push({ name: child.name, timeout });
@@ -426,11 +429,22 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfte
       return xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }, xml('si', { xmlns: SI, id: child.attrs.id }, xml('feature', { xmlns: FEATURE }, xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB))))));
     }
     return xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT });
-  } }, send: async () => undefined };
+  } } };
   adapter.sessions.set(ACCOUNT, session); adapter.states.set(ACCOUNT, { status: 'connected' }); adapter.sessionGenerations.set(ACCOUNT, 1); adapter.sessionDomains.set(ACCOUNT, 'example.invalid');
   adapter.rosters.set(ACCOUNT, new Map([['spark@example.invalid', { jid: 'spark@example.invalid', subscription: 'to' }]])); adapter.remoteResources.set(ACCOUNT, new Map([[RECIPIENT, { presence: 'available' }]]));
-  return { adapter, outgoing, sent, timeouts };
+  return { adapter, outgoing, sent, sentMessages, timeouts, session };
 }
+
+test('C5-OUT-14 SI timeout notice is sent as a normal chat message to the offered resource', async () => {
+  const { adapter, session, sentMessages } = adapterFixture();
+  const record = { offer: { name: 'bg-dev.png', recipientJid: RECIPIENT } };
+  await adapter.sendOutgoingTimeoutNotice(ACCOUNT, session, 1, record);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].name, 'message');
+  assert.equal(sentMessages[0].attrs.type, 'chat');
+  assert.equal(sentMessages[0].attrs.to, RECIPIENT);
+  assert.match(sentMessages[0].getChildText('body'), /bg-dev\.png.*venció el tiempo de espera/);
+});
 
 test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data and close', async () => {
   const { root, filePath } = await fixture(Buffer.from('hello')); const { adapter, outgoing, sent } = adapterFixture(); const states = [];

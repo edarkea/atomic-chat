@@ -178,6 +178,9 @@ class XmppAdapter {
   sendOutgoingOffer(accountId, session, generation, record) {
     return this.fileService.sendOutgoingOffer(accountId, session, generation, record);
   }
+  sendOutgoingTimeoutNotice(accountId, session, generation, record) {
+    return this.fileService.sendOutgoingTimeoutNotice(accountId, session, generation, record);
+  }
   sendOutgoingOpen(accountId, session, generation, record, blockSize) {
     return this.fileService.sendOutgoingOpen(accountId, session, generation, record, blockSize);
   }

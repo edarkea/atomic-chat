@@ -179,9 +179,15 @@ recibirá el cierre estándar si sigue conectado; su presentación de una transf
 incompleta aún requiere una prueba con Spark real. Una oferta SI sin aceptar puede
 seguir visible hasta que el receptor la resuelva, porque no hay un retiro estándar.
 
+Cuando vence el timeout mientras se espera la aceptación SI, Atomic Chat también
+envía un mensaje XMPP `chat` normal indicando que la oferta expiró. Esto avisa al
+contacto en Spark y Atomic Chat, pero no cierra ni retira el diálogo SI pendiente de
+Spark; el mensaje es informativo y el receptor aún debe resolver su solicitud local.
+
 Las pruebas focalizadas cubren el cierre tras cancelar durante datos, tras timeout
-de ACK y la recepción por Atomic Chat. Los cinco archivos de Node usados en la
-validación C5 pasan ahora **62/62**; `git diff --check` pasa. El build Angular de la
+de ACK y la recepción por Atomic Chat. La validación C5 previa pasó **62/62**; en la
+actualización del aviso SI, `tests/file-transfer.outgoing.test.cjs` pasó **35/35** y
+`git diff --check` pasa. El build Angular de la
 entrega anterior no se repitió porque este addendum solo cambia CommonJS, pruebas
 de Electron y documentación.
 

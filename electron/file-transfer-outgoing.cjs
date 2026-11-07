@@ -250,6 +250,11 @@ class OutgoingFileTransferCoordinator {
       record.ibbOpened ||
       (record.activePhase === 'open' && ['cancelled_by_sender', 'timed_out'].includes(reason));
     if (canClosePeerStream && record.activePhase !== 'close') this.closeAbortedStream(record);
+    if (reason === 'timed_out' && record.activePhase === 'si') {
+      void Promise.resolve()
+        .then(() => record.transport?.sendTimeoutNotice?.(record))
+        .catch(() => undefined);
+    }
     record.abortController.abort();
     this.emit(record);
     return true;
