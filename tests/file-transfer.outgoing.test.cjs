@@ -142,13 +142,16 @@ test('C5-INC-01 installed IQ TimeoutError maps to timed_out and retires its hand
   assert.equal(session.iqCaller.handlers.size, 0);
 });
 
-for (const phase of ['open', 'data']) {
-  test(`C5-INC-01 cancellation during real IBB ${phase} retires the IQ and prevents further sends`, async () => {
+for (const phase of ['si', 'open', 'data', 'close']) {
+ for (const mode of ['cancel', 'timeout']) {
+  test(`C5-INC-05 ${mode} during ${phase} preserves local terminality and phase-correct stanzas`, { timeout: 2000 }, async () => {
     const { root, filePath } = await fixture(Buffer.from('abcdef'));
     const started = deferred();
     const sent = [];
+    const timers = new Set();
     const { adapter, outgoing, session } = realIqFixture(async (request, client) => {
       sent.push(request);
+      if (request.name === 'message') return;
       const name = request.children[0].name;
       if (name === phase) { started.resolve(request); return; }
       const children = name === 'si' ? [xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE },
@@ -156,28 +159,58 @@ for (const phase of ['open', 'data']) {
       queueMicrotask(() => client.emit('element', xml('iq',
         { type: 'result', id: request.attrs.id, from: RECIPIENT }, ...children)));
     });
+    const limiter = new TransferResourceLimiter();
+    outgoing.resourceLimiter = limiter;
+    outgoing.scheduleTimeout = (callback) => { timers.add(callback); return callback; };
+    outgoing.cancelTimeout = (callback) => timers.delete(callback);
+    const states = [];
+    outgoing.onEvent((event) => states.push(event.payload.state));
     const operation = outgoing.start({ filePath, offer: offer(), siSessionId: 'ibb-cancel', transport: {
       sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
+      sendCancellationNotice: (record, reason) => adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, reason),
       sendOpen: (record, blockSize) => adapter.sendOutgoingOpen(ACCOUNT, session, 1, record, blockSize),
       sendData: (record, block, sequence) => adapter.sendOutgoingData(ACCOUNT, session, 1, record, block, sequence),
       sendClose: (record, options) => adapter.sendOutgoingClose(ACCOUNT, session, 1, record, options),
     } });
     try {
       const request = await started.promise;
-      const result = await outgoing.cancel('file-test');
-      await operation;
-      assert.equal(result.state, 'cancelled');
+      const record = outgoing.get('file-test');
+      assert.equal(record.activePhase, phase);
+      assert.equal(record.ibbOpened, ['data', 'close'].includes(phase));
+      if (mode === 'cancel') {
+        await Promise.all([outgoing.cancel('file-test'), outgoing.cancel('file-test')]);
+      } else {
+        [...timers][0]();
+      }
+      const result = await operation;
+      const terminal = mode === 'cancel' ? 'cancelled' : 'failed';
+      assert.equal(result.state, terminal);
+      assert.equal(result.endReason, mode === 'cancel' ? 'cancelled_by_sender' : 'timed_out');
+      assert.equal(outgoing.markTerminal(record, 'cancelled_by_sender'), false);
       assert.equal(outgoing.records.size, 0);
-      for (let index = 0; index < 100 && sent.every((item) => item.children[0].name !== 'close'); index += 1)
-        await new Promise((resolve) => setImmediate(resolve));
-      assert.equal(session.iqCaller.handlers.size, 0);
-      session.emit('element', xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }));
       await new Promise((resolve) => setImmediate(resolve));
-      assert.ok(sent.some((item) => item.children[0].name === 'close'));
-      assert.deepEqual(sent.map((request) => request.children[0].name), phase === 'open'
-        ? ['si', 'open', 'close'] : ['si', 'open', 'data', 'close']);
+      assert.equal(session.iqCaller.handlers.size, 0);
+      const children = phase === 'si' ? [xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE },
+        xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB)))))] : [];
+      session.emit('element', xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }, ...children));
+      await new Promise((resolve) => setImmediate(resolve));
+      const iqs = sent.filter((item) => item.name === 'iq');
+      assert.deepEqual(iqs.map((item) => item.children[0].name), phase === 'si'
+        ? ['si'] : phase === 'open' ? ['si', 'open'] : phase === 'data'
+          ? ['si', 'open', 'data', 'close'] : ['si', 'open', 'data', 'data', 'close']);
+      assert.ok(iqs.every((item) => item.attrs.type === 'set' && item.attrs.from === undefined));
+      const notices = sent.filter((item) => item.name === 'message');
+      assert.equal(notices.length, phase === 'si' ? 1 : 0);
+      if (notices.length) assert.match(notices[0].getChildText('body'), /localmente.*no confirma su cierre/);
+      assert.equal(states.filter((state) => state === terminal).length, 1);
+      assert.equal(states.at(-1), terminal);
+      assert.equal(record.handle, undefined);
+      assert.equal(record.transport, undefined);
+      assert.equal(timers.size, 0);
+      assert.equal(limiter.counts(ACCOUNT).global, 0);
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
+ }
 }
 
 test('C5-INC-01 data acknowledgement timeout closes an already open IBB stream', async () => {
@@ -337,13 +370,15 @@ test('C5-OUT-04 sequence wraps at 65535 without changing block order', async () 
 
 test('C5-OUT-05 remote rejection and source mutation fail safely and release resources', async () => {
   const rejected = await fixture(Buffer.from('reject')); const changed = await fixture(Buffer.from('stable'));
+  let closeCount = 0;
   try {
     const rejector = new OutgoingFileTransferCoordinator();
     const rejectedResult = await rejector.start({ filePath: rejected.filePath, offer: offer('file-rejected'), ownerSenderId: 1, siSessionId: 'si-rejected', transport: { sendOffer: async () => { const error = new Error('rejected'); error.code = 'REMOTE_REJECTED'; throw error; } } });
     assert.equal(rejectedResult.state, 'cancelled'); assert.equal(rejectedResult.endReason, 'cancelled_by_receiver'); assert.equal(rejector.records.size, 0);
     const mutator = new OutgoingFileTransferCoordinator({ blockSize: 6 });
-    const result = await mutator.start({ filePath: changed.filePath, offer: offer('file-mutated'), ownerSenderId: 1, siSessionId: 'si-mutated', transport: { sendOffer: async () => undefined, sendOpen: async () => undefined, sendData: async () => { await fs.appendFile(changed.filePath, Buffer.from('!')); }, sendClose: async () => assert.fail('close must not follow integrity failure') } });
+    const result = await mutator.start({ filePath: changed.filePath, offer: offer('file-mutated'), ownerSenderId: 1, siSessionId: 'si-mutated', transport: { sendOffer: async () => undefined, sendOpen: async () => undefined, sendData: async () => { await fs.appendFile(changed.filePath, Buffer.from('!')); }, sendClose: async () => { closeCount += 1; } } });
     assert.equal(result.state, 'failed'); assert.equal(result.endReason, 'integrity_failed'); assert.equal(mutator.records.size, 0);
+    assert.equal(closeCount, 1);
   } finally { await fs.rm(rejected.root, { recursive: true, force: true }); await fs.rm(changed.root, { recursive: true, force: true }); }
 });
 
@@ -368,9 +403,10 @@ test('C5-OUT-06 SI timeout is terminal and does not retain the source handle', a
 
 test('C5-OUT-07 cancellation releases resources without waiting for a deferred data ACK', async () => {
   const { root, filePath } = await fixture(Buffer.from('cancel')); let releaseData; let dataStarted = false;
+  let closeCount = 0;
   try {
     const coordinator = new OutgoingFileTransferCoordinator({ iqTimeout: 1000 });
-    const startPromise = coordinator.start({ filePath, offer: offer('file-cancel'), ownerSenderId: 1, siSessionId: 'si-cancel', transport: { sendOffer: async () => undefined, sendOpen: async () => undefined, sendData: async () => { dataStarted = true; await new Promise((resolve) => { releaseData = resolve; }); }, sendClose: async () => assert.fail('cancelled transfer must not close') } });
+    const startPromise = coordinator.start({ filePath, offer: offer('file-cancel'), ownerSenderId: 1, siSessionId: 'si-cancel', transport: { sendOffer: async () => undefined, sendOpen: async () => undefined, sendData: async () => { dataStarted = true; await new Promise((resolve) => { releaseData = resolve; }); }, sendClose: async () => { closeCount += 1; } } });
     for (let index = 0; index < 100 && !dataStarted; index += 1) await new Promise((resolve) => setTimeout(resolve, 1));
     assert.equal(dataStarted, true);
     const cancelPromise = coordinator.cancel('file-cancel');
@@ -379,6 +415,7 @@ test('C5-OUT-07 cancellation releases resources without waiting for a deferred d
     assert.equal(result.endReason, 'cancelled_by_sender'); assert.equal(coordinator.records.size, 0);
     releaseData();
     await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(closeCount, 1);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
@@ -438,13 +475,92 @@ function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfte
 test('C5-OUT-14 SI cancellation notifies the offered resource and includes the Atomic Chat cancel marker', async () => {
   const { adapter, session, sentMessages } = adapterFixture();
   const record = { offer: { name: 'bg-dev.png', recipientJid: RECIPIENT }, siSessionId: 'si-timeout' };
-  await adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, 'timed_out');
+  await Promise.all([
+    adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, 'timed_out'),
+    adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, 'cancelled_by_sender'),
+  ]);
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].name, 'message');
   assert.equal(sentMessages[0].attrs.type, 'chat');
   assert.equal(sentMessages[0].attrs.to, RECIPIENT);
   assert.match(sentMessages[0].getChildText('body'), /bg-dev\.png.*venció el tiempo de espera/);
   assert.equal(sentMessages[0].getChild('cancel', 'urn:atomic-chat:file-transfer:1')?.attrs.sid, 'si-timeout');
+  assert.match(sentMessages[0].getChildText('body'), /localmente.*no confirma su cierre/);
+});
+
+test('C5-INC-05 a failed informational notice is not retried', async () => {
+  const { adapter, session } = adapterFixture();
+  const record = { offer: offer(), siSessionId: 'failed-notice' };
+  let attempts = 0;
+  session.send = async () => { attempts += 1; throw new Error('synthetic send failure'); };
+  await assert.rejects(adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, 'timed_out'));
+  await adapter.sendOutgoingCancellationNotice(ACCOUNT, session, 1, record, 'cancelled_by_sender');
+  assert.equal(attempts, 1);
+});
+
+test('C5-INC-05 only an open IBB can use a live cleanup signal after terminality', async () => {
+  const { adapter, session, sent } = adapterFixture();
+  const record = { offer: offer(), siSessionId: 'guarded-close', terminalRequested: true,
+    ibbOpened: false, abortController: new AbortController() };
+  const controller = new AbortController();
+  await assert.rejects(adapter.sendOutgoingClose(ACCOUNT, session, 1, record,
+    { signal: controller.signal }), { code: 'CANCELLED' });
+  record.terminalRequested = false;
+  await assert.rejects(adapter.sendOutgoingClose(ACCOUNT, session, 1, record), { code: 'CONFLICT' });
+  record.terminalRequested = true;
+  record.ibbOpened = true;
+  await assert.rejects(adapter.requestOutgoingIq(ACCOUNT, session, 1, record,
+    xml('data', { xmlns: IBB }), 'data', controller.signal), { code: 'CANCELLED' });
+  controller.abort();
+  await assert.rejects(adapter.sendOutgoingClose(ACCOUNT, session, 1, record,
+    { signal: controller.signal }), { code: 'CANCELLED' });
+  assert.equal(sent.length, 0);
+});
+
+test('C5-INC-05 an unanswered abort close expires independently and never reactivates the transfer', { timeout: 2000 }, async () => {
+  const { root, filePath } = await fixture();
+  const dataStarted = deferred();
+  const closeStarted = deferred();
+  const sent = [];
+  const timers = new Set();
+  const { adapter, outgoing, session } = realIqFixture(async (request, client) => {
+    sent.push(request);
+    const name = request.children[0].name;
+    if (name === 'data') { dataStarted.resolve(); return; }
+    if (name === 'close') { closeStarted.resolve(request); return; }
+    const children = name === 'si' ? [xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE },
+      xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB)))))] : [];
+    queueMicrotask(() => client.emit('element', xml('iq',
+      { type: 'result', id: request.attrs.id, from: RECIPIENT }, ...children)));
+  });
+  outgoing.scheduleTimeout = (callback) => { timers.add(callback); return callback; };
+  outgoing.cancelTimeout = (callback) => timers.delete(callback);
+  const operation = outgoing.start({ filePath, offer: offer(), siSessionId: 'unanswered-close', transport: {
+    sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
+    sendOpen: (record, blockSize) => adapter.sendOutgoingOpen(ACCOUNT, session, 1, record, blockSize),
+    sendData: (record, block, sequence) => adapter.sendOutgoingData(ACCOUNT, session, 1, record, block, sequence),
+    sendClose: (record, options) => adapter.sendOutgoingClose(ACCOUNT, session, 1, record, options),
+  } });
+  try {
+    await dataStarted.promise;
+    const record = outgoing.get('file-test');
+    await outgoing.cancel('file-test');
+    assert.equal((await operation).state, 'cancelled');
+    const close = await closeStarted.promise;
+    outgoing.closeAbortedStream(record);
+    assert.equal(record.handle, undefined);
+    assert.equal(outgoing.records.size, 0);
+    assert.equal(session.iqCaller.handlers.size, 1);
+    assert.equal(timers.size, 1);
+    [...timers][0]();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(session.iqCaller.handlers.size, 0);
+    assert.equal(timers.size, 0);
+    session.emit('element', xml('iq', { type: 'result', id: close.attrs.id, from: RECIPIENT }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(record.state, 'cancelled');
+    assert.deepEqual(sent.map((item) => item.children[0].name), ['si', 'open', 'data', 'close']);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('C5-OUT-09 Spark-compatible receiver validates SI options before open, data and close', async () => {

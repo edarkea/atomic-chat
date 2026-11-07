@@ -246,10 +246,8 @@ class OutgoingFileTransferCoordinator {
           : 'TRANSPORT_FAILED';
     record.failureMessage = cause?.message;
     record.updatedAt = new Date().toISOString();
-    const canClosePeerStream =
-      record.ibbOpened ||
-      (record.activePhase === 'open' && ['cancelled_by_sender', 'timed_out'].includes(reason));
-    if (canClosePeerStream && record.activePhase !== 'close') this.closeAbortedStream(record);
+    // An outstanding open IQ does not confirm that a bytestream exists.
+    if (record.ibbOpened && record.activePhase !== 'close') this.closeAbortedStream(record);
     if (['timed_out', 'cancelled_by_sender'].includes(reason) && record.activePhase === 'si') {
       void Promise.resolve()
         .then(() => record.transport?.sendCancellationNotice?.(record, reason))
@@ -307,8 +305,10 @@ class OutgoingFileTransferCoordinator {
   }
 
   closeAbortedStream(record) {
+    if (!record.ibbOpened || record.activePhase === 'close' || record.abortCloseRequested) return;
     const sendClose = record.transport?.sendClose;
     if (!sendClose) return;
+    record.abortCloseRequested = true;
     const controller = new AbortController();
     const timer = this.scheduleTimeout(
       () => controller.abort(),

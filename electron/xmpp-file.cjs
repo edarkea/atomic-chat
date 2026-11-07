@@ -219,9 +219,13 @@ function createFileService(adapter) {
       return recipientJid;
     },
     async requestOutgoingIq(accountId, session, generation, record, child, phase, signalOverride) {
+      const signal = signalOverride || record.abortController?.signal;
+      const isAbortClose = phase === 'close' && record.ibbOpened && signalOverride;
       const assertActive = () => {
-        if (record.terminalRequested && !signalOverride)
+        if (signal?.aborted || (record.terminalRequested && !isAbortClose))
           throw taggedError('CANCELLED', 'La transferencia ya terminó.', `file.${phase}`);
+        if (phase === 'close' && !record.ibbOpened)
+          throw taggedError('CONFLICT', 'IBB no tiene una apertura confirmada.', 'file.close');
       };
       assertActive();
       adapter.assertSessionCurrent(
@@ -238,7 +242,6 @@ function createFileService(adapter) {
           `file.${phase}`,
         );
       const id = `file_${phase}_${crypto.randomUUID()}`;
-      const signal = signalOverride || record.abortController?.signal;
       const retire = () => {
         // @xmpp/iq 0.14 has no abort API. Retire only this request's Deferred.
         // Resolve (rather than reject) even if entity.send is still pending, to avoid
@@ -370,6 +373,7 @@ function createFileService(adapter) {
       return true;
     },
     async sendOutgoingCancellationNotice(accountId, session, generation, record, reason) {
+      if (record.cancellationNoticeSent) return;
       if (adapter.sessions.get(accountId) !== session) return;
       if (adapter.states.get(accountId)?.status !== 'connected') return;
       adapter.assertSessionCurrent(
@@ -378,10 +382,12 @@ function createFileService(adapter) {
         generation,
         adapter.sessionDomains.get(accountId) || '',
       );
+      // One attempt per transfer, including a failed send; this is not a remote ACK.
+      record.cancellationNoticeSent = true;
       const id = `file_cancel_${crypto.randomUUID()}`;
       const body = reason === 'timed_out'
-        ? `La transferencia de «${record.offer.name}» se canceló porque venció el tiempo de espera.`
-        : `La transferencia de «${record.offer.name}» fue cancelada por el emisor.`;
+        ? `El emisor finalizó localmente el envío de «${record.offer.name}» porque venció el tiempo de espera. Si la solicitud sigue visible, puedes descartarla; este aviso no confirma su cierre.`
+        : `El emisor canceló localmente el envío de «${record.offer.name}». Si la solicitud sigue visible, puedes descartarla; este aviso no confirma su cierre.`;
       await session.send(
         xml(
           'message',

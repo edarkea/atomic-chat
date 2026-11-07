@@ -1,5 +1,11 @@
 # C5 — Timeout, rechazo y duplicación de archivos
 
+Actualización C5-INC-05 (2026-11-07): véase el
+[expediente de cancelación con Spark 3.0.2](c5-inc05-spark-cancellation.md).
+Corrige el cierre especulativo durante `open`, distingue aviso de cierre remoto y
+registra 57 pruebas focalizadas. Los resultados de las secciones anteriores a esta
+actualización son históricos; **C5-INC-05 y C5 global permanecen abiertas**.
+
 Fecha: 2026-11-07. Modo: `IMPLEMENTACION_AUTORIZADA`.
 
 Baseline solicitado: `ee12b95a4a7a01875a955db35dc2ebf185487cfe`.
@@ -132,7 +138,7 @@ git diff --check
 | Pegado único y reenvío deliberado | Compositor existente y prueba de evento DOM propagado hasta `FileFacade`; IDs distintos al reenviar |
 | IPC repetido sin duplicar SI | Tres canales, resultados pendientes/terminales, autorización, capacidad y prueba IPC→adaptador→coordinador→SI |
 | Bytes exactos y finalización | C5-OUT-02/09, C5-INT-01/03/04: bloques, ACK secuenciales, fixture de 84.538 bytes y SHA-256 |
-| Cancelación durante IBB | C5-OUT-07 y caller real durante `open`/`data`; sin `close` ni más datos después de terminal |
+| Cancelación durante IBB | Evidencia histórica sustituida por C5-INC-05: sin `close` durante `open` pendiente; un cierre estándar durante IBB abierto, sin más datos |
 | Desconexión/cambio de sesión | C5-INC-01: offline, disconnect con recepción bloqueada, generación y envío de red pendiente; selector IPC y lote Angular antiguos |
 | Recursos y UI | Retirada de handlers IQ, registros, descriptor, timers y reserva; eliminación de temporales de portapapeles; terminales inmutables en fachada |
 
@@ -216,7 +222,8 @@ Documentación: este archivo.
 
 | Tarea | Estado de esta entrega | Reserva |
 | --- | --- | --- |
-| C5-INC-01…05 | Implementadas y validadas focalizadamente | Cancelación SI propietaria solo en Atomic Chat; interoperabilidad real pendiente |
+| C5-INC-01…04 | Implementadas y validadas focalizadamente en entregas anteriores | Interoperabilidad real pendiente |
+| C5-INC-05 | Abierta; corrección y validación local documentadas en el expediente específico | Spark 3.0.2: aviso no confirma retirada; prueba manual A/B/C pendiente |
 | C5 global / C5-SI-RECV-006 | Abierta | Esta corrección no certifica el cliente Spark ni todas las funciones de archivos |
 | B8 | Referenciada, sin cierre | Transporte SI/IBB existente; la retirada SI pendiente usa una extensión Atomic Chat |
 | B9 | Referenciada, sin cierre | Invalida operaciones antiguas; sin cola offline ni nueva política de reconexión |

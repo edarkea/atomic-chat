@@ -293,7 +293,7 @@ test('C5-IQ-03 real client middleware serializes accepted IBB open and close', a
   }
 });
 
-test('C5-INC-01 premature IBB close reports sender cancellation and removes the partial file', async () => {
+test('C5-INC-01 premature IBB close reports sender cancellation and removes the partial file', { timeout: 2000 }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-iq-cancel-'));
   const sent = [];
   const session = require('@xmpp/client').client({ service: 'xmpp://example.invalid', domain: 'example.invalid' });
@@ -304,6 +304,12 @@ test('C5-INC-01 premature IBB close reports sender cancellation and removes the 
   adapter.sessionGenerations.set(accountId, 1);
   adapter.fileOwners.set(accountId, 42);
   adapter.installFileIqHandlers(accountId, session);
+  const handleFileIq = adapter.handleFileIq.bind(adapter);
+  let pendingIq;
+  adapter.handleFileIq = (id, stanza) => {
+    pendingIq = handleFileIq(id, stanza);
+    return pendingIq;
+  };
   session.on('element', (stanza) => { if (adapter.isFileIq(stanza)) adapter.fileIqHandled.add(stanza); });
   session.on('stanza', (stanza) => adapter.handleStanza(accountId, stanza));
   try {
@@ -319,8 +325,8 @@ test('C5-INC-01 premature IBB close reports sender cancellation and removes the 
       const stanza = xml('iq', { type: 'set', id: `sender-cancel-${child.name}`, from }, child);
       session.emit('element', stanza);
       session.emit('stanza', stanza);
-      for (let index = 0; index < 100 && !sent.some((reply) => reply.attrs.id === stanza.attrs.id); index += 1)
-        await tick();
+      await pendingIq;
+      await flush();
     }
     assert.equal(transfer.state, 'cancelled');
     assert.equal(transfer.endReason, 'cancelled_by_sender');
