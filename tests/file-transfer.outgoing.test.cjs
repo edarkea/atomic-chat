@@ -18,6 +18,208 @@ const STANZA = 'urn:ietf:params:xml:ns:xmpp-stanzas';
 const ACCOUNT = 'atomic@example.invalid';
 const RECIPIENT = 'spark@example.invalid/Spark';
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function realIqFixture(onRequest) {
+  const context = adapterFixture();
+  const session = require('@xmpp/client').client({ service: 'xmpp://example.invalid', domain: 'example.invalid' });
+  context.adapter.sessions.set(ACCOUNT, session);
+  session.send = (request) => onRequest(request, session);
+  return { ...context, session };
+}
+
+for (const [condition, expectedCode, endReason, application] of [
+  ['forbidden', 'REMOTE_REJECTED', 'cancelled_by_receiver'],
+  ['not-acceptable', 'UNSUPPORTED_METHOD', 'unsupported_method'],
+  ['feature-not-implemented', 'UNSUPPORTED_METHOD', 'unsupported_method'],
+  ['service-unavailable', 'UNSUPPORTED_METHOD', 'unsupported_method'],
+  ['recipient-unavailable', 'RECIPIENT_UNAVAILABLE', 'network_lost'],
+  ['remote-server-timeout', 'TIMEOUT', 'timed_out'],
+  ['internal-server-error', 'TRANSPORT_FAILED', 'network_lost'],
+  ['bad-request', 'UNSUPPORTED_METHOD', 'unsupported_method', 'no-valid-streams'],
+  ['bad-request', 'UNSUPPORTED_METHOD', 'unsupported_method', 'bad-profile'],
+]) {
+  test(`C5-INC-03 real IQ caller classifies ${condition} without retry`, async () => {
+    const { root, filePath } = await fixture();
+    const sent = [];
+    const { adapter, outgoing, session } = realIqFixture(async (request, client) => {
+      sent.push(request);
+      queueMicrotask(() => client.emit('element', xml('iq',
+        { type: 'error', id: request.attrs.id, from: RECIPIENT },
+        xml('error', { type: 'cancel' }, xml(condition, { xmlns: STANZA }),
+          ...(application ? [xml(application, { xmlns: SI })] : [])))));
+    });
+    const states = [];
+    outgoing.onEvent((event) => states.push(event.payload.state));
+    let observedCode;
+    try {
+      const result = await outgoing.start({ filePath, offer: offer(), siSessionId: 'real-errors',
+        transport: { sendOffer: async (record) => {
+          try { return await adapter.sendOutgoingOffer(ACCOUNT, session, 1, record); }
+          catch (cause) { observedCode = cause.code; throw cause; }
+        } } });
+      assert.equal(observedCode, expectedCode);
+      assert.equal(result.endReason, endReason);
+      assert.deepEqual(states, ['offering', condition === 'forbidden' ? 'cancelled' : 'failed']);
+      assert.equal(sent.length, 1);
+      assert.equal(session.iqCaller.handlers.size, 0);
+      assert.equal(outgoing.records.size, 0);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+}
+
+for (const mode of ['timeout', 'cancel', 'offline', 'disconnect', 'generation', 'pending-send']) {
+  test(`C5-INC-01 ${mode} prevents a late SI acceptance from starting IBB`, { timeout: 2000 }, async () => {
+    const { root, filePath } = await fixture();
+    const started = deferred();
+    const sendGate = deferred();
+    const sent = [];
+    const { adapter, outgoing, session } = realIqFixture((request) => {
+      sent.push(request);
+      started.resolve(request);
+      return mode === 'pending-send' ? sendGate.promise : Promise.resolve();
+    });
+    const limiter = new TransferResourceLimiter();
+    outgoing.resourceLimiter = limiter;
+    const timers = new Set();
+    outgoing.scheduleTimeout = (callback) => { timers.add(callback); return callback; };
+    outgoing.cancelTimeout = (callback) => timers.delete(callback);
+    const states = [];
+    session.stop = async () => undefined;
+    outgoing.onEvent((event) => states.push(event.payload.state));
+    const operation = outgoing.start({ filePath, offer: offer(), siSessionId: 'late-si',
+      transport: {
+        sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
+        sendOpen: () => assert.fail('late SI must not open IBB'),
+      } });
+    try {
+      const request = await started.promise;
+      const record = outgoing.get('file-test');
+      if (mode === 'timeout') [...timers][0]();
+      else if (mode === 'offline') adapter.handleSessionEvent(ACCOUNT, session, 'offline');
+      else if (mode === 'disconnect') {
+        // An incoming cleanup must not delay termination of the outgoing request.
+        adapter.fileTransfers = { cancelAccount: () => sendGate.promise };
+        const disconnect = adapter.disconnect(ACCOUNT);
+        await operation;
+        sendGate.resolve();
+        await disconnect;
+      }
+      else if (mode === 'generation') adapter.sessionGenerations.set(ACCOUNT, 2);
+      else await outgoing.cancel('file-test');
+      if (mode !== 'generation') {
+        await operation;
+        assert.equal(session.iqCaller.handlers.size, 0);
+      }
+      session.emit('element', xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT },
+        xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE },
+          xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB)))))));
+      sendGate.resolve();
+      const result = await operation;
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(result.endReason, mode === 'timeout' ? 'timed_out'
+        : ['offline', 'disconnect', 'generation'].includes(mode) ? 'network_lost' : 'cancelled_by_sender');
+      assert.equal(states.length, 2);
+      assert.equal(sent.length, 1);
+      assert.equal(outgoing.records.size, 0);
+      assert.equal(record.handle, undefined);
+      assert.equal(record.transport, undefined);
+      assert.equal(timers.size, 0);
+      assert.equal(limiter.counts(ACCOUNT).global, 0);
+    } finally { sendGate.resolve(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+}
+
+test('C5-INC-01 installed IQ TimeoutError maps to timed_out and retires its handler', async () => {
+  const { adapter, session } = realIqFixture(async () => undefined);
+  const record = { offer: offer(), timeoutSeconds: 0.001, abortController: new AbortController() };
+  await assert.rejects(adapter.requestOutgoingIq(ACCOUNT, session, 1, record, xml('si', { xmlns: SI }), 'si'),
+    (cause) => cause.code === 'TIMEOUT' && cause.cause?.name === 'TimeoutError');
+  assert.equal(session.iqCaller.handlers.size, 0);
+});
+
+for (const phase of ['open', 'data']) {
+  test(`C5-INC-01 cancellation during real IBB ${phase} retires the IQ and prevents further sends`, async () => {
+    const { root, filePath } = await fixture(Buffer.from('abcdef'));
+    const started = deferred();
+    const sent = [];
+    const { adapter, outgoing, session } = realIqFixture(async (request, client) => {
+      sent.push(request);
+      const name = request.children[0].name;
+      if (name === phase) { started.resolve(request); return; }
+      const children = name === 'si' ? [xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE },
+        xml('x', { xmlns: FORM, type: 'submit' }, xml('field', { var: 'stream-method' }, xml('value', {}, IBB)))))] : [];
+      queueMicrotask(() => client.emit('element', xml('iq',
+        { type: 'result', id: request.attrs.id, from: RECIPIENT }, ...children)));
+    });
+    const operation = outgoing.start({ filePath, offer: offer(), siSessionId: 'ibb-cancel', transport: {
+      sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
+      sendOpen: (record, blockSize) => adapter.sendOutgoingOpen(ACCOUNT, session, 1, record, blockSize),
+      sendData: (record, block, sequence) => adapter.sendOutgoingData(ACCOUNT, session, 1, record, block, sequence),
+      sendClose: (record) => adapter.sendOutgoingClose(ACCOUNT, session, 1, record),
+    } });
+    try {
+      const request = await started.promise;
+      const result = await outgoing.cancel('file-test');
+      await operation;
+      assert.equal(result.state, 'cancelled');
+      assert.equal(session.iqCaller.handlers.size, 0);
+      assert.equal(outgoing.records.size, 0);
+      session.emit('element', xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT }));
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(sent.map((request) => request.children[0].name), phase === 'open' ? ['si', 'open'] : ['si', 'open', 'data']);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+}
+
+test('C5-INC-04 repeated IPC intention produces one actual SI offer and one completion', async () => {
+  const { root, filePath } = await fixture();
+  const { adapter, outgoing, sent } = adapterFixture();
+  const handlers = new Map();
+  const states = [];
+  outgoing.onEvent((event) => states.push(event.payload.state));
+  require('../electron/ipc-file-handlers.cjs').registerFileHandlers({
+    ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
+    assertSender: () => undefined, getRuntime: () => ({ xmpp: adapter }),
+    historySecurity: { authorize: () => true },
+    helpers: { validVersion: (input) => input?.version === 1,
+      fileResultError: (error) => { throw error; } },
+  });
+  const input = { version: 1, requestId: 'one-paste', accountId: ACCOUNT,
+    conversationId: 'spark@example.invalid', source: 'preload-webutils-file-v1', filePath };
+  const invoke = (request) => handlers.get('file.sendDropped')({ sender: { id: 42 } }, request);
+  try {
+    const results = await Promise.all([invoke(input), invoke(input)]);
+    assert.equal(results[0].value.offer.transferId, results[1].value.offer.transferId);
+    assert.deepEqual(await invoke(input), results[0]);
+    assert.equal(sent.filter((request) => request.children[0].name === 'si').length, 1);
+    assert.equal(states.filter((state) => state === 'completed').length, 1);
+    const resend = await invoke({ ...input, requestId: 'manual-resend' });
+    assert.notEqual(resend.value.offer.transferId, results[0].value.offer.transferId);
+    assert.equal(sent.filter((request) => request.children[0].name === 'si').length, 2);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('C5-INC-01 unrelated SI fields cannot authorize an IBB stream', async () => {
+  const { root, filePath } = await fixture();
+  const { adapter, outgoing, session } = realIqFixture(async (request, client) => {
+    queueMicrotask(() => client.emit('element', xml('iq', { type: 'result', id: request.attrs.id, from: RECIPIENT },
+      xml('si', { xmlns: SI }, xml('feature', { xmlns: FEATURE }, xml('x', { xmlns: FORM, type: 'submit' },
+        xml('field', { var: 'unrelated-field' }, xml('value', {}, IBB))))))));
+  });
+  try {
+    const result = await outgoing.start({ filePath, offer: offer(), siSessionId: 'invalid-si', transport: {
+      sendOffer: (record) => adapter.sendOutgoingOffer(ACCOUNT, session, 1, record),
+      sendOpen: () => assert.fail('invalid SI cannot open IBB'),
+    } });
+    assert.equal(result.endReason, 'unsupported_method');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
 async function fixture(contents = Buffer.from('Atomic Spark fixture')) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-file-out-'));
   const filePath = path.join(root, 'fixture.bin');
@@ -92,7 +294,7 @@ test('C5-OUT-05 remote rejection and source mutation fail safely and release res
   try {
     const rejector = new OutgoingFileTransferCoordinator();
     const rejectedResult = await rejector.start({ filePath: rejected.filePath, offer: offer('file-rejected'), ownerSenderId: 1, siSessionId: 'si-rejected', transport: { sendOffer: async () => { const error = new Error('rejected'); error.code = 'REMOTE_REJECTED'; throw error; } } });
-    assert.equal(rejectedResult.state, 'cancelled'); assert.equal(rejectedResult.endReason, 'cancelled_by_sender'); assert.equal(rejector.records.size, 0);
+    assert.equal(rejectedResult.state, 'cancelled'); assert.equal(rejectedResult.endReason, 'cancelled_by_receiver'); assert.equal(rejector.records.size, 0);
     const mutator = new OutgoingFileTransferCoordinator({ blockSize: 6 });
     const result = await mutator.start({ filePath: changed.filePath, offer: offer('file-mutated'), ownerSenderId: 1, siSessionId: 'si-mutated', transport: { sendOffer: async () => undefined, sendOpen: async () => undefined, sendData: async () => { await fs.appendFile(changed.filePath, Buffer.from('!')); }, sendClose: async () => assert.fail('close must not follow integrity failure') } });
     assert.equal(result.state, 'failed'); assert.equal(result.endReason, 'integrity_failed'); assert.equal(mutator.records.size, 0);
@@ -116,7 +318,7 @@ test('C5-OUT-06 SI timeout is terminal and does not retain the source handle', a
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('C5-OUT-07 cancellation marks terminal before a deferred data ACK and cleans after it settles', async () => {
+test('C5-OUT-07 cancellation releases resources without waiting for a deferred data ACK', async () => {
   const { root, filePath } = await fixture(Buffer.from('cancel')); let releaseData; let dataStarted = false;
   try {
     const coordinator = new OutgoingFileTransferCoordinator({ iqTimeout: 1000 });
@@ -125,9 +327,10 @@ test('C5-OUT-07 cancellation marks terminal before a deferred data ACK and clean
     assert.equal(dataStarted, true);
     const cancelPromise = coordinator.cancel('file-cancel');
     assert.equal(coordinator.get('file-cancel').state, 'cancelled');
-    releaseData();
     const result = await cancelPromise; await startPromise;
     assert.equal(result.endReason, 'cancelled_by_sender'); assert.equal(coordinator.records.size, 0);
+    releaseData();
+    await new Promise((resolve) => setImmediate(resolve));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
@@ -156,6 +359,7 @@ function smackAcceptsOffer(si) {
 function adapterFixture({ wrongDiscoFrom = false, unsupported = false, staleAfterDisco = false, timeoutSeconds } = {}) {
   const outgoing = new OutgoingFileTransferCoordinator({
     blockSize: 3,
+    onCompleted: async () => true,
     ...(timeoutSeconds ? { getTimeoutSeconds: () => timeoutSeconds } : {}),
   });
   const adapter = new XmppAdapter(false, null, [], null, outgoing);

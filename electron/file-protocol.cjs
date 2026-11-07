@@ -20,7 +20,7 @@ function protocolError(code) { const error = new Error(code); error.code = code;
 function child(node, name, namespace) { return node?.getChild?.(name, namespace); }
 function parseOffer(iq, accountId, generation) {
   const from = String(iq?.attrs?.from || '');
-  if (!from.includes('/') || iq?.attrs?.type !== 'set') throw new Error('BAD_REQUEST');
+  if (!from.includes('/') || iq?.attrs?.type !== 'set' || !iq.attrs.id) throw protocolError('BAD_REQUEST');
   const si = child(iq, 'si', SI_NS); const profile = si?.attrs?.profile;
   const file = child(si, 'file', SI_FILE_NS); const size = file?.attrs?.size; const name = file?.attrs?.name;
   const methods = child(si, 'feature', FEATURE_NEG_NS)?.getChild?.('x', DATAFORM_NS)?.getChildren?.('field') || [];

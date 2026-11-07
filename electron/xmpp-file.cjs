@@ -42,7 +42,50 @@ function taggedError(code, message, phase, cause) {
   return error;
 }
 
+function outgoingIqError(cause, phase) {
+  const condition = cause?.condition;
+  const unsupportedSi =
+    phase === 'si' &&
+    (cause?.element?.getChild('no-valid-streams', SI_NS) ||
+      cause?.element?.getChild('bad-profile', SI_NS));
+  const code =
+    cause?.name === 'TimeoutError' || condition === 'remote-server-timeout'
+      ? 'TIMEOUT'
+      : condition === 'forbidden'
+        ? 'REMOTE_REJECTED'
+        : unsupportedSi ||
+            ['not-acceptable', 'feature-not-implemented', 'service-unavailable'].includes(condition)
+          ? 'UNSUPPORTED_METHOD'
+          : ['recipient-unavailable', 'remote-server-not-found'].includes(condition)
+            ? 'RECIPIENT_UNAVAILABLE'
+            : 'TRANSPORT_FAILED';
+  return taggedError(code, `Falló la solicitud IQ ${phase}.`, `file.${phase}`, cause);
+}
+
+function copyReply(element) {
+  return xml(
+    element.name,
+    { ...element.attrs },
+    ...element.children.map((child) => (typeof child === 'string' ? child : copyReply(child))),
+  );
+}
+
 function createFileService(adapter) {
+  // Keep active negotiations and the most recent terminal decisions. Never evict an active SI.
+  const siReplies = new Map();
+  const maxSiReplies = 256;
+  adapter.fileTransfers?.onEvent((event) => {
+    if (
+      event.type !== 'file.stateChanged' ||
+      !['completed', 'failed', 'cancelled'].includes(event.payload.state)
+    )
+      return;
+    const entry = siReplies.get(event.payload.offer.transferId);
+    if (!entry) return;
+    entry.active = false;
+    // A failure before acceptance must also settle the waiting IQ handler.
+    void entry.reject?.(event.payload.endReason).catch(() => undefined);
+  });
   return {
     traceStanza(accountId, stanza) {
       if (
@@ -172,6 +215,11 @@ function createFileService(adapter) {
       return recipientJid;
     },
     async requestOutgoingIq(accountId, session, generation, record, child, phase) {
+      const assertActive = () => {
+        if (record.terminalRequested)
+          throw taggedError('CANCELLED', 'La transferencia ya terminó.', `file.${phase}`);
+      };
+      assertActive();
       adapter.assertSessionCurrent(
         accountId,
         session,
@@ -186,10 +234,45 @@ function createFileService(adapter) {
           `file.${phase}`,
         );
       const id = `file_${phase}_${crypto.randomUUID()}`;
-      const response = await session.iqCaller.request(
-        xml('iq', { type: 'set', id, to: record.offer.recipientJid }, child),
-        record.timeoutSeconds ? record.timeoutSeconds * 1000 : undefined,
-      );
+      const signal = record.abortController?.signal;
+      const retire = () => {
+        // @xmpp/iq 0.14 has no abort API. Retire only this request's Deferred.
+        // Resolve (rather than reject) even if entity.send is still pending, to avoid
+        // an unhandled rejection before the library installs its timeout observer.
+        const handlers = session.iqCaller.handlers;
+        const pending = handlers?.get(id);
+        if (pending) {
+          handlers.delete(id);
+          pending.resolve(undefined);
+        }
+      };
+      let response;
+      signal?.addEventListener('abort', retire, { once: true });
+      try {
+        response = await session.iqCaller.request(
+          xml('iq', { type: 'set', id, to: record.offer.recipientJid }, child),
+          record.timeoutSeconds ? record.timeoutSeconds * 1000 : undefined,
+        );
+      } catch (cause) {
+        assertActive();
+        adapter.assertSessionCurrent(
+          accountId,
+          session,
+          generation,
+          adapter.sessionDomains.get(accountId) || '',
+        );
+        const stanza = cause?.element?.parent;
+        if (stanza && (stanza.attrs?.id !== id || stanza.attrs?.from !== record.offer.recipientJid))
+          throw taggedError(
+            'TRANSPORT_FAILED',
+            'El error IQ no está correlacionado.',
+            `file.${phase}`,
+          );
+        throw outgoingIqError(cause, phase);
+      } finally {
+        signal?.removeEventListener('abort', retire);
+      }
+      assertActive();
       adapter.assertSessionCurrent(
         accountId,
         session,
@@ -211,11 +294,7 @@ function createFileService(adapter) {
           .getChild('error')
           ?.getChildren()
           ?.find((item) => item.name !== 'text')?.name;
-        throw taggedError(
-          condition === 'not-acceptable' ? 'UNSUPPORTED_METHOD' : 'REMOTE_REJECTED',
-          `El receptor rechazó ${phase}.`,
-          `file.${phase}`,
-        );
+        throw outgoingIqError({ condition, element: response.getChild('error') }, phase);
       }
       if (response.attrs.type !== 'result')
         throw taggedError(
@@ -252,14 +331,21 @@ function createFileService(adapter) {
         si,
         'si',
       );
-      const values =
-        response
-          .getChild('si', SI_NS)
-          ?.getChild('feature', FEATURE_NEG_NS)
-          ?.getChild('x', DATAFORM_NS)
-          ?.getChildren('field')
-          .flatMap((field) => field.getChildren('value').map((value) => value.getText())) || [];
-      if (!values.includes(IBB_NS))
+      const form = response
+        .getChild('si', SI_NS)
+        ?.getChild('feature', FEATURE_NEG_NS)
+        ?.getChild('x', DATAFORM_NS);
+      const fields =
+        form?.getChildren('field').filter((field) => field.attrs.var === 'stream-method') || [];
+      const values = fields.flatMap((field) =>
+        field.getChildren('value').map((value) => value.getText()),
+      );
+      if (
+        form?.attrs.type !== 'submit' ||
+        fields.length !== 1 ||
+        values.length !== 1 ||
+        values[0] !== IBB_NS
+      )
         throw taggedError('UNSUPPORTED_METHOD', 'El receptor no seleccionó IBB.', 'file.si');
       return response;
     },
@@ -316,6 +402,7 @@ function createFileService(adapter) {
       if (!session?.iqCallee?.set || !session?.iqCallee?.get) return;
       const handler = async (context) => {
         adapter.fileIqHandled.add(context.stanza);
+        if (adapter.sessions.get(accountId) !== session) return undefined;
         const response = await adapter.handleFileIq(accountId, context.stanza);
         if (response) adapter.observeFileIqReply(session, context.stanza, response);
         return response;
@@ -433,7 +520,25 @@ function createFileService(adapter) {
           correlation: attempt,
         });
         try {
+          const duplicate = [...siReplies.values()].find(
+            (entry) =>
+              entry.accountId === accountId &&
+              entry.generation === generation &&
+              entry.senderJid === stanza.attrs.from &&
+              (entry.iqId === stanza.attrs.id || entry.siSid === si.attrs.id),
+          );
+          if (duplicate) return duplicate.response.then((child) => deliver(copyReply(child)));
           const offer = parseOffer(stanza, accountId, generation);
+          if (siReplies.size >= maxSiReplies) {
+            const oldest = [...siReplies].find(([, entry]) => !entry.active);
+            if (oldest) siReplies.delete(oldest[0]);
+            else
+              throw taggedError(
+                'RESOURCE_CONSTRAINT',
+                'SI correlation capacity exceeded',
+                'file.si',
+              );
+          }
           const publicOffer = {
             transferId: offer.transferId,
             accountId,
@@ -455,6 +560,7 @@ function createFileService(adapter) {
           const reply = async (child) => {
             if (replied) return;
             replied = true;
+            entry.reject = undefined;
             try {
               await deliver(child);
               resolveResponse(child);
@@ -469,49 +575,71 @@ function createFileService(adapter) {
             fileTrace('SI_ERROR', 'TX', { iqType: 'error', condition, correlation: attempt });
             await reply(errorElement(condition));
           };
-          const record = adapter.fileTransfers.add({
-            offer: publicOffer,
-            iqOfferId: offer.iqId,
-            siSessionId: offer.siSid,
-            ownerSenderId: adapter.fileOwners.get(accountId),
-            iq: stanza,
-            session,
-            onRejected: replyError,
-            onAccepted: async () => {
-              if (replied) throw new Error('SI_ALREADY_REPLIED');
-              fileTrace('SI_RESULT_TX_ATTEMPT', 'TX', { iqType: 'result', correlation: attempt });
-              try {
-                await reply(
-                  xml(
-                    'si',
-                    { xmlns: SI_NS },
+          const entry = {
+            accountId,
+            generation,
+            senderJid: offer.senderJid,
+            iqId: offer.iqId,
+            siSid: offer.siSid,
+            response,
+            active: true,
+            reject: replyError,
+          };
+          siReplies.set(offer.transferId, entry);
+          // Failed admission is cached too, so a replay cannot become a new offer.
+          response.catch(() => undefined);
+          let record;
+          try {
+            record = adapter.fileTransfers.add({
+              offer: publicOffer,
+              iqOfferId: offer.iqId,
+              siSessionId: offer.siSid,
+              ownerSenderId: adapter.fileOwners.get(accountId),
+              iq: stanza,
+              session,
+              onRejected: replyError,
+              onAccepted: async () => {
+                if (replied) throw new Error('SI_ALREADY_REPLIED');
+                fileTrace('SI_RESULT_TX_ATTEMPT', 'TX', { iqType: 'result', correlation: attempt });
+                try {
+                  await reply(
                     xml(
-                      'feature',
-                      { xmlns: FEATURE_NEG_NS },
+                      'si',
+                      { xmlns: SI_NS },
                       xml(
-                        'x',
-                        { xmlns: DATAFORM_NS, type: 'submit' },
-                        xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS)),
+                        'feature',
+                        { xmlns: FEATURE_NEG_NS },
+                        xml(
+                          'x',
+                          { xmlns: DATAFORM_NS, type: 'submit' },
+                          xml('field', { var: 'stream-method' }, xml('value', {}, IBB_NS)),
+                        ),
                       ),
                     ),
-                  ),
-                );
-                if (options.send)
-                  fileTrace('SI_RESULT_TX_FULFILLED', 'TX', {
-                    iqType: 'result',
-                    correlation: attempt,
-                  });
-              } catch (cause) {
-                if (options.send)
-                  fileTrace('SI_RESULT_TX_FAILED', 'TX', {
-                    iqType: 'result',
-                    errorCode: 'TRANSPORT_FAILED',
-                    correlation: attempt,
-                  });
-                throw cause;
-              }
-            },
-          });
+                  );
+                  if (options.send)
+                    fileTrace('SI_RESULT_TX_FULFILLED', 'TX', {
+                      iqType: 'result',
+                      correlation: attempt,
+                    });
+                } catch (cause) {
+                  if (options.send)
+                    fileTrace('SI_RESULT_TX_FAILED', 'TX', {
+                      iqType: 'result',
+                      errorCode: 'TRANSPORT_FAILED',
+                      correlation: attempt,
+                    });
+                  throw cause;
+                }
+              },
+            });
+          } catch (cause) {
+            entry.active = false;
+            entry.reject = undefined;
+            replied = true;
+            resolveResponse(errorElement(conditionFor(cause)));
+            return response.then(deliver);
+          }
           adapter.filePending.set(`${accountId}|${generation}|${offer.senderJid}|${offer.siSid}`, {
             record,
             session,

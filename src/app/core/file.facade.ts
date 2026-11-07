@@ -1,12 +1,7 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
 import { ChatImageRecord, FileHistoryRequest, FileTransfer, TypedDomainEvent } from './domain';
-import {
-  FILE_HISTORY_PORT,
-  FILE_TRANSFER_PORT,
-  FileHistoryPort,
-  FileTransferPort,
-} from './ports';
+import { FILE_HISTORY_PORT, FILE_TRANSFER_PORT, FileHistoryPort, FileTransferPort } from './ports';
 
 const MAX_DROPPED_FILES = 8;
 
@@ -21,6 +16,7 @@ export class FileFacade {
   private account = '';
   private droppedBatchInFlight = false;
   private droppedBatchGeneration = 0;
+  private accountGeneration = 0;
   readonly transfers = computed(() => this.items());
   readonly media = computed(() => this.liveMediaItems());
   readonly liveMedia = computed(() => this.liveMediaItems());
@@ -37,6 +33,7 @@ export class FileFacade {
   }
 
   async setAccount(accountId: string): Promise<void> {
+    const generation = ++this.accountGeneration;
     this.droppedBatchGeneration += 1;
     this.account = accountId;
     this.items.set([]);
@@ -49,7 +46,7 @@ export class FileFacade {
       requestId: createOpaqueId('file-list'),
       accountId,
     });
-    if (this.account !== accountId) return;
+    if (this.account !== accountId || this.accountGeneration !== generation) return;
     if (result.ok) {
       const active = new Map(result.value.map((item) => [item.offer.transferId, item]));
       for (const current of this.items())
@@ -91,13 +88,14 @@ export class FileFacade {
   async send(conversationId: string): Promise<void> {
     if (!this.account || !conversationId) return;
     const accountId = this.account;
+    const generation = this.accountGeneration;
     const result = await this.port.send({
       version: 1,
       requestId: createOpaqueId('file-send'),
       accountId,
       conversationId,
     });
-    if (this.account !== accountId) return;
+    if (this.account !== accountId || this.accountGeneration !== generation) return;
     if (result.ok && result.value) this.upsert(result.value);
     else if (!result.ok) this.error.set(result.error.message);
   }
@@ -131,12 +129,19 @@ export class FileFacade {
     }
 
     const accountId = this.account;
-    const sendFile = (input: { version: 1; requestId: string; accountId: string; conversationId: string; file: File }) =>
-      source === 'clipboard' ? this.port.sendClipboard(input) : this.port.sendDropped(input);
+    const generation = this.accountGeneration;
+    const sendFile = (input: {
+      version: 1;
+      requestId: string;
+      accountId: string;
+      conversationId: string;
+      file: File;
+    }) => (source === 'clipboard' ? this.port.sendClipboard(input) : this.port.sendDropped(input));
     let failed = 0;
     this.droppedBatchInFlight = true;
     try {
       for (const file of files) {
+        if (this.account !== accountId || this.accountGeneration !== generation) return;
         try {
           const result = await sendFile({
             version: 1,
@@ -145,12 +150,12 @@ export class FileFacade {
             conversationId,
             file,
           });
-          if (this.account !== accountId) return;
+          if (this.account !== accountId || this.accountGeneration !== generation) return;
           if (result.ok) {
             if (result.value) this.upsert(result.value);
           } else failed += 1;
         } catch {
-          if (this.account !== accountId) return;
+          if (this.account !== accountId || this.accountGeneration !== generation) return;
           failed += 1;
         }
       }
@@ -249,7 +254,10 @@ export class FileFacade {
       });
       if (this.account !== accountId) return;
       if (result.ok) this.error.set(null);
-      else this.error.set(action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta');
+      else
+        this.error.set(
+          action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta',
+        );
     } finally {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);
@@ -264,7 +272,8 @@ export class FileFacade {
     fileId: string,
     conversationId: string,
   ): Promise<void> {
-    if (!this.account || !fileId || !conversationId || this.pendingLocalActions().has(fileId)) return;
+    if (!this.account || !fileId || !conversationId || this.pendingLocalActions().has(fileId))
+      return;
     const accountId = this.account;
     const input: FileHistoryRequest = {
       version: 1,
@@ -278,7 +287,10 @@ export class FileFacade {
       const result = await this.historyPort[action](input);
       if (this.account !== accountId) return;
       if (result.ok) this.error.set(null);
-      else this.error.set(action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta');
+      else
+        this.error.set(
+          action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta',
+        );
     } finally {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);
@@ -291,7 +303,10 @@ export class FileFacade {
   private onEvent(event: TypedDomainEvent): void {
     if (event.type === 'file.offerReceived') {
       const offer = event.payload;
-      if (offer.accountId === this.account)
+      if (
+        offer.accountId === this.account &&
+        !this.items().some((item) => item.offer.transferId === offer.transferId)
+      )
         this.upsert({
           offer,
           direction: 'incoming',
@@ -313,6 +328,10 @@ export class FileFacade {
   }
 
   private upsert(transfer: FileTransfer): void {
+    const current = this.items().find(
+      (item) => item.offer.transferId === transfer.offer.transferId,
+    );
+    if (current && ['completed', 'failed', 'cancelled'].includes(current.state)) return;
     this.items.update((items) =>
       items.some((item) => item.offer.transferId === transfer.offer.transferId)
         ? items.map((item) =>
@@ -333,11 +352,11 @@ export class FileFacade {
   private isValidDroppedFile(file: File): boolean {
     return Boolean(
       file &&
-        typeof file.name === 'string' &&
-        file.name.trim() &&
-        Number.isFinite(file.size) &&
-        file.size >= 0 &&
-        Number.isFinite(file.lastModified),
+      typeof file.name === 'string' &&
+      file.name.trim() &&
+      Number.isFinite(file.size) &&
+      file.size >= 0 &&
+      Number.isFinite(file.lastModified),
     );
   }
 }
