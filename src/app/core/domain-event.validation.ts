@@ -29,6 +29,8 @@ import {
 } from './domain';
 
 interface EventRecord {
+  actorId?: unknown;
+  actorEmojis?: unknown;
   authorJid?: unknown;
   by?: unknown;
   accountId?: unknown;
@@ -350,7 +352,8 @@ function isReactionState(value: unknown): value is ReactionState {
     value.reactions.every((reaction) => isRecord(reaction) && isString(reaction.emoji) &&
       isArray(reaction.actors) && reaction.actors.every(isReactionActor)) &&
     isString(value.updatedAt) && isOneOf(value.source, ['direct', 'muc']) &&
-    isOptionalNumber(value.sessionGeneration);
+    isOptionalNumber(value.sessionGeneration) && isOptionalString(value.actorId) &&
+    (value.actorEmojis === undefined || (isArray(value.actorEmojis) && value.actorEmojis.every(isString)));
 }
 
 function isReactionRejected(value: unknown): value is ReactionRejected {

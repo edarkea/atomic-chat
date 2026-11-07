@@ -705,6 +705,33 @@ class PersistenceStore {
     const targetKey = reaction.target.originId || reaction.target.stanzaIds?.[0]?.id || reaction.target.messageId;
     if (!reaction?.accountId || !reaction.conversationId || !targetKey || !reaction.reactions) throw new Error('INVALID_INPUT');
     const transaction = this.database.transaction(() => {
+      if (reaction.actorId) {
+        const emojis = [...new Set(reaction.actorEmojis || [])];
+        if (!emojis.length) {
+          this.database.prepare(
+            'DELETE FROM message_reactions WHERE account_id = ? AND conversation_id = ? AND source = ? AND target_key = ? AND actor_key = ?',
+          ).run(reaction.accountId, reaction.conversationId, reaction.source, targetKey, reaction.actorId);
+          return;
+        }
+        this.database.prepare(`
+          INSERT INTO message_reactions(account_id, conversation_id, source, target_key, actor_key, target_json, emojis_json, session_generation, updated_at)
+          VALUES (@accountId, @conversationId, @source, @targetKey, @actorKey, @targetJson, @emojisJson, @sessionGeneration, @updatedAt)
+          ON CONFLICT(account_id, conversation_id, source, target_key, actor_key) DO UPDATE SET
+            target_json=excluded.target_json, emojis_json=excluded.emojis_json,
+            session_generation=excluded.session_generation, updated_at=excluded.updated_at
+        `).run({
+          accountId: reaction.accountId,
+          conversationId: reaction.conversationId,
+          source: reaction.source,
+          targetKey,
+          actorKey: reaction.actorId,
+          targetJson: JSON.stringify(reaction.target),
+          emojisJson: JSON.stringify(emojis),
+          sessionGeneration: reaction.sessionGeneration || null,
+          updatedAt: reaction.updatedAt,
+        });
+        return;
+      }
       for (const actor of reaction.reactions.flatMap((item) => item.actors)) {
         const emojis = reaction.reactions.filter((item) => item.actors.some((candidate) => candidate.id === actor.id)).map((item) => item.emoji);
         this.database.prepare(`

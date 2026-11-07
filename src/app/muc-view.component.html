@@ -73,6 +73,8 @@
         [groupPosition]="display.position"
         [messageId]="stableActionId(message)"
         [replyTo]="message.replyTo"
+        [replyAuthor]="replyAuthor(message.replyTo)"
+        [replyText]="replyQuote(message.replyTo)"
         [replyTargetId]="replyTargetId(message.replyTo)"
         [reactions]="reactionFor(message.id)"
         [ownReactionEmojis]="ownReactionEmojis(message.id)"

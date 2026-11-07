@@ -75,6 +75,8 @@
           [attr.data-message-id]="item.message.id"
           [messageId]="stableActionId(item.message)"
           [replyTo]="item.message.replyTo"
+          [replyAuthor]="replyAuthor(item.message.replyTo)"
+          [replyText]="replyQuote(item.message.replyTo)"
           [replyTargetId]="replyTargetId(item.message.replyTo)"
           [reactions]="reactionFor(item.message.id)"
           [ownReactionEmojis]="ownReactionEmojis(item.message.id)"

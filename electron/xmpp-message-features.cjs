@@ -34,6 +34,7 @@ function codePointSlice(value, start, end) {
 
 function replyQuote(message) {
   const fallback = message.getChild('fallback', FALLBACK_NS);
+  if (fallback?.attrs?.for !== REPLY_NS) return undefined;
   const range = fallback?.getChild('body');
   const body = message.getChildText('body');
   if (!fallback || !range || typeof body !== 'string') return undefined;
@@ -54,13 +55,13 @@ function referenceFromMessage(message, authorJid, stanzaFilter) {
   };
 }
 
-function replyReference(message, fallbackAuthorJid) {
+function replyReference(message, fallbackAuthorJid, stanzaBy) {
   const reply = message.getChild('reply', REPLY_NS);
   const id = text(reply?.attrs?.id);
   if (!id) return undefined;
   return {
     messageId: id,
-    stanzaIds: [],
+    stanzaIds: stanzaBy ? [{ id, by: stanzaBy }] : [],
     authorJid: text(reply.attrs.to) || fallbackAuthorJid,
     ...(replyQuote(message) ? { quote: replyQuote(message) } : {}),
   };
@@ -70,8 +71,29 @@ function reactionTarget(message, actorJid, stanzaFilter) {
   const reactions = message.getChild('reactions', REACTIONS_NS);
   const id = text(reactions?.attrs?.id);
   if (!reactions || !id) return undefined;
-  const ids = stanzaIds(message).filter((item) => !stanzaFilter || stanzaFilter(item));
-  return { messageId: id, stanzaIds: ids, authorJid: actorJid };
+  // The id attribute belongs to the target. Identifiers on this stanza identify
+  // the reaction event itself and must never become the target reference.
+  return { messageId: id, stanzaIds: [], authorJid: actorJid };
+}
+
+function reactionEventId(message) {
+  return originId(message) || messageId(message) || stanzaIds(message)[0]?.id;
+}
+
+function visibleBody(message) {
+  const body = message.getChildText('body');
+  if (typeof body !== 'string') return body;
+  const fallback = message.getChild('fallback', FALLBACK_NS);
+  const range = fallback?.getChild('body');
+  if (fallback?.attrs?.for !== REPLY_NS || !range) return body;
+  const start = Number.parseInt(range.attrs?.start || '0', 10);
+  const end = Number.parseInt(range.attrs?.end || '0', 10);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return body;
+  const points = Array.from(body);
+  if (start > points.length || end > points.length) return body;
+  let visible = points.slice(0, start).concat(points.slice(end));
+  if (visible[start] === '\n') visible = visible.slice(0, start).concat(visible.slice(start + 1));
+  return visible.join('');
 }
 
 function reactionEmojis(message) {
@@ -108,7 +130,9 @@ module.exports = {
   messageId,
   originId,
   reactionEmojis,
+  reactionEventId,
   reactionTarget,
+  visibleBody,
   referenceFromMessage,
   replyReference,
   referenceId,

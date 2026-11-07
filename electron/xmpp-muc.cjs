@@ -6,11 +6,13 @@ const {
   REPLY_NS,
   SID_NS,
   reactionEmojis,
+  reactionEventId,
   reactionTarget,
   referenceFromMessage,
   replyBody,
   replyReference,
   stanzaIds,
+  visibleBody,
 } = require('./xmpp-message-features.cjs');
 
 const DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items';
@@ -338,6 +340,10 @@ function createMucService(adapter) {
         accountId: input.accountId,
         conversationId: roomJid,
         targetMessageId: input.targetMessageId || targetId,
+        target: input.target,
+        actorJid: record.state.selfOccupantJid,
+        source: 'muc',
+        sessionGeneration: record.generation,
       });
       await adapter.requireConnected(input.accountId).send(xml('message', {
         type: 'groupchat', to: roomJid, id: input.clientMessageId,
@@ -631,7 +637,7 @@ function createMucService(adapter) {
         if (condition === 'not-acceptable' && stanza.attrs.id) adapter.rejectReaction(stanza.attrs.id, condition);
         return;
       }
-      const body = stanza.getChildText('body');
+      const body = visibleBody(stanza);
       const allStanzaIds = stanzaIds(stanza);
       const roomStanzaIds = allStanzaIds.filter((item) => item.by.toLowerCase() === roomJid.toLowerCase());
       const emojis = reactionEmojis(stanza);
@@ -646,6 +652,7 @@ function createMucService(adapter) {
           actorJid: from,
           source: 'muc',
           sessionGeneration: record.generation,
+          eventId: reactionEventId(stanza),
         });
         return;
       }
@@ -681,7 +688,7 @@ function createMucService(adapter) {
         ...(referenceFromMessage(stanza, from) ? {
           ...referenceFromMessage(stanza, from),
         } : {}),
-        ...(replyReference(stanza, from) ? { replyTo: replyReference(stanza, from) } : {}),
+        ...(replyReference(stanza, from, roomJid) ? { replyTo: replyReference(stanza, from, roomJid) } : {}),
         source,
         sessionGeneration: record.generation,
       };

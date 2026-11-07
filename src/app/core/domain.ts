@@ -56,6 +56,8 @@ export interface ReactionState {
   readonly updatedAt: string;
   readonly source: 'direct' | 'muc';
   readonly sessionGeneration?: number;
+  readonly actorId?: string;
+  readonly actorEmojis?: ReadonlyArray<string>;
 }
 export interface ReactionRejected {
   readonly accountId: string;

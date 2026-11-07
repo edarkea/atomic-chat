@@ -128,6 +128,8 @@ export class ChatFacade {
   readonly unreadTotal = this.unread.total;
   readonly chatStates = signal<ReadonlyMap<string, ChatState>>(new Map());
   readonly reactions = signal<ReadonlyMap<string, ReactionState>>(new Map());
+  private readonly pendingReactionVersion = signal(0);
+  private readonly pendingReactions = new Map<string, ReactionState>();
   private identityGeneration = 0;
   private contactsOwner = '';
   private olderCursor: string | null = null;
@@ -144,12 +146,24 @@ export class ChatFacade {
   private readonly accountContactReset = effect(() => {
     this.accountId();
     this.reactions.set(new Map());
+    this.pendingReactions.clear();
     this.contacts.set([]);
     this.conversationSummaries.set([]);
     this.messageSearchGeneration += 1;
     this.messageSearchResults.set([]);
     this.messageSearchCursor = null;
     this.messageSearchHasMore.set(false);
+  });
+  private readonly reactionReconciler = effect(() => {
+    this.pendingReactionVersion();
+    const messages = this.messages();
+    if (!messages.length || !this.pendingReactions.size) return;
+    this.pendingReactions.forEach((reaction, key) => {
+      const target = messages.find((message) => this.matchesReference(message, reaction.target));
+      if (!target) return;
+      this.setReactionForTarget(reaction, target.id);
+      this.pendingReactions.delete(key);
+    });
   });
 
   constructor() {
@@ -207,13 +221,12 @@ export class ChatFacade {
         const reaction = event.payload;
         if (reaction.accountId !== this.accountId()) return;
         const target = this.messages().find((message) => this.matchesReference(message, reaction.target));
-        if (!target) return;
-        const local = { ...reaction, targetMessageId: target.id };
-        this.reactions.update((current) => {
-          const next = new Map(current);
-          next.set(this.reactionKey(reaction.conversationId, target.id), local);
-          return next;
-        });
+        if (!target) {
+          const key = `${reaction.accountId}|${reaction.source}|${reaction.conversationId.toLowerCase()}|${reaction.targetMessageId}`;
+          this.pendingReactions.set(key, reaction);
+          if (this.pendingReactions.size > 256) this.pendingReactions.delete(this.pendingReactions.keys().next().value || '');
+          this.pendingReactionVersion.update((value) => value + 1);
+        } else this.setReactionForTarget(reaction, target.id);
       }
       if (event.type === 'reaction.rejected' && event.payload.accountId === this.accountId())
         this.error.set(event.payload.message);
@@ -867,6 +880,44 @@ export class ChatFacade {
 
   private reactionKey(conversationId: string, messageId: string): string {
     return `${this.bareConversation(conversationId)}|${messageId}`;
+  }
+
+  private setReactionForTarget(reaction: ReactionState, messageId: string): void {
+    const key = this.reactionKey(reaction.conversationId, messageId);
+    this.reactions.update((current) => {
+      const next = new Map(current);
+      const previous = next.get(key);
+      next.set(key, {
+        ...reaction,
+        targetMessageId: messageId,
+        reactions: previous && reaction.actorId
+          ? this.mergeReactionActors(previous.reactions, reaction.reactions, reaction.actorId, reaction.actorEmojis || [])
+          : reaction.reactions,
+      });
+      return next;
+    });
+  }
+
+  private mergeReactionActors(
+    previous: ReactionState['reactions'],
+    incoming: ReactionState['reactions'],
+    actorId: string,
+    actorEmojis: ReadonlyArray<string>,
+  ): ReactionState['reactions'] {
+    const actors = new Map<string, { actor: ReactionState['reactions'][number]['actors'][number]; emojis: Set<string> }>();
+    for (const reaction of previous)
+      for (const actor of reaction.actors)
+        actors.set(actor.id, { actor, emojis: new Set([...(actors.get(actor.id)?.emojis || []), reaction.emoji]) });
+    for (const reaction of incoming)
+      for (const actor of reaction.actors)
+        actors.set(actor.id, { actor, emojis: new Set([...(actors.get(actor.id)?.emojis || []), reaction.emoji]) });
+    const selected = actors.get(actorId)?.actor || { id: actorId, label: actorId, identifiable: false };
+    actors.delete(actorId);
+    if (actorEmojis.length) actors.set(actorId, { actor: selected, emojis: new Set(actorEmojis) });
+    return [...new Set([...actors.values()].flatMap((entry) => [...entry.emojis]))].map((emoji) => ({
+      emoji,
+      actors: [...actors.values()].filter((entry) => entry.emojis.has(emoji)).map((entry) => entry.actor),
+    }));
   }
 
   private matchesReference(message: Message, reference: MessageReference): boolean {

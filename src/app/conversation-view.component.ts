@@ -216,6 +216,27 @@ export class ConversationViewComponent {
     ));
     return target?.kind === 'text' ? target.message.id : '';
   }
+  protected replyAuthor(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
+    if (target?.kind === 'text') return target.senderLabel;
+    const author = this.bareJid(reference.authorJid);
+    if (author === this.bareJid(this.accountId())) return 'Tú';
+    if (author === this.bareJid(this.selectedJid())) return this.activeContact()?.name?.trim() || 'Contacto';
+    return 'Contacto no disponible';
+  }
+  protected replyQuote(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
+    if (target?.kind === 'text') return this.quoteFragment(target.message.body.text);
+    return reference.quote ? this.quoteFragment(reference.quote) : '';
+  }
+  private quoteFragment(value: string): string {
+    const points = Array.from(value);
+    return points.length > 180 ? `${points.slice(0, 179).join('')}…` : value;
+  }
 
   protected onDragEnter(event: DragEvent): void {
     if (!this.isFileDrag(event)) return;

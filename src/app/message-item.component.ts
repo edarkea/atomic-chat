@@ -10,6 +10,7 @@ export type MessageContentSegment =
   | { readonly kind: 'link'; readonly value: string; readonly href: string };
 
 const LINK_PATTERN = /https?:\/\/[^\s<>"'`]+/giu;
+export const QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
 const EMOJI_TOKEN_PATTERN = /(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?)*)/gu;
 
 /** Returns the number of emoji grapheme-like tokens when no other content is present. */
@@ -55,6 +56,7 @@ export function messageContentSegments(value: string): ReadonlyArray<MessageCont
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MessageItemComponent {
+  protected readonly quickReactionEmojis = QUICK_REACTION_EMOJIS;
   readonly sender = input.required<string>();
   readonly body = input.required<string>();
   readonly outgoing = input.required<boolean>();
@@ -68,6 +70,8 @@ export class MessageItemComponent {
   readonly groupPosition = input<'single' | 'first' | 'middle' | 'last'>('single');
   readonly messageId = input('');
   readonly replyTo = input<{ readonly authorJid: string; readonly quote?: string }>();
+  readonly replyAuthor = input('');
+  readonly replyText = input('');
   readonly replyTargetId = input('');
   readonly reactions = input<ReactionState>();
   readonly ownReactionEmojis = input<ReadonlyArray<string>>([]);
@@ -75,6 +79,7 @@ export class MessageItemComponent {
   readonly replyNavigation = output<string>();
   readonly reactionChanged = output<ReadonlyArray<string>>();
   protected readonly reactionOpen = signal(false);
+  protected readonly actionMenuOpen = signal(false);
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
   protected readonly emojiCount = computed(() => emojiOnlyCount(this.body()));
   private readonly externalLinks = inject<ExternalLinkPort>(EXTERNAL_LINK_PORT, { optional: true });
@@ -97,6 +102,13 @@ export class MessageItemComponent {
     if (!this.messageId()) return;
     this.reactionOpen.update((open) => !open);
   }
+  protected toggleActionMenu(): void {
+    if (!this.messageId()) return;
+    this.actionMenuOpen.update((open) => !open);
+  }
+  protected toggleQuickReaction(emoji: string): void {
+    this.chooseReaction(emoji);
+  }
   protected chooseReaction(emoji: string): void {
     const current = new Set(this.ownReactionEmojis());
     if (current.has(emoji)) current.delete(emoji);
@@ -104,4 +116,8 @@ export class MessageItemComponent {
     this.reactionChanged.emit([...current]);
   }
   protected closeReactionPicker(): void { this.reactionOpen.set(false); }
+  protected closeOverlays(): void {
+    this.reactionOpen.set(false);
+    this.actionMenuOpen.set(false);
+  }
 }

@@ -82,6 +82,21 @@ export class MucViewComponent {
       message.messageId === reference.messageId || message.originId === reference.originId ||
       message.stanzaIds?.some((id) => reference.stanzaIds.some((candidate) => candidate.id === id.id && candidate.by === id.by)))?.id || '';
   }
+  protected replyAuthor(reference: RoomMessage['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.messages().find((message) => message.id === targetId);
+    if (target) return this.senderLabel(target);
+    const nickname = reference.authorJid.split('/').slice(1).join('/').trim();
+    return nickname || 'Participante no disponible';
+  }
+  protected replyQuote(reference: RoomMessage['replyTo']): string {
+    if (!reference) return '';
+    const target = this.messages().find((message) => message.id === this.replyTargetId(reference));
+    const value = target?.body.text || reference.quote || '';
+    const points = Array.from(value);
+    return points.length > 180 ? `${points.slice(0, 179).join('')}…` : value;
+  }
   protected navigateToMessage(messageId: string): void {
     document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }

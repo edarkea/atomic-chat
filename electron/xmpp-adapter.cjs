@@ -45,6 +45,7 @@ class XmppAdapter {
     this.mucPolicies = new Map();
     this.reactionStates = new Map();
     this.pendingReactions = new Map();
+    this.latestReactionOperation = new Map();
     this.reactionEventKeys = new Set();
     this.messageCapabilities = new Map();
 
@@ -272,11 +273,13 @@ class XmppAdapter {
   sendMucReaction(input) {
     return this.mucService.sendMucReaction(input);
   }
-  applyReaction({ accountId, conversationId, target, emojis, actorJid, source, sessionGeneration }) {
+  applyReaction({ accountId, conversationId, target, emojis, actorJid, source, sessionGeneration, eventId }) {
     const targetId = target?.originId || target?.stanzaIds?.[0]?.id || target?.messageId;
     if (!targetId || !actorJid) return;
     const key = `${accountId}|${source}|${conversationId.toLowerCase()}|${targetId}`;
-    const eventKey = `${key}|${actorJid.toLowerCase()}|${[...new Set(emojis)].sort().join('\u001f')}`;
+    const eventKey = eventId
+      ? `${key}|event:${eventId}`
+      : `${key}|${actorJid.toLowerCase()}|${[...new Set(emojis)].sort().join('\u001f')}`;
     if (this.reactionEventKeys.has(eventKey)) return;
     this.reactionEventKeys.add(eventKey);
     if (this.reactionEventKeys.size > 4096)
@@ -311,13 +314,23 @@ class XmppAdapter {
         reactions,
         updatedAt: new Date().toISOString(),
         source,
+        actorId: actorJid.toLowerCase(),
+        actorEmojis: [...new Set(emojis)],
         ...(sessionGeneration ? { sessionGeneration } : {}),
       },
     });
   }
   trackReaction(clientMessageId, context) {
-    const pending = { ...context };
+    const targetId = context.target?.originId || context.target?.stanzaIds?.[0]?.id || context.target?.messageId;
+    const key = targetId
+      ? `${context.accountId}|${context.source}|${context.conversationId.toLowerCase()}|${targetId}`
+      : undefined;
+    const previousEmojis = key
+      ? [...(this.reactionStates.get(key)?.get(context.actorJid?.toLowerCase())?.emojis || [])]
+      : [];
+    const pending = { ...context, key, previousEmojis };
     this.pendingReactions.set(clientMessageId, pending);
+    if (key) this.latestReactionOperation.set(key, clientMessageId);
     setTimeout(() => {
       if (this.pendingReactions.get(clientMessageId) === pending) this.pendingReactions.delete(clientMessageId);
     }, 30000).unref?.();
@@ -326,6 +339,19 @@ class XmppAdapter {
     const pending = this.pendingReactions.get(clientMessageId);
     if (!pending) return;
     this.pendingReactions.delete(clientMessageId);
+    if (pending.key && this.latestReactionOperation.get(pending.key) === clientMessageId) {
+      this.latestReactionOperation.delete(pending.key);
+      this.applyReaction({
+        accountId: pending.accountId,
+        conversationId: pending.conversationId,
+        target: pending.target,
+        emojis: pending.previousEmojis,
+        actorJid: pending.actorJid,
+        source: pending.source,
+        sessionGeneration: pending.sessionGeneration,
+        eventId: `rollback:${clientMessageId}`,
+      });
+    }
     this.emit({
       type: 'reaction.rejected',
       correlationId: clientMessageId,

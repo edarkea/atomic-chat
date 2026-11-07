@@ -3,21 +3,95 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { readFileSync } = require('node:fs');
 const { xml } = require('@xmpp/client');
 const { PersistenceStore } = require('../electron/storage.cjs');
 const {
   REACTIONS_NS,
   SID_NS,
   codePointSlice,
+  reactionTarget,
   reactionEmojis,
   replyBody,
   stanzaIds,
+  visibleBody,
 } = require('../electron/xmpp-message-features.cjs');
+const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
 
 test('reactions are parsed without requiring a textual body and are deduplicated', () => {
   const stanza = xml('message', {}, xml('reactions', { xmlns: REACTIONS_NS, id: 'origin-1' },
     xml('reaction', {}, '👍'), xml('reaction', {}, '👍'), xml('reaction', {}, '❤️')));
   assert.deepEqual(reactionEmojis(stanza), ['👍', '❤️']);
+});
+
+test('reaction stanza identifiers are not mistaken for the target identifiers', () => {
+  const stanza = xml('message', { id: 'reaction-event' },
+    xml('origin-id', { xmlns: SID_NS, id: 'reaction-origin' }),
+    xml('stanza-id', { xmlns: SID_NS, id: 'reaction-stanza', by: 'example.invalid' }),
+    xml('reactions', { xmlns: REACTIONS_NS, id: 'target-origin' }, xml('reaction', {}, '👍')));
+  assert.deepEqual(reactionTarget(stanza, 'bob@example.invalid'), {
+    messageId: 'target-origin', stanzaIds: [], authorJid: 'bob@example.invalid',
+  });
+});
+
+test('valid reply fallback is removed from visible body exactly once', () => {
+  const reference = { authorJid: 'bob@example.invalid', quote: '😀 hola', stanzaIds: [] };
+  const composed = replyBody('respuesta', reference);
+  const stanza = xml('message', {},
+    xml('body', {}, composed.body),
+    xml('reply', { xmlns: 'urn:xmpp:reply:0', id: 'origin-1', to: 'bob@example.invalid' }),
+    xml('fallback', { xmlns: 'urn:xmpp:fallback:0', for: 'urn:xmpp:reply:0' },
+      xml('body', { start: String(composed.fallback.start), end: String(composed.fallback.end) })));
+  assert.equal(visibleBody(stanza), 'respuesta');
+});
+
+test('adapter preserves reaction sequence, actors, and selective empty removal', () => {
+  const events = [];
+  const adapter = Object.create(XmppAdapter.prototype);
+  adapter.reactionStates = new Map();
+  adapter.reactionEventKeys = new Set();
+  adapter.mucRooms = new Map();
+  adapter.emit = (event) => events.push(event);
+  const target = { messageId: 'target-1', stanzaIds: [], authorJid: 'bob@example.invalid' };
+  const apply = (actorJid, emojis, eventId) => adapter.applyReaction({
+    accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', target,
+    emojis, actorJid, source: 'direct', eventId,
+  });
+  apply('bob@example.invalid', ['👍'], 'event-1');
+  apply('alice@example.invalid', ['❤️'], 'event-2');
+  apply('bob@example.invalid', [], 'event-3');
+  assert.deepEqual(events.at(-1).payload.reactions.map((item) => item.emoji), ['❤️']);
+  assert.equal(events.at(-1).payload.reactions[0].actors[0].id, 'alice@example.invalid');
+  apply('bob@example.invalid', ['👍'], 'event-4');
+  assert.deepEqual(events.at(-1).payload.reactions.map((item) => item.emoji).sort(), ['❤️', '👍']);
+});
+
+test('latest reaction rejection rolls back only the pending actor update', () => {
+  const events = [];
+  const adapter = Object.create(XmppAdapter.prototype);
+  adapter.reactionStates = new Map();
+  adapter.reactionEventKeys = new Set();
+  adapter.pendingReactions = new Map();
+  adapter.latestReactionOperation = new Map();
+  adapter.mucRooms = new Map();
+  adapter.emit = (event) => events.push(event);
+  const target = { messageId: 'target-rollback', stanzaIds: [], authorJid: 'bob@example.invalid' };
+  adapter.applyReaction({ accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', target, emojis: ['👍'], actorJid: 'one@example.invalid', source: 'direct', eventId: 'base' });
+  adapter.trackReaction('op-1', { accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', target, targetMessageId: 'target-rollback', actorJid: 'one@example.invalid', source: 'direct' });
+  adapter.applyReaction({ accountId: 'one@example.invalid', conversationId: 'bob@example.invalid', target, emojis: ['❤️'], actorJid: 'one@example.invalid', source: 'direct', eventId: 'optimistic' });
+  adapter.rejectReaction('op-1');
+  const rollback = events.filter((event) => event.type === 'reaction.changed').at(-1);
+  assert.deepEqual(rollback.payload.reactions.map((item) => item.emoji), ['👍']);
+});
+
+test('reply presentation and contextual actions stay outside the bubble flow', () => {
+  const template = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-item.component.html'), 'utf8');
+  const styles = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-item.component.scss'), 'utf8');
+  const conversation = readFileSync(path.join(__dirname, '..', 'src', 'app', 'conversation-view.component.ts'), 'utf8');
+  assert.ok(template.indexOf('message-reply-quote') < template.indexOf('class="message-body"'));
+  assert.equal(template.includes('reply.authorJid'), false);
+  assert.match(conversation, /protected replyAuthor\(/);
+  assert.match(styles, /\.message-actions\s*\{[^}]*position:\s*absolute/);
 });
 
 test('fallback reply ranges use Unicode code points without splitting surrogate pairs', () => {

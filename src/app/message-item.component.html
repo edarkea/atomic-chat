@@ -5,6 +5,7 @@
   [class.group-first]="groupPosition() === 'first'"
   [class.group-middle]="groupPosition() === 'middle'"
   [class.group-last]="groupPosition() === 'last'"
+  (keydown.escape)="closeOverlays()"
 >
   @if (showSender() || showTime()) {
     <div class="message-header">
@@ -28,6 +29,16 @@
       {{ time(createdAt()) }} · {{ date(createdAt()) }}
     </time>
   }
+  @if (replyTo(); as reply) {
+    <div class="message-reply-quote" role="note">
+      @if (replyTargetId()) {
+        <button type="button" (click)="replyNavigation.emit(replyTargetId())"><strong>Respuesta a {{ replyAuthor() || 'Mensaje original' }}</strong></button>
+      } @else {
+        <strong>{{ replyAuthor() || 'Mensaje original' }} · original no disponible</strong>
+      }
+      <span>{{ replyText() || reply.quote || 'Mensaje original' }}</span>
+    </div>
+  }
   <p
     class="message-body"
     [class.emoji-only-single]="emojiCount() === 1"
@@ -42,16 +53,6 @@
       }
     }
   </p>
-  @if (replyTo(); as reply) {
-    <div class="message-reply-quote" role="note">
-      @if (replyTargetId()) {
-        <button type="button" (click)="replyNavigation.emit(replyTargetId())"><strong>Respuesta a {{ reply.authorJid }}</strong></button>
-      } @else {
-        <strong>Respuesta a {{ reply.authorJid }} · original no disponible</strong>
-      }
-      <span>{{ reply.quote || 'Mensaje original' }}</span>
-    </div>
-  }
   @if (reactions(); as reactionState) {
     @if (reactionState.reactions.length) {
       <div class="message-reactions" aria-label="Reacciones">
@@ -72,8 +73,17 @@
   }
   @if (messageId()) {
     <div class="message-actions">
-      <button type="button" class="message-action" (click)="replyRequested.emit(messageId())" aria-label="Responder a este mensaje">Responder</button>
-      <button type="button" class="message-action" (click)="toggleReactionPicker()" [attr.aria-expanded]="reactionOpen()" aria-label="Reaccionar a este mensaje">Reaccionar</button>
+      @for (emoji of quickReactionEmojis; track emoji) {
+        <button type="button" class="message-action message-action--emoji" (click)="toggleQuickReaction(emoji)" [attr.aria-label]="'Reaccionar con ' + emoji">{{ emoji }}</button>
+      }
+      <button type="button" class="message-action" (click)="toggleReactionPicker()" [attr.aria-expanded]="reactionOpen()" aria-label="Abrir selector de reacciones">+</button>
+      <button type="button" class="message-action message-action--menu" (click)="toggleActionMenu()" [attr.aria-expanded]="actionMenuOpen()" aria-label="Más acciones">⋯</button>
+      @if (actionMenuOpen()) {
+        <div class="message-action-menu" role="menu">
+          <button type="button" role="menuitem" (click)="replyRequested.emit(messageId()); closeOverlays()">Responder</button>
+          <button type="button" role="menuitem" (click)="toggleReactionPicker(); actionMenuOpen.set(false)">Reaccionar</button>
+        </div>
+      }
     </div>
     @if (reactionOpen()) {
       <div class="message-reaction-picker" role="dialog" aria-label="Selector de reacciones">

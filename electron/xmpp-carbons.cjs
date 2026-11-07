@@ -3,9 +3,11 @@ const { xml } = require('@xmpp/client');
 const {
   REACTIONS_NS,
   reactionEmojis,
+  reactionEventId,
   reactionTarget,
   referenceFromMessage,
   replyReference,
+  visibleBody,
 } = require('./xmpp-message-features.cjs');
 
 const CARBONS_NS = 'urn:xmpp:carbons:2';
@@ -44,7 +46,7 @@ function createXmppCarbons(adapter) {
     }
     if (sticker) return { sticker };
 
-    const body = original.getChildText('body');
+    const body = visibleBody(original);
     const from = String(original.attrs.from || '');
     const to = String(original.attrs.to || '');
     if (!from || !to) return null;
@@ -59,6 +61,7 @@ function createXmppCarbons(adapter) {
           conversationId: adapter.bareJid(direction === 'received' ? from : to),
           target,
           emojis,
+          eventId: reactionEventId(original),
         },
       } : null;
     }
@@ -175,6 +178,7 @@ function createXmppCarbons(adapter) {
             emojis: message.reaction.emojis,
             actorJid: message.reaction.actorJid,
             source: 'direct',
+            eventId: message.reaction.eventId,
           });
         return true;
       }

@@ -6,10 +6,12 @@ const {
   SID_NS,
   REACTIONS_NS,
   reactionEmojis,
+  reactionEventId,
   reactionTarget,
   referenceFromMessage,
   replyBody,
   replyReference,
+  visibleBody,
 } = require('./xmpp-message-features.cjs');
 
 const BROADCAST_NAMESPACE = 'urn:atomic-chat:message:broadcast:1';
@@ -193,6 +195,9 @@ function createRosterMessaging(adapter) {
         accountId,
         conversationId: input.to,
         targetMessageId: input.targetMessageId || targetId,
+        target: input.target,
+        actorJid: accountId,
+        source: 'direct',
       });
       await adapter.require(accountId).send(xml('message', {
         type: 'chat', to: input.to, id: input.clientMessageId,
@@ -259,11 +264,12 @@ function createRosterMessaging(adapter) {
           emojis,
           actorJid: senderJid,
           source: 'direct',
+          eventId: reactionEventId(stanza),
         });
         return true;
       }
       if (!stanza.getChildText('body')) return Boolean(chatState);
-      const bodyText = stanza.getChildText('body');
+      const bodyText = visibleBody(stanza);
       const explicitId =
         stanza.attrs.id || stanza.getChild('origin-id', 'urn:xmpp:sid:0')?.attrs?.id;
       const identity = `${accountId}|${senderJid}|${explicitId || crypto.randomUUID()}`;

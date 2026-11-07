@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 import { createOpaqueId } from './ids';
 import {
   MucJoinInput,
@@ -59,6 +59,8 @@ export class MucFacade {
   );
   readonly error = signal<string | null>(null);
   readonly reactions = signal<ReadonlyMap<string, ReactionState>>(new Map());
+  private readonly pendingReactionVersion = signal(0);
+  private readonly pendingReactions = new Map<string, ReactionState>();
   readonly notices = signal<ReadonlyArray<MucNotice>>([]);
   readonly visibleNotices = computed<ReadonlyArray<MucNotice>>(() =>
     this.notices().filter((notice) => notice.roomJid === this.selectedRoomJid()),
@@ -68,6 +70,18 @@ export class MucFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly roomGenerations = new Map<string, number>();
   private unsubscribe: () => void = () => undefined;
+  private readonly reactionReconciler = effect(() => {
+    this.pendingReactionVersion();
+    this.messageVersion();
+    if (!this.pendingReactions.size) return;
+    const messages = [...this.messageBuffers.values()].flat();
+    this.pendingReactions.forEach((reaction, key) => {
+      const target = messages.find((message) => this.matchesReactionTarget(message, reaction));
+      if (!target) return;
+      this.setReactionForTarget(reaction, target.id);
+      this.pendingReactions.delete(key);
+    });
+  });
 
   constructor() {
     this.unsubscribe = this.port.subscribe((event) => this.onEvent(event));
@@ -101,6 +115,7 @@ export class MucFacade {
     this.states.set([]);
     this.clearAllMessages();
     this.reactions.set(new Map());
+    this.pendingReactions.clear();
     this.notices.set([]);
     this.selectedRoomJid.set('');
     this.roomGenerations.clear();
@@ -303,17 +318,14 @@ export class MucFacade {
       const reaction = event.payload;
       if (reaction.accountId !== this.accountId() || reaction.source !== 'muc') return;
       const target = this.messages().find((message) =>
-        message.id === reaction.targetMessageId || message.messageId === reaction.targetMessageId ||
-        message.originId === reaction.targetMessageId ||
-        message.stanzaIds?.some((item) => item.id === reaction.targetMessageId) ||
-        message.stanzaIds?.some((item) => reaction.target.stanzaIds.some((candidate) => candidate.by === item.by && candidate.id === item.id)),
+        this.matchesReactionTarget(message, reaction),
       );
-      if (!target) return;
-      this.reactions.update((current) => {
-        const next = new Map(current);
-        next.set(this.reactionKey(reaction.conversationId, target.id), { ...reaction, targetMessageId: target.id });
-        return next;
-      });
+      if (!target) {
+        const key = `${reaction.accountId}|${reaction.conversationId.toLowerCase()}|${reaction.targetMessageId}`;
+        this.pendingReactions.set(key, reaction);
+        if (this.pendingReactions.size > 256) this.pendingReactions.delete(this.pendingReactions.keys().next().value || '');
+        this.pendingReactionVersion.update((value) => value + 1);
+      } else this.setReactionForTarget(reaction, target.id);
     }
     if (event.type === 'muc.notice') {
       const notice = event.payload;
@@ -344,6 +356,48 @@ export class MucFacade {
   }
   private reactionKey(roomJid: string, messageId: string): string {
     return `${roomJid.toLowerCase()}|${messageId}`;
+  }
+  private matchesReactionTarget(message: RoomMessage, reaction: ReactionState): boolean {
+    return message.id === reaction.targetMessageId || message.messageId === reaction.targetMessageId ||
+      message.originId === reaction.targetMessageId ||
+      Boolean(message.stanzaIds?.some((item) => item.id === reaction.targetMessageId && item.by.toLowerCase() === message.roomJid.toLowerCase())) ||
+      Boolean(message.stanzaIds?.some((item) => reaction.target.stanzaIds.some((candidate) => candidate.by === item.by && candidate.id === item.id)));
+  }
+  private setReactionForTarget(reaction: ReactionState, messageId: string): void {
+    const key = this.reactionKey(reaction.conversationId, messageId);
+    this.reactions.update((current) => {
+      const next = new Map(current);
+      const previous = next.get(key);
+      next.set(key, {
+        ...reaction,
+        targetMessageId: messageId,
+        reactions: previous && reaction.actorId
+          ? this.mergeReactionActors(previous.reactions, reaction.reactions, reaction.actorId, reaction.actorEmojis || [])
+          : reaction.reactions,
+      });
+      return next;
+    });
+  }
+  private mergeReactionActors(
+    previous: ReactionState['reactions'],
+    incoming: ReactionState['reactions'],
+    actorId: string,
+    actorEmojis: ReadonlyArray<string>,
+  ): ReactionState['reactions'] {
+    const actors = new Map<string, { actor: ReactionState['reactions'][number]['actors'][number]; emojis: Set<string> }>();
+    for (const reaction of previous)
+      for (const actor of reaction.actors)
+        actors.set(actor.id, { actor, emojis: new Set([...(actors.get(actor.id)?.emojis || []), reaction.emoji]) });
+    for (const reaction of incoming)
+      for (const actor of reaction.actors)
+        actors.set(actor.id, { actor, emojis: new Set([...(actors.get(actor.id)?.emojis || []), reaction.emoji]) });
+    const selected = actors.get(actorId)?.actor || { id: actorId, label: 'Participante no verificado', identifiable: false };
+    actors.delete(actorId);
+    if (actorEmojis.length) actors.set(actorId, { actor: selected, emojis: new Set(actorEmojis) });
+    return [...new Set([...actors.values()].flatMap((entry) => [...entry.emojis]))].map((emoji) => ({
+      emoji,
+      actors: [...actors.values()].filter((entry) => entry.emojis.has(emoji)).map((entry) => entry.actor),
+    }));
   }
   private activateAccount(accountId: string): void {
     if (this.activeAccountId() !== accountId) {
