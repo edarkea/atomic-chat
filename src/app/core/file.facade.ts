@@ -14,6 +14,7 @@ export class FileFacade {
   private readonly liveMediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
+  private readonly manualSendsInFlight = new Set<string>();
   private droppedBatchInFlight = false;
   private droppedBatchGeneration = 0;
   private accountGeneration = 0;
@@ -88,16 +89,27 @@ export class FileFacade {
   async send(conversationId: string): Promise<void> {
     if (!this.account || !conversationId) return;
     const accountId = this.account;
+    const conversationKey = conversationId.split('/')[0].trim().toLowerCase();
+    const inFlightKey = `${accountId}|${conversationKey}`;
+    if (this.manualSendsInFlight.has(inFlightKey)) {
+      this.error.set('Ya hay una selección o transferencia de archivo en curso para este contacto.');
+      return;
+    }
     const generation = this.accountGeneration;
-    const result = await this.port.send({
-      version: 1,
-      requestId: createOpaqueId('file-send'),
-      accountId,
-      conversationId,
-    });
-    if (this.account !== accountId || this.accountGeneration !== generation) return;
-    if (result.ok && result.value) this.upsert(result.value);
-    else if (!result.ok) this.error.set(result.error.message);
+    this.manualSendsInFlight.add(inFlightKey);
+    try {
+      const result = await this.port.send({
+        version: 1,
+        requestId: createOpaqueId('file-send'),
+        accountId,
+        conversationId,
+      });
+      if (this.account !== accountId || this.accountGeneration !== generation) return;
+      if (result.ok && result.value) this.upsert(result.value);
+      else if (!result.ok) this.error.set(result.error.message);
+    } finally {
+      this.manualSendsInFlight.delete(inFlightKey);
+    }
   }
 
   async sendDropped(conversationId: string, files: ReadonlyArray<File>): Promise<void> {

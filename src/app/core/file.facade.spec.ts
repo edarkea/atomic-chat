@@ -87,6 +87,28 @@ describe('FileFacade injected transfer port', () => {
     );
   });
 
+  it('coalesces concurrent manual file sends for the same contact', async () => {
+    let resolveSend!: (result: ReturnType<typeof ok<FileTransfer | null>>) => void;
+    const pendingSend = new Promise<ReturnType<typeof ok<FileTransfer | null>>>((resolve) => {
+      resolveSend = resolve;
+    });
+    (port.send as ReturnType<typeof vi.fn>).mockReturnValueOnce(pendingSend);
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+
+    const first = facade.send('contact@example.invalid');
+    await Promise.resolve();
+    await facade.send('contact@example.invalid/resource');
+
+    expect(port.send).toHaveBeenCalledOnce();
+    expect(facade.error()).toContain('Ya hay una selección');
+    resolveSend(ok<FileTransfer | null>(null));
+    await first;
+
+    await facade.send('contact@example.invalid');
+    expect(port.send).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps terminal transfers immutable when offers or progress arrive late', async () => {
     const facade = TestBed.inject(FileFacade);
     await facade.setAccount('a@example.invalid');
