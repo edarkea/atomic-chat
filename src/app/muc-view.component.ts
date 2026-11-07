@@ -79,6 +79,9 @@ export class MucViewComponent {
   protected stableActionId(message: RoomMessage): string {
     return message.stanzaIds?.some((item) => item.by.toLowerCase() === this.roomState().room.jid.toLowerCase()) ? message.id : '';
   }
+  protected actionTargetId(message: RoomMessage): string {
+    return message.stanzaIds?.find((item) => item.by.toLowerCase() === this.roomState().room.jid.toLowerCase())?.id || '';
+  }
   protected replyTargetId(reference: RoomMessage['replyTo']): string {
     if (!reference) return '';
     return this.messages().find((message) => message.id === reference.messageId || message.id === reference.originId ||

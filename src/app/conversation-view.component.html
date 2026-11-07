@@ -82,7 +82,7 @@
           [ownReactionEmojis]="ownReactionEmojis(item.message.id)"
           (replyRequested)="requestReply(item.message)"
           (replyNavigation)="scrollToMessage($event)"
-          (reactionChanged)="reactionChanged.emit({ messageId: item.message.id, emojis: $event })"
+          (reactionChanged)="reactionChanged.emit({ messageId: actionTargetId(item.message), emojis: $event })"
         />
       } @else if (item.kind === 'sticker') {
         <app-sticker-message-card

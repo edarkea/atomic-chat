@@ -81,7 +81,7 @@
         [attr.data-message-id]="message.id"
         (replyRequested)="requestReply(message)"
         (replyNavigation)="navigateToMessage($event)"
-        (reactionChanged)="reactionChanged.emit({ messageId: message.id, emojis: $event })"
+        (reactionChanged)="reactionChanged.emit({ messageId: actionTargetId(message), emojis: $event })"
       />
     }
     @if (!messages().length) {

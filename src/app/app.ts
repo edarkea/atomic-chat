@@ -1314,10 +1314,16 @@ export class App {
   }
   protected startReply(message: Message | RoomMessage, muc: boolean): void {
     if (muc) {
-      if ('roomJid' in message) this.replyingTo.set({ id: message.id, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
+      if ('roomJid' in message) {
+        const roomStanzaId = message.stanzaIds?.find((item) => item.by.toLowerCase() === message.roomJid.toLowerCase())?.id;
+        if (roomStanzaId) this.replyingTo.set({ id: roomStanzaId, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
+      }
       return;
     }
-    if ('conversationId' in message) this.replyingTo.set({ id: message.id, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
+    if ('conversationId' in message) {
+      const targetId = message.originId || message.messageId || message.stanzaIds?.[0]?.id;
+      if (targetId) this.replyingTo.set({ id: targetId, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
+    }
   }
   protected cancelReply(): void { this.replyingTo.set(undefined); }
   protected async changeReaction(messageId: string, emojis: ReadonlyArray<string>, muc: boolean): Promise<void> {

@@ -210,6 +210,9 @@ export class ConversationViewComponent {
   protected stableActionId(message: Message): string {
     return message.originId || message.messageId || message.stanzaIds?.[0]?.id ? message.id : '';
   }
+  protected actionTargetId(message: Message): string {
+    return message.originId || message.messageId || message.stanzaIds?.[0]?.id || '';
+  }
   protected replyTargetId(reference: Message['replyTo']): string {
     if (!reference) return '';
     const target = this.timeline().find((item) => item.kind === 'text' && (

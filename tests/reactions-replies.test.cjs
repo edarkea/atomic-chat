@@ -91,6 +91,9 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   assert.ok(template.indexOf('message-reply-quote') < template.indexOf('class="message-body"'));
   assert.equal(template.includes('reply.authorJid'), false);
   assert.match(conversation, /protected replyAuthor\(/);
+  assert.match(conversation, /protected actionTargetId\(message: Message\)/);
+  const muc = readFileSync(path.join(__dirname, '..', 'src', 'app', 'muc-view.component.ts'), 'utf8');
+  assert.match(muc, /protected actionTargetId\(message: RoomMessage\)/);
   assert.match(styles, /\.message-actions\s*\{[^}]*position:\s*absolute/);
 });
 
