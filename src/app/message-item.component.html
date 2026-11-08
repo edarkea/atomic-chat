@@ -3,6 +3,7 @@
   [class.overlay-below]="overlayPlacement() === 'below'"
   [class.outgoing]="outgoing()"
   [class.incoming]="!outgoing()"
+  [class.has-message-actions]="!!messageId()"
   [class.group-first]="groupPosition() === 'first'"
   [class.group-middle]="groupPosition() === 'middle'"
   [class.group-last]="groupPosition() === 'last'"
