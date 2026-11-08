@@ -1,0 +1,36 @@
+:host {
+  bottom: var(--atomic-space-3);
+  display: block;
+  pointer-events: none;
+  position: absolute;
+  right: var(--atomic-space-3);
+  z-index: 4;
+}
+.scroll-to-latest {
+  align-items: center;
+  background: var(--atomic-surface-raised);
+  border: 1px solid var(--atomic-border);
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 22%);
+  color: var(--atomic-text);
+  cursor: pointer;
+  display: inline-flex;
+  height: 42px;
+  justify-content: center;
+  min-height: 42px;
+  min-width: 42px;
+  padding: 0;
+  pointer-events: auto;
+  transition: background-color 140ms ease, border-color 140ms ease, opacity 140ms ease, transform 140ms ease;
+  width: 42px;
+}
+.scroll-to-latest:hover,
+.scroll-to-latest:focus-visible {
+  background: var(--atomic-surface-hover);
+  border-color: var(--atomic-green);
+  color: var(--atomic-text);
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-to-latest { transition: none; }
+}

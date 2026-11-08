@@ -1,14 +1,16 @@
-import { ChangeDetectionStrategy, Component, computed, effect, HostListener, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, ElementRef, HostListener, input, output, signal, ViewChild } from '@angular/core';
 import { MucNotice, ReactionActor, ReactionState, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
 import { isProtectedMessageOverlayPointer, MessageItemComponent, MessageOverlay } from './message-item.component';
+import { ScrollToLatestButtonComponent } from './scroll-to-latest-button.component';
+import { distanceToBottom, SCROLL_TO_LATEST_HIDE_DISTANCE, scrollToLatest, shouldShowScrollToLatest } from './scroll-to-latest';
 import { formatMessageDay, formatMessageTime } from './message-date-time';
 import { matchesRoomMessageReference } from './core/message-reference';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 
 @Component({
   selector: 'app-muc-view',
-  imports: [MessageComposerComponent, MessageItemComponent],
+  imports: [MessageComposerComponent, MessageItemComponent, ScrollToLatestButtonComponent],
   templateUrl: './muc-view.component.html',
   styleUrls: ['./muc-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -37,15 +39,31 @@ export class MucViewComponent {
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly activeOverlay = signal<{ readonly messageId: string; readonly overlay: MessageOverlay } | undefined>(undefined);
   private renderedRoom = '';
+  private frame: number | undefined;
+  private scrollGeneration = 0;
+  private followLatest = true;
+  private programmaticLatestScroll = false;
+  protected readonly showScrollToLatest = signal(false);
+  @ViewChild('mucMessages') private mucMessages?: ElementRef<HTMLElement>;
 
   constructor() {
     effect(() => {
       const room = `${this.roomState().room.jid.toLowerCase()}|${this.roomState().sessionGeneration}`;
-      if (room !== this.renderedRoom) {
+      const changed = room !== this.renderedRoom;
+      if (changed) {
         this.renderedRoom = room;
         this.activeOverlay.set(undefined);
+        this.showScrollToLatest.set(false);
+        this.followLatest = true;
+        this.programmaticLatestScroll = false;
       }
+      this.messages();
+      this.scheduleScroll(room, changed);
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
   }
 
   protected readonly displayMessages = computed(() =>
@@ -90,6 +108,27 @@ export class MucViewComponent {
     if (!active) return;
     if (isProtectedMessageOverlayPointer(event, active.messageId)) return;
     this.activeOverlay.set(undefined);
+  }
+  protected onMessagesScroll(): void {
+    const element = this.mucMessages?.nativeElement;
+    if (!element) return;
+    this.updateScrollToLatest(element);
+    if (this.programmaticLatestScroll) return;
+    this.followLatest = distanceToBottom(element) < 48;
+  }
+  @HostListener('window:resize')
+  protected onViewportResize(): void {
+    const element = this.mucMessages?.nativeElement;
+    if (element) this.updateScrollToLatest(element);
+  }
+  protected scrollToLatestFromButton(): void {
+    const element = this.mucMessages?.nativeElement;
+    if (!element) return;
+    this.followLatest = true;
+    this.programmaticLatestScroll = true;
+    this.showScrollToLatest.set(false);
+    scrollToLatest(element);
+    if (distanceToBottom(element) < SCROLL_TO_LATEST_HIDE_DISTANCE) this.programmaticLatestScroll = false;
   }
   protected requestReply(message: RoomMessage): void {
     this.replyRequested.emit(message);
@@ -141,6 +180,31 @@ export class MucViewComponent {
     const nickname = actor.occupantJid?.split('/').slice(1).join('/').trim();
     return nickname || 'Participante';
   };
+  private scheduleScroll(room: string, force: boolean): void {
+    const generation = ++this.scrollGeneration;
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    if (!force && !this.followLatest) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = undefined;
+      const currentRoom = `${this.roomState().room.jid.toLowerCase()}|${this.roomState().sessionGeneration}`;
+      if (generation !== this.scrollGeneration || currentRoom !== room) return;
+      const element = this.mucMessages?.nativeElement;
+      if (!element) return;
+      element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      this.followLatest = true;
+      this.programmaticLatestScroll = false;
+      this.showScrollToLatest.set(false);
+    });
+  }
+  private updateScrollToLatest(element: HTMLElement): void {
+    const distance = distanceToBottom(element);
+    if (this.programmaticLatestScroll) {
+      if (distance < SCROLL_TO_LATEST_HIDE_DISTANCE) this.programmaticLatestScroll = false;
+      this.showScrollToLatest.set(false);
+      return;
+    }
+    this.showScrollToLatest.set(shouldShowScrollToLatest(this.showScrollToLatest(), distance));
+  }
   protected navigateToMessage(messageId: string): void {
     document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }

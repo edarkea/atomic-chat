@@ -57,7 +57,7 @@
       </button>
     }
   </div>
-  <div class="muc-messages" aria-live="polite">
+  <div #mucMessages class="muc-messages" aria-live="polite" (scroll)="onMessagesScroll()">
     @for (display of displayMessages(); track display.item.id) {
       @let message = display.item;
       @if (display.daySeparator) { <div class="day-separator" role="separator"><span>{{ dayLabel(message.receivedAt) }}</span></div> }
@@ -91,6 +91,10 @@
     @if (!messages().length) {
       <p class="reference-message empty-state">No hay mensajes todavía.</p>
     }
+    <app-scroll-to-latest-button
+      [visible]="showScrollToLatest()"
+      (requested)="scrollToLatestFromButton()"
+    />
   </div>
   @if (error()) { <p class="composer-error" role="alert">{{ error() }}</p> }
   <app-message-composer

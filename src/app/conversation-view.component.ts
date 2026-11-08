@@ -28,6 +28,8 @@ import { MessageComposerComponent } from './message-composer.component';
 import { isProtectedMessageOverlayPointer, MessageItemComponent, MessageOverlay } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
+import { ScrollToLatestButtonComponent } from './scroll-to-latest-button.component';
+import { distanceToBottom, SCROLL_TO_LATEST_HIDE_DISTANCE, scrollToLatest, shouldShowScrollToLatest } from './scroll-to-latest';
 import { formatMessageDay, formatMessageTime } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 import { matchesDirectMessageReference } from './core/message-reference';
@@ -70,7 +72,7 @@ export interface OlderMessagesRequest {
 
 @Component({
   selector: 'app-conversation-view',
-  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, StickerMessageCardComponent, MessageSearchComponent],
+  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, ScrollToLatestButtonComponent, StickerMessageCardComponent, MessageSearchComponent],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -127,12 +129,14 @@ export class ConversationViewComponent {
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly searchOpen = signal(false);
   protected readonly activeOverlay = signal<{ readonly messageId: string; readonly overlay: MessageOverlay } | undefined>(undefined);
+  protected readonly showScrollToLatest = signal(false);
 
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
   private followLatest = true;
   private renderedConversation = '';
   private frame: number | undefined;
   private scrollGeneration = 0;
+  private programmaticLatestScroll = false;
   protected readonly dropActive = signal(false);
   private dragDepth = 0;
   private readonly destroyRef = inject(DestroyRef);
@@ -162,7 +166,12 @@ export class ConversationViewComponent {
     effect(() => {
       this.visibleMessageKey();
       const conversation = this.bareJid(this.selectedJid());
-      if (conversation !== this.renderedConversation) this.activeOverlay.set(undefined);
+      if (conversation !== this.renderedConversation) {
+        this.activeOverlay.set(undefined);
+        this.showScrollToLatest.set(false);
+        this.programmaticLatestScroll = false;
+        this.followLatest = true;
+      }
       if (conversation)
         this.scheduleScroll(conversation, conversation !== this.renderedConversation);
     });
@@ -321,10 +330,13 @@ export class ConversationViewComponent {
   }
 
   public onUserScrollIntent(): void {
+    this.programmaticLatestScroll = false;
     queueMicrotask(() => {
       const element = this.chatContent?.nativeElement;
-      if (element)
+      if (element) {
+        this.updateScrollToLatest(element);
         this.followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+      }
     });
   }
 
@@ -336,12 +348,21 @@ export class ConversationViewComponent {
     const element = this.chatContent?.nativeElement;
     const conversation = this.bareJid(this.selectedJid());
     const accountId = this.accountId();
-    if (!element || !conversation || (state?.historyLoading ?? this.historyLoading())) return;
-    this.followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    if (!element) return;
+    this.updateScrollToLatest(element);
+    if (this.programmaticLatestScroll) return;
+    if (!conversation || (state?.historyLoading ?? this.historyLoading())) return;
+    this.followLatest = distanceToBottom(element) < 48;
     if (element.scrollTop < 48 && (state?.hasOlderMessages ?? this.hasOlderMessages())) {
       this.loadOlder.emit({ conversation, accountId, previousHeight: element.scrollHeight });
     } else if (this.followLatest && (state?.hasNewerMessages ?? this.hasNewerMessages()))
       this.loadNewer.emit(conversation);
+  }
+
+  @HostListener('window:resize')
+  protected onViewportResize(): void {
+    const element = this.chatContent?.nativeElement;
+    if (element) this.updateScrollToLatest(element);
   }
 
   public restoreScrollAfterPrepend(request: OlderMessagesRequest): void {
@@ -353,7 +374,18 @@ export class ConversationViewComponent {
         this.bareJid(this.selectedJid()) === request.conversation
       )
         current.scrollTop += current.scrollHeight - request.previousHeight;
+      if (current) this.updateScrollToLatest(current);
     });
+  }
+
+  protected scrollToLatestFromButton(): void {
+    const element = this.chatContent?.nativeElement;
+    if (!element) return;
+    this.followLatest = true;
+    this.programmaticLatestScroll = true;
+    this.showScrollToLatest.set(false);
+    scrollToLatest(element);
+    if (distanceToBottom(element) < SCROLL_TO_LATEST_HIDE_DISTANCE) this.programmaticLatestScroll = false;
   }
 
   public scrollToLatest(conversation: string): void {
@@ -385,8 +417,21 @@ export class ConversationViewComponent {
       const element = this.chatContent?.nativeElement;
       if (!element) return;
       element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      this.followLatest = true;
+      this.programmaticLatestScroll = false;
+      this.showScrollToLatest.set(false);
       this.renderedConversation = conversation;
     });
+  }
+
+  private updateScrollToLatest(element: HTMLElement): void {
+    const distance = distanceToBottom(element);
+    if (this.programmaticLatestScroll) {
+      if (distance < 80) this.programmaticLatestScroll = false;
+      this.showScrollToLatest.set(false);
+      return;
+    }
+    this.showScrollToLatest.set(shouldShowScrollToLatest(this.showScrollToLatest(), distance));
   }
 
   private bareJid(jid: string): string {

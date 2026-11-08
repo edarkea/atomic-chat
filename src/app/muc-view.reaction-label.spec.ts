@@ -72,4 +72,41 @@ describe('MucViewComponent reaction actor labels', () => {
     fixture.detectChanges();
     expect(component.overlayFor('room-message')).toBeUndefined();
   });
+
+  it('shows the latest-message button while reading above the room end', async () => {
+    await TestBed.configureTestingModule({ imports: [MucViewComponent] }).compileComponents();
+    const room: RoomRef = {
+      service: 'conference.example.invalid',
+      room: 'lobby',
+      jid: 'lobby@conference.example.invalid',
+    };
+    const state: RoomState = {
+      accountId: 'operator@example.invalid',
+      room,
+      status: 'joined',
+      selfOccupantJid: `${room.jid}/operator`,
+      participants: [],
+      sessionGeneration: 1,
+    };
+    const fixture = TestBed.createComponent(MucViewComponent);
+    fixture.componentRef.setInput('roomState', state);
+    fixture.componentRef.setInput('notices', []);
+    fixture.componentRef.setInput('participants', []);
+    fixture.componentRef.setInput('allParticipantCount', 0);
+    fixture.componentRef.setInput('participantPage', 0);
+    fixture.componentRef.setInput('hasMoreParticipants', false);
+    fixture.componentRef.setInput('messages', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.detectChanges();
+
+    const area = fixture.nativeElement.querySelector('.muc-messages') as HTMLElement;
+    Object.defineProperties(area, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+    });
+    area.scrollTop = 0;
+    (fixture.componentInstance as unknown as { onMessagesScroll: () => void }).onMessagesScroll();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('button[aria-label="Ir al último mensaje"]')).toBeTruthy();
+  });
 });

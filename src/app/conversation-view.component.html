@@ -113,6 +113,10 @@
         />
       }
     }
+    <app-scroll-to-latest-button
+      [visible]="showScrollToLatest()"
+      (requested)="scrollToLatestFromButton()"
+    />
   </div>
   @if (typing()) {
     <p class="typing-indicator" role="status">Está escribiendo…</p>

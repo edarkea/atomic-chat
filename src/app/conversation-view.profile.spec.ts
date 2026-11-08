@@ -70,4 +70,38 @@ describe('ConversationViewComponent profile search target', () => {
     fixture.detectChanges();
     expect(component.overlayFor('wire-1')).toBeUndefined();
   });
+
+  it('shows the latest-message button away from the end and returns smoothly to the bottom', async () => {
+    await TestBed.configureTestingModule({ imports: [ConversationViewComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'barbara@localhost');
+    fixture.componentRef.setInput('accountId', 'steeven@localhost');
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.detectChanges();
+
+    const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement;
+    let height = 1000;
+    Object.defineProperties(area, {
+      scrollHeight: { configurable: true, get: () => height },
+      clientHeight: { configurable: true, value: 300 },
+    });
+    Object.defineProperty(area, 'scrollTo', {
+      configurable: true,
+      value: ({ top }: { readonly top: number }) => { area.scrollTop = top; },
+    });
+    area.scrollTop = 0;
+    fixture.componentInstance.onChatScroll();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('button[aria-label="Ir al último mensaje"]')).toBeTruthy();
+
+    (fixture.nativeElement.querySelector('button[aria-label="Ir al último mensaje"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(area.scrollTop).toBe(700);
+    expect(fixture.nativeElement.querySelector('button[aria-label="Ir al último mensaje"]')).toBeNull();
+    height = 1100;
+  });
 });
