@@ -1,6 +1,6 @@
 {
   "name": "atomic-chat",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "A retro-futuristic desktop XMPP messaging client built with Angular, TypeScript and Electron.",
   "author": {
     "name": "Edinson Ayui",
