@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, HostListener, input, output, signal } from '@angular/core';
-import { MucNotice, ReactionState, RoomMessage, RoomParticipant, RoomState } from './core/domain';
+import { MucNotice, ReactionActor, ReactionState, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent, MessageOverlay } from './message-item.component';
-import { formatMessageDay } from './message-date-time';
+import { formatMessageDay, formatMessageTime } from './message-date-time';
 import { matchesRoomMessageReference } from './core/message-reference';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 
@@ -116,6 +116,20 @@ export class MucViewComponent {
     const value = target?.body.text || reference.quote || '';
     const points = Array.from(value);
     return points.length > 180 ? `${points.slice(0, 179).join('')}…` : value;
+  }
+  protected replyTime(reference: RoomMessage['replyTo']): string {
+    if (!reference) return '';
+    const target = this.messages().find((message) => message.id === this.replyTargetId(reference));
+    return target ? formatMessageTime(target.receivedAt) : '';
+  }
+  protected reactionActorLabel(actor: ReactionActor): string {
+    const state = this.roomState();
+    if (actor.id.toLowerCase() === state.selfOccupantJid?.toLowerCase() || actor.id.toLowerCase() === state.accountId.toLowerCase()) return 'Tú';
+    const occupant = actor.occupantJid?.toLowerCase() || actor.id.toLowerCase();
+    const participant = state.participants.find((item) => item.occupantJid.toLowerCase() === occupant);
+    if (participant?.nick) return participant.nick;
+    const nickname = actor.occupantJid?.split('/').slice(1).join('/').trim();
+    return nickname || 'Participante no verificable';
   }
   protected navigateToMessage(messageId: string): void {
     document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });

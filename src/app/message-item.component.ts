@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, signal } from '@angular/core';
-import { MessageClassification, MessagePersistenceStatus, ReactionState } from './core/domain';
+import { MessageClassification, MessagePersistenceStatus, ReactionActor, ReactionState } from './core/domain';
 import { createOpaqueId } from './core/ids';
 import { EXTERNAL_LINK_PORT, ExternalLinkPort } from './core/ports';
 import { formatMessageDate, formatMessageDateTime, formatMessageTime } from './message-date-time';
@@ -72,10 +72,12 @@ export class MessageItemComponent {
   readonly messageId = input('');
   readonly replyTo = input<{ readonly authorJid: string; readonly quote?: string }>();
   readonly replyAuthor = input('');
+  readonly replyTime = input('');
   readonly replyText = input('');
   readonly replyTargetId = input('');
   readonly reactions = input<ReactionState>();
   readonly ownReactionEmojis = input<ReadonlyArray<string>>([]);
+  readonly reactionActorLabel = input<(actor: ReactionActor) => string>((actor) => actor.identifiable ? actor.label : 'Participante no verificable');
   readonly activeOverlay = input<MessageOverlay>();
   readonly replyRequested = output<string>();
   readonly replyNavigation = output<string>();
@@ -85,6 +87,7 @@ export class MessageItemComponent {
   protected readonly actionMenuOpen = computed(() => this.activeOverlay() === 'menu');
   protected readonly quickReactionOpen = computed(() => this.activeOverlay() === 'quick');
   protected readonly overlayPlacement = signal<'above' | 'below'>('above');
+  protected readonly tooltipEmoji = signal<string | undefined>(undefined);
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
   protected readonly emojiCount = computed(() => emojiOnlyCount(this.body()));
   private readonly externalLinks = inject<ExternalLinkPort>(EXTERNAL_LINK_PORT, { optional: true });
@@ -116,13 +119,31 @@ export class MessageItemComponent {
     this.chooseReaction(emoji);
   }
   protected chooseReaction(emoji: string): void {
+    this.toggleReaction(emoji);
+  }
+  protected toggleReaction(emoji: string): void {
     const current = new Set(this.ownReactionEmojis());
     if (current.has(emoji)) current.delete(emoji);
     else current.add(emoji);
     this.reactionChanged.emit([...current]);
   }
+  protected isOwnReaction(emoji: string): boolean { return this.ownReactionEmojis().includes(emoji); }
+  protected showReactionTooltip(emoji: string): void { this.tooltipEmoji.set(emoji); }
+  protected hideReactionTooltip(): void { this.tooltipEmoji.set(undefined); }
+  protected reactionTooltipId(emoji: string): string {
+    return `reaction-tooltip-${this.messageId().replace(/[^a-zA-Z0-9_-]/gu, '_')}-${encodeURIComponent(emoji)}`;
+  }
+  protected visibleReactionActors(reaction: ReactionState['reactions'][number]): ReadonlyArray<ReactionActor> {
+    return reaction.actors.slice(0, 8);
+  }
+  protected hiddenReactionActorCount(reaction: ReactionState['reactions'][number]): number {
+    return Math.max(0, reaction.actors.length - 8);
+  }
   protected closeReactionPicker(): void { this.requestOverlay(undefined); }
-  protected closeOverlays(): void { this.requestOverlay(undefined); }
+  protected closeOverlays(): void {
+    this.hideReactionTooltip();
+    this.requestOverlay(undefined);
+  }
   protected requestOverlay(overlay: MessageOverlay | undefined): void {
     if (overlay && !this.messageId()) return;
     if (overlay) {

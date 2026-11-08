@@ -19,6 +19,7 @@ import {
   FileTransfer,
   Message,
   MessageSearchHit,
+  ReactionActor,
   ReactionState,
   StickerMessageRef,
 } from './core/domain';
@@ -27,7 +28,7 @@ import { MessageComposerComponent } from './message-composer.component';
 import { MessageItemComponent, MessageOverlay } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
-import { formatMessageDay } from './message-date-time';
+import { formatMessageDay, formatMessageTime } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 import { matchesDirectMessageReference } from './core/message-reference';
 
@@ -252,6 +253,19 @@ export class ConversationViewComponent {
     const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
     if (target?.kind === 'text') return this.quoteFragment(target.message.body.text);
     return reference.quote ? this.quoteFragment(reference.quote) : '';
+  }
+  protected replyTime(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
+    return target?.kind === 'text' ? formatMessageTime(target.message.createdAt) : '';
+  }
+  protected reactionActorLabel(actor: ReactionActor): string {
+    if (actor.id.toLowerCase() === this.accountId().toLowerCase()) return 'Tú';
+    const contactJid = this.activeContact()?.jid || this.selectedJid();
+    if (actor.id.toLowerCase().split('/')[0] === contactJid.toLowerCase().split('/')[0])
+      return this.activeContact()?.name?.trim() || 'Contacto';
+    return actor.identifiable ? actor.label : 'Participante no verificable';
   }
   private quoteFragment(value: string): string {
     const points = Array.from(value);

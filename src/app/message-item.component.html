@@ -31,13 +31,21 @@
     </time>
   }
   @if (replyTo(); as reply) {
-    <div class="message-reply-quote" role="note">
+    <div class="message-reply-quote" role="note" [class.message-reply-quote--unavailable]="!replyTargetId()">
       @if (replyTargetId()) {
-        <button type="button" (click)="replyNavigation.emit(replyTargetId())"><strong>Respuesta a {{ replyAuthor() || 'Mensaje original' }}</strong></button>
+        <button type="button" class="message-reply-link" (click)="replyNavigation.emit(replyTargetId())">
+          <span class="message-reply-icon" aria-hidden="true"><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-reply" /></svg></span>
+          <span class="message-reply-meta"><strong>{{ replyAuthor() || 'Original no disponible' }}</strong>@if (replyTime()) { <time>{{ replyTime() }}</time> }</span>
+          <span class="message-reply-fragment">{{ replyText() || reply.quote || 'Original no disponible' }}</span>
+        </button>
       } @else {
-        <strong>{{ replyAuthor() || 'Mensaje original' }} · original no disponible</strong>
+        <div class="message-reply-link message-reply-link--unavailable">
+          <span class="message-reply-icon" aria-hidden="true"><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-reply" /></svg></span>
+          <span class="message-reply-meta"><strong>{{ replyAuthor() || 'Original no disponible' }}</strong>@if (replyTime()) { <time>{{ replyTime() }}</time> }</span>
+          <span class="message-reply-fragment">{{ replyText() || reply.quote || 'Original no disponible' }}</span>
+          <small>Original no disponible</small>
+        </div>
       }
-      <span>{{ replyText() || reply.quote || 'Mensaje original' }}</span>
     </div>
   }
   <p
@@ -58,16 +66,24 @@
     @if (reactionState.reactions.length) {
       <div class="message-reactions" aria-label="Reacciones">
         @for (reaction of reactionState.reactions; track reaction.emoji) {
-          <details class="message-reaction-details">
-            <summary class="message-reaction" [attr.aria-label]="reaction.emoji + ', ' + reaction.actors.length + ' reacciones'">
-            <span>{{ reaction.emoji }}</span><small>{{ reaction.actors.length }}</small>
-            </summary>
-            <ul>
-              @for (actor of reaction.actors; track actor.id) {
-                <li>{{ actor.identifiable ? actor.label : 'Participante no verificado' }}</li>
-              }
-            </ul>
-          </details>
+          <span class="message-reaction-chip" (mouseenter)="showReactionTooltip(reaction.emoji)" (mouseleave)="hideReactionTooltip()">
+            @if (messageId()) {
+              <button type="button" class="message-reaction" [class.message-reaction--own]="isOwnReaction(reaction.emoji)" [attr.aria-pressed]="isOwnReaction(reaction.emoji)" [attr.aria-describedby]="tooltipEmoji() === reaction.emoji ? reactionTooltipId(reaction.emoji) : null" [attr.aria-label]="reaction.emoji + ', ' + reaction.actors.length + ' reacciones. Pulsar para ' + (isOwnReaction(reaction.emoji) ? 'retirar' : 'añadir')" (click)="toggleReaction(reaction.emoji)" (focus)="showReactionTooltip(reaction.emoji)" (blur)="hideReactionTooltip()" (keydown.escape)="hideReactionTooltip()">
+                <span>{{ reaction.emoji }}</span><small>{{ reaction.actors.length }}</small>
+              </button>
+            } @else {
+              <span class="message-reaction message-reaction--unavailable" [attr.title]="'Referencia no disponible; no se puede actualizar esta reacción'" [attr.aria-label]="reaction.emoji + ', ' + reaction.actors.length + ' reacciones. Referencia no disponible'">
+                <span>{{ reaction.emoji }}</span><small>{{ reaction.actors.length }}</small>
+              </span>
+            }
+            @if (tooltipEmoji() === reaction.emoji) {
+              <span class="message-reaction-tooltip" [id]="reactionTooltipId(reaction.emoji)" role="tooltip">
+                <strong>{{ reaction.emoji }}</strong>
+                @for (actor of visibleReactionActors(reaction); track actor.id) { <span>{{ reactionActorLabel()(actor) }}</span> }
+                @if (hiddenReactionActorCount(reaction) > 0) { <span>y {{ hiddenReactionActorCount(reaction) }} más</span> }
+              </span>
+            }
+          </span>
         }
       </div>
     }

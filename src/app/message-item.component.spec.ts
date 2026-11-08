@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { MessageItemComponent, emojiOnlyCount, messageContentSegments } from './message-item.component';
 import { EXTERNAL_LINK_PORT } from './core/ports';
+import { ReactionState } from './core/domain';
 
 describe('message links', () => {
   it('counts emoji-only messages without treating text as an emoji', () => {
@@ -85,5 +86,50 @@ describe('message links', () => {
     expect(fixture.nativeElement.querySelectorAll('[role="menuitem"]')).toHaveLength(2);
     fixture.nativeElement.querySelector('article').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(overlays.at(-1)).toBeUndefined();
+  });
+
+  it('renders a Gajim-style quote and toggles reaction chips with participant tooltip', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> = TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'Tú');
+    fixture.componentRef.setInput('body', 'Respuesta nueva');
+    fixture.componentRef.setInput('outgoing', true);
+    fixture.componentRef.setInput('messageId', 'wire-reply');
+    fixture.componentRef.setInput('replyTo', { authorJid: 'barbara@example.test', quote: 'Desde Gajim' });
+    fixture.componentRef.setInput('replyAuthor', 'barbara');
+    fixture.componentRef.setInput('replyTime', '18:35');
+    fixture.componentRef.setInput('replyText', 'Desde Gajim');
+    fixture.componentRef.setInput('replyTargetId', 'wire-original');
+    const reactions: ReadonlyArray<string>[] = [];
+    fixture.componentInstance.reactionChanged.subscribe((value) => reactions.push(value));
+    const state: ReactionState = {
+      accountId: 'me@example.test',
+      conversationId: 'barbara@example.test',
+      targetMessageId: 'wire-reply',
+      target: { messageId: 'wire-reply', stanzaIds: [], authorJid: 'me@example.test' },
+      reactions: [{ emoji: '😍', actors: [{ id: 'barbara@example.test', label: 'barbara', identifiable: true }] }],
+      updatedAt: '2026-11-07T18:35:00.000Z',
+      source: 'direct',
+    };
+    fixture.componentRef.setInput('reactions', state);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Respuesta a');
+    expect(fixture.nativeElement.querySelector('.message-reply-icon')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('barbara');
+    expect(fixture.nativeElement.textContent).toContain('18:35');
+    expect(fixture.nativeElement.querySelectorAll('details')).toHaveLength(0);
+
+    const chip = fixture.nativeElement.querySelector('button.message-reaction') as HTMLButtonElement;
+    chip.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('barbara');
+    chip.click();
+    expect(reactions.at(-1)).toEqual(['😍']);
+
+    fixture.componentRef.setInput('ownReactionEmojis', ['😍']);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('button.message-reaction') as HTMLButtonElement).click();
+    expect(reactions.at(-1)).toEqual([]);
   });
 });
