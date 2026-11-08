@@ -87,6 +87,8 @@ test('latest reaction rejection rolls back only the pending actor update', () =>
 test('reply presentation and contextual actions stay outside the bubble flow', () => {
   const template = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-item.component.html'), 'utf8');
   const styles = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-item.component.scss'), 'utf8');
+  const composerTemplate = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-composer.component.html'), 'utf8');
+  const composerStyles = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-composer.component.scss'), 'utf8');
   const conversation = readFileSync(path.join(__dirname, '..', 'src', 'app', 'conversation-view.component.ts'), 'utf8');
   const muc = readFileSync(path.join(__dirname, '..', 'src', 'app', 'muc-view.component.ts'), 'utf8');
   assert.ok(template.indexOf('message-reply-quote') < template.indexOf('class="message-body"'));
@@ -103,6 +105,12 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*white-space:\s*nowrap/);
   assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.match(styles, /\.message-actions\s*\{[^}]*position:\s*absolute/);
+  assert.match(composerTemplate, /class="reply-preview"/);
+  assert.match(composerTemplate, /class="composer-input-row"/);
+  assert.doesNotMatch(composerTemplate, /Respondiendo a/);
+  assert.match(composerStyles, /\.composer\s*\{[\s\S]*?flex-direction:\s*column/);
+  assert.match(composerStyles, /\.reply-preview\s*\{[\s\S]*?border-left:\s*3px/);
+  assert.match(composerStyles, /\.reply-preview-quote\s*\{[\s\S]*?-webkit-line-clamp:\s*2/);
   assert.match(template, /message-action--reaction/);
   assert.match(template, /message-action--menu/);
   assert.match(template, /data-overlay-trigger="quick"/);

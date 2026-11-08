@@ -46,6 +46,43 @@ describe('composer height after sending', () => {
   });
 });
 
+describe('stacked reply composer', () => {
+  it('places the reply preview above the input row and preserves the draft on cancel', () => {
+    const fixture = TestBed.createComponent(MessageComposerComponent);
+    fixture.componentRef.setInput('inputName', 'message');
+    fixture.componentRef.setInput('placeholder', 'Escribir mensaje…');
+    fixture.componentRef.setInput('draft', 'borrador conservado');
+    fixture.componentRef.setInput('showAttach', true);
+    fixture.componentRef.setInput('showEmoji', true);
+    fixture.componentRef.setInput('replyPreview', { author: 'Barbara', quote: 'Una cita larga con emojis 👩🏽‍💻' });
+    const cancelled = vi.fn();
+    fixture.componentInstance.replyCancel.subscribe(cancelled);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.reply-preview')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.composer-input-row')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.composer-input-row textarea')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).not.toContain('Respondiendo a');
+    expect(fixture.nativeElement.textContent).toContain('Barbara');
+    expect(fixture.nativeElement.textContent).toContain('Una cita larga con emojis 👩🏽‍💻');
+
+    (fixture.nativeElement.querySelector('button[aria-label="Cancelar respuesta"]') as HTMLButtonElement).click();
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(fixture.componentInstance.draft()).toBe('borrador conservado');
+  });
+
+  it('keeps the compact input row when no reply is active', () => {
+    const fixture = TestBed.createComponent(MessageComposerComponent);
+    fixture.componentRef.setInput('inputName', 'message');
+    fixture.componentRef.setInput('placeholder', 'Escribir mensaje…');
+    fixture.componentRef.setInput('draft', '');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.reply-preview')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.composer-input-row')).toBeTruthy();
+  });
+});
+
 describe('insertTextAtSelection', () => {
   it('inserts a complex Unicode sequence without fragmenting it', () => {
     const result = insertTextAtSelection('hola mundo', 5, 5, '👩🏽‍💻');
