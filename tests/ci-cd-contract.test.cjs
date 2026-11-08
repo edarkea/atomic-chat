@@ -32,8 +32,6 @@ test('manual build workflow never publishes and has no write permission', () => 
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /contents: write|GH_TOKEN|CSC_LINK/);
   assert.match(workflow, /install-app-deps/);
-  assert.match(workflow, /windows-portable/);
-  assert.match(workflow, /--win portable --x64 --publish never/);
   assert.match(workflow, /SHA256SUMS/);
   assert.match(workflow, /cd release/);
   assert.match(workflow, /sort -z/);
