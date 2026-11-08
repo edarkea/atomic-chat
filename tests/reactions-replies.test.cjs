@@ -103,6 +103,13 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*white-space:\s*nowrap/);
   assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.match(styles, /\.message-actions\s*\{[^}]*position:\s*absolute/);
+  assert.match(template, /message-action--reaction/);
+  assert.match(template, /message-action--menu/);
+  assert.match(styles, /\.message-actions\s*\{[^}]*inset:\s*0/);
+  assert.match(styles, /\.message-action--reaction\s*\{[^}]*left:\s*calc\(100% \+ 8px\)/);
+  assert.match(styles, /\.message\.outgoing \.message-action--reaction\s*\{[^}]*right:\s*calc\(100% \+ 8px\)/);
+  assert.match(styles, /\.message-action--menu\s*\{[^}]*right:\s*-5px[^}]*top:\s*-5px/);
+  assert.doesNotMatch(styles, /\.message-actions\s*\{[^}]*background:/);
 });
 
 test('fallback reply ranges use Unicode code points without splitting surrogate pairs', () => {

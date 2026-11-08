@@ -85,11 +85,11 @@
     }
   }
   @if (messageId()) {
-    <div class="message-actions">
-      <button type="button" class="message-action message-action--compact" (click)="toggleReactionPicker()" [attr.aria-expanded]="quickReactionOpen() || reactionOpen()" aria-label="Abrir reacciones">
+    <div class="message-actions" aria-label="Acciones del mensaje">
+      <button type="button" class="message-action message-action--compact message-action--reaction" (click)="toggleReactionPicker()" [attr.aria-expanded]="quickReactionOpen() || reactionOpen()" aria-label="Abrir reacciones">
         <svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-smile-plus" /></svg>
       </button>
-      <button type="button" class="message-action message-action--compact" (click)="toggleActionMenu()" [attr.aria-expanded]="actionMenuOpen()" aria-label="Abrir acciones del mensaje">
+      <button type="button" class="message-action message-action--compact message-action--menu" (click)="toggleActionMenu()" [attr.aria-expanded]="actionMenuOpen()" aria-label="Abrir acciones del mensaje">
         <svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-chevron-down" /></svg>
       </button>
     </div>

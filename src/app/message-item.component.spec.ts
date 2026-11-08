@@ -81,6 +81,8 @@ describe('message links', () => {
     (fixture.nativeElement.querySelector('.message-action--emoji') as HTMLButtonElement).click();
     expect(reactions.at(-1)).toEqual(['👍']);
 
+    (fixture.nativeElement.querySelector('.message-action--menu') as HTMLButtonElement).click();
+    expect(overlays.at(-1)).toBe('menu');
     fixture.componentRef.setInput('activeOverlay', 'menu');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('[role="menuitem"]')).toHaveLength(2);

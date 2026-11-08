@@ -44,9 +44,25 @@
 .message-link:hover,
 .message-link:focus-visible { color: var(--atomic-text); }
 .message { position: relative; }
-.message-actions { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 999px; box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: flex; gap: 2px; opacity: 0; padding: 3px; pointer-events: none; position: absolute; right: 0; top: -13px; transform: translateY(-4px) scale(.96); transition: opacity 120ms ease, transform 120ms ease; z-index: 5; }
-.message.incoming .message-actions { left: 0; right: auto; }
-.message:hover .message-actions, .message:focus-within .message-actions, .message-actions:focus-within { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+.message-actions { inset: 0; opacity: 0; pointer-events: none; position: absolute; z-index: 5; }
+.message-actions > .message-action { opacity: 0; pointer-events: none; position: absolute; transition: opacity 120ms ease, transform 120ms ease; }
+.message:hover .message-actions > .message-action,
+.message:focus-within .message-actions > .message-action,
+.message-actions:focus-within > .message-action,
+.message-actions:hover > .message-action { opacity: 1; pointer-events: auto; }
+.message-action--reaction { left: calc(100% + 8px); top: 50%; transform: translateY(-50%) scale(.96); }
+.message.outgoing .message-action--reaction { left: auto; right: calc(100% + 8px); }
+.message-action--menu { right: -5px; top: -5px; transform: scale(.96); }
+.message:hover .message-action--reaction,
+.message:focus-within .message-action--reaction,
+.message-actions:hover .message-action--reaction { transform: translateY(-50%) scale(1); }
+.message:hover .message-action--menu,
+.message:focus-within .message-action--menu,
+.message-actions:hover .message-action--menu { transform: scale(1); }
+@media (hover: none) {
+  .message-actions { opacity: 1; }
+  .message-actions > .message-action { opacity: 1; pointer-events: auto; }
+}
 .message-action, .message-reaction { background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); color: var(--atomic-text-muted); cursor: pointer; }
 .message-action { border: 0; border-radius: 999px; font-size: 12px; min-height: 24px; min-width: 24px; padding: 2px 6px; }
 .message-action:hover, .message-action:focus-visible { background: var(--atomic-accent); color: var(--atomic-background); }
