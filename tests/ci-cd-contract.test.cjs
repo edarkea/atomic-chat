@@ -14,9 +14,10 @@ const { normalizeChecksumText, prepareReleaseStaging, verifyChecksumManifest } =
 
 test('CI workflow is read-only and focused', () => {
   const workflow = read('.github/workflows/ci-tests.yml');
-  assert.match(workflow, /push:\s*\n\s+branches: \[main, dev\]/);
-  assert.match(workflow, /pull_request:\s*\n\s+branches: \[main, dev\]/);
+  assert.match(workflow, /push:\s*\n\s+branches: \[main\]/);
+  assert.match(workflow, /pull_request:\s*\n\s+branches: \[main\]/);
   assert.doesNotMatch(workflow, /^\s+workflow_dispatch:/m);
+  assert.doesNotMatch(workflow, /branches: \[dev/);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm audit --audit-level=high/);
