@@ -260,13 +260,15 @@ export class ConversationViewComponent {
     const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
     return target?.kind === 'text' ? formatMessageTime(target.message.createdAt) : '';
   }
-  protected reactionActorLabel(actor: ReactionActor): string {
-    if (actor.id.toLowerCase() === this.accountId().toLowerCase()) return 'Tú';
-    const contactJid = this.activeContact()?.jid || this.selectedJid();
-    if (actor.id.toLowerCase().split('/')[0] === contactJid.toLowerCase().split('/')[0])
-      return this.activeContact()?.name?.trim() || 'Contacto';
-    return actor.identifiable ? actor.label : 'Participante no verificable';
-  }
+  protected readonly reactionActorLabel = (actor: ReactionActor): string => {
+    const bareActor = (actor.realJid || actor.id).toLowerCase().split('/')[0];
+    const bareAccount = this.accountId().toLowerCase().split('/')[0];
+    if (bareActor === bareAccount) return 'Tú';
+    const contact = this.activeContact();
+    const bareContact = (contact?.jid || this.selectedJid()).toLowerCase().split('/')[0];
+    if (bareActor === bareContact && contact?.name?.trim()) return contact.name.trim();
+    return bareActor.split('@')[0] || 'Participante';
+  };
   private quoteFragment(value: string): string {
     const points = Array.from(value);
     return points.length > 180 ? `${points.slice(0, 179).join('')}…` : value;

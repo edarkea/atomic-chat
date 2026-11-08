@@ -68,20 +68,16 @@
         @for (reaction of reactionState.reactions; track reaction.emoji) {
           <span class="message-reaction-chip" (mouseenter)="showReactionTooltip(reaction.emoji)" (mouseleave)="hideReactionTooltip()">
             @if (messageId()) {
-              <button type="button" class="message-reaction" [class.message-reaction--own]="isOwnReaction(reaction.emoji)" [attr.aria-pressed]="isOwnReaction(reaction.emoji)" [attr.aria-describedby]="tooltipEmoji() === reaction.emoji ? reactionTooltipId(reaction.emoji) : null" [attr.aria-label]="reaction.emoji + ', ' + reaction.actors.length + ' reacciones. Pulsar para ' + (isOwnReaction(reaction.emoji) ? 'retirar' : 'añadir')" (click)="toggleReaction(reaction.emoji)" (focus)="showReactionTooltip(reaction.emoji)" (blur)="hideReactionTooltip()" (keydown.escape)="hideReactionTooltip()">
+              <button type="button" class="message-reaction" [class.message-reaction--own]="isOwnReaction(reaction.emoji)" [attr.aria-pressed]="isOwnReaction(reaction.emoji)" [attr.aria-describedby]="tooltipEmoji() === reaction.emoji ? reactionTooltipId(reaction.emoji) : null" [attr.aria-label]="reactionTooltipText(reaction) + '. ' + reaction.actors.length + ' reacciones. Pulsar para ' + (isOwnReaction(reaction.emoji) ? 'retirar' : 'añadir')" (click)="toggleReaction(reaction.emoji)" (focus)="showReactionTooltip(reaction.emoji)" (blur)="hideReactionTooltip()" (keydown.escape)="hideReactionTooltip()">
                 <span>{{ reaction.emoji }}</span><small>{{ reaction.actors.length }}</small>
               </button>
             } @else {
-              <span class="message-reaction message-reaction--unavailable" [attr.title]="'Referencia no disponible; no se puede actualizar esta reacción'" [attr.aria-label]="reaction.emoji + ', ' + reaction.actors.length + ' reacciones. Referencia no disponible'">
+              <span class="message-reaction message-reaction--unavailable" [attr.title]="'Referencia no disponible; no se puede actualizar esta reacción'" [attr.aria-label]="reactionTooltipText(reaction) + '. Referencia no disponible'">
                 <span>{{ reaction.emoji }}</span><small>{{ reaction.actors.length }}</small>
               </span>
             }
             @if (tooltipEmoji() === reaction.emoji) {
-              <span class="message-reaction-tooltip" [id]="reactionTooltipId(reaction.emoji)" role="tooltip">
-                <strong>{{ reaction.emoji }}</strong>
-                @for (actor of visibleReactionActors(reaction); track actor.id) { <span>{{ reactionActorLabel()(actor) }}</span> }
-                @if (hiddenReactionActorCount(reaction) > 0) { <span>y {{ hiddenReactionActorCount(reaction) }} más</span> }
-              </span>
+              <span class="message-reaction-tooltip" [id]="reactionTooltipId(reaction.emoji)" [attr.aria-label]="reactionTooltipText(reaction)" role="tooltip">{{ reactionTooltipText(reaction) }}</span>
             }
           </span>
         }

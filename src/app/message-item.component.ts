@@ -133,11 +133,12 @@ export class MessageItemComponent {
   protected reactionTooltipId(emoji: string): string {
     return `reaction-tooltip-${this.messageId().replace(/[^a-zA-Z0-9_-]/gu, '_')}-${encodeURIComponent(emoji)}`;
   }
-  protected visibleReactionActors(reaction: ReactionState['reactions'][number]): ReadonlyArray<ReactionActor> {
-    return reaction.actors.slice(0, 8);
-  }
-  protected hiddenReactionActorCount(reaction: ReactionState['reactions'][number]): number {
-    return Math.max(0, reaction.actors.length - 8);
+  protected reactionTooltipText(reaction: ReactionState['reactions'][number]): string {
+    const labels = reaction.actors.slice(0, 3).map((actor) => this.reactionActorLabel()(actor));
+    if (labels.length === 0) return `${reaction.emoji} Participante`;
+    if (reaction.actors.length === 1) return `${reaction.emoji} ${labels[0]}`;
+    if (reaction.actors.length === 2) return `${reaction.emoji} ${labels[0]} y ${labels[1]}`;
+    return `${reaction.emoji} ${labels[0]}, ${labels[1]} y ${reaction.actors.length - 2} más`;
   }
   protected closeReactionPicker(): void { this.requestOverlay(undefined); }
   protected closeOverlays(): void {

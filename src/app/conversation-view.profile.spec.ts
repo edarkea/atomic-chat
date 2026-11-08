@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { ConversationViewComponent } from './conversation-view.component';
+import { ReactionActor } from './core/domain';
 
 describe('ConversationViewComponent profile search target', () => {
   it('uses the complete selected-user profile as the search target', async () => {
@@ -21,5 +22,29 @@ describe('ConversationViewComponent profile search target', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('app-message-search')).toBeTruthy();
+  });
+
+  it('keeps direct reaction actor labels bound to the conversation context', async () => {
+    await TestBed.configureTestingModule({ imports: [ConversationViewComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'barbara@localhost');
+    fixture.componentRef.setInput('accountId', 'steeven@localhost');
+    fixture.componentRef.setInput('activeContact', { jid: 'barbara@localhost', name: 'Barbara', groups: [] });
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.detectChanges();
+
+    const label = (fixture.componentInstance as unknown as { reactionActorLabel: (actor: ReactionActor) => string }).reactionActorLabel;
+    const contact: ReactionActor = { id: 'barbara@localhost', label: 'ignored', identifiable: true };
+    const own: ReactionActor = { id: 'steeven@localhost/resource', label: 'ignored', identifiable: true };
+    expect(label(contact)).toBe('Barbara');
+    expect(label(own)).toBe('Tú');
+
+    fixture.componentRef.setInput('activeContact', undefined);
+    fixture.detectChanges();
+    expect(label(contact)).toBe('barbara');
   });
 });

@@ -123,7 +123,10 @@ describe('message links', () => {
     const chip = fixture.nativeElement.querySelector('button.message-reaction') as HTMLButtonElement;
     chip.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('barbara');
+    const tooltip = fixture.nativeElement.querySelector('.message-reaction-tooltip') as HTMLElement;
+    expect(tooltip.textContent?.trim()).toBe('😍 barbara');
+    expect(tooltip.getAttribute('aria-label')).toBe('😍 barbara');
+    expect(chip.getAttribute('aria-label')).toContain('😍 barbara');
     chip.click();
     expect(reactions.at(-1)).toEqual(['😍']);
 
@@ -131,5 +134,38 @@ describe('message links', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('button.message-reaction') as HTMLButtonElement).click();
     expect(reactions.at(-1)).toEqual([]);
+  });
+
+  it('summarizes several reaction participants in one compact accessible line', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> = TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.test');
+    fixture.componentRef.setInput('body', 'Hola');
+    fixture.componentRef.setInput('outgoing', false);
+    fixture.componentRef.setInput('messageId', 'wire-many-reactions');
+    fixture.componentRef.setInput('reactions', {
+      accountId: 'me@example.test',
+      conversationId: 'contact@example.test',
+      targetMessageId: 'wire-many-reactions',
+      target: { messageId: 'wire-many-reactions', stanzaIds: [], authorJid: 'contact@example.test' },
+      reactions: [{
+        emoji: '😍',
+        actors: [
+          { id: 'barbara@example.test', label: 'barbara', identifiable: true },
+          { id: 'steeven@example.test', label: 'steeven', identifiable: true },
+          { id: 'carla@example.test', label: 'carla', identifiable: true },
+          { id: 'david@example.test', label: 'david', identifiable: true },
+        ],
+      }],
+      updatedAt: '2026-11-07T18:35:00.000Z',
+      source: 'direct',
+    } satisfies ReactionState);
+    fixture.detectChanges();
+
+    const chip = fixture.nativeElement.querySelector('button.message-reaction') as HTMLButtonElement;
+    chip.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    fixture.detectChanges();
+    expect((fixture.nativeElement.querySelector('.message-reaction-tooltip') as HTMLElement).textContent?.trim())
+      .toBe('😍 barbara, steeven y 2 más');
   });
 });

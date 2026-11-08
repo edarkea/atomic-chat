@@ -88,12 +88,20 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   const template = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-item.component.html'), 'utf8');
   const styles = readFileSync(path.join(__dirname, '..', 'src', 'app', 'message-item.component.scss'), 'utf8');
   const conversation = readFileSync(path.join(__dirname, '..', 'src', 'app', 'conversation-view.component.ts'), 'utf8');
+  const muc = readFileSync(path.join(__dirname, '..', 'src', 'app', 'muc-view.component.ts'), 'utf8');
   assert.ok(template.indexOf('message-reply-quote') < template.indexOf('class="message-body"'));
   assert.equal(template.includes('reply.authorJid'), false);
   assert.match(conversation, /protected replyAuthor\(/);
   assert.match(conversation, /protected actionTargetId\(message: Message\)/);
-  const muc = readFileSync(path.join(__dirname, '..', 'src', 'app', 'muc-view.component.ts'), 'utf8');
   assert.match(muc, /protected actionTargetId\(message: RoomMessage\)/);
+  assert.match(conversation, /protected readonly reactionActorLabel = \(actor: ReactionActor\)/);
+  assert.match(muc, /protected readonly reactionActorLabel = \(actor: ReactionActor\)/);
+  assert.match(template, /reactionTooltipText\(reaction\)/);
+  assert.equal(template.includes('<details'), false);
+  assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*display:\s*flex/);
+  assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*align-items:\s*center/);
+  assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(styles, /\.message-reaction-tooltip\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.match(styles, /\.message-actions\s*\{[^}]*position:\s*absolute/);
 });
 

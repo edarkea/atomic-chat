@@ -122,15 +122,15 @@ export class MucViewComponent {
     const target = this.messages().find((message) => message.id === this.replyTargetId(reference));
     return target ? formatMessageTime(target.receivedAt) : '';
   }
-  protected reactionActorLabel(actor: ReactionActor): string {
+  protected readonly reactionActorLabel = (actor: ReactionActor): string => {
     const state = this.roomState();
-    if (actor.id.toLowerCase() === state.selfOccupantJid?.toLowerCase() || actor.id.toLowerCase() === state.accountId.toLowerCase()) return 'Tú';
     const occupant = actor.occupantJid?.toLowerCase() || actor.id.toLowerCase();
+    if (occupant === state.selfOccupantJid?.toLowerCase() || actor.id.toLowerCase() === state.accountId.toLowerCase()) return 'Tú';
     const participant = state.participants.find((item) => item.occupantJid.toLowerCase() === occupant);
     if (participant?.nick) return participant.nick;
     const nickname = actor.occupantJid?.split('/').slice(1).join('/').trim();
-    return nickname || 'Participante no verificable';
-  }
+    return nickname || 'Participante';
+  };
   protected navigateToMessage(messageId: string): void {
     document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
