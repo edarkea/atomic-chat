@@ -50,6 +50,8 @@
 .message:focus-within .message-actions,
 .message-actions:focus-within,
 .message-actions:hover { opacity: 1; }
+.message-actions::before { bottom: 0; content: ''; left: 100%; pointer-events: auto; position: absolute; top: 0; width: 8px; }
+.message.outgoing .message-actions::before { left: auto; right: 100%; }
 .message:hover .message-actions > .message-action,
 .message:focus-within .message-actions > .message-action,
 .message-actions:focus-within > .message-action,

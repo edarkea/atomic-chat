@@ -107,6 +107,8 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   assert.match(template, /message-action--menu/);
   assert.match(styles, /\.message-actions\s*\{[^}]*inset:\s*0/);
   assert.match(styles, /\.message:hover \.message-actions,[\s\S]*?opacity:\s*1/);
+  assert.match(styles, /\.message-actions::before\s*\{[^}]*pointer-events:\s*auto[^}]*width:\s*8px/);
+  assert.match(styles, /\.message\.outgoing \.message-actions::before\s*\{[^}]*right:\s*100%/);
   assert.match(styles, /\.message-action--reaction\s*\{[^}]*left:\s*calc\(100% \+ 8px\)/);
   assert.match(styles, /\.message\.outgoing \.message-action--reaction\s*\{[^}]*right:\s*calc\(100% \+ 8px\)/);
   assert.match(styles, /\.message-action--menu\s*\{[^}]*right:\s*-5px[^}]*top:\s*-5px/);
