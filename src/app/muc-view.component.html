@@ -91,12 +91,14 @@
     @if (!messages().length) {
       <p class="reference-message empty-state">No hay mensajes todavía.</p>
     }
+  </div>
+  @if (error()) { <p class="composer-error" role="alert">{{ error() }}</p> }
+  <div class="scroll-to-latest-slot">
     <app-scroll-to-latest-button
       [visible]="showScrollToLatest()"
       (requested)="scrollToLatestFromButton()"
     />
   </div>
-  @if (error()) { <p class="composer-error" role="alert">{{ error() }}</p> }
   <app-message-composer
     [inputName]="'muc-message'"
     [placeholder]="'Escribir en la sala...'"

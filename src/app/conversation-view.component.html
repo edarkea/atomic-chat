@@ -113,10 +113,6 @@
         />
       }
     }
-    <app-scroll-to-latest-button
-      [visible]="showScrollToLatest()"
-      (requested)="scrollToLatestFromButton()"
-    />
   </div>
   @if (typing()) {
     <p class="typing-indicator" role="status">Está escribiendo…</p>
@@ -124,6 +120,12 @@
   @if (error()) {
     <p class="composer-error" role="alert">{{ error() }}</p>
   }
+  <div class="scroll-to-latest-slot">
+    <app-scroll-to-latest-button
+      [visible]="showScrollToLatest()"
+      (requested)="scrollToLatestFromButton()"
+    />
+  </div>
   <app-message-composer
     [inputName]="'message'"
     [placeholder]="'Escribir mensaje...'"
