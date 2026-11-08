@@ -115,8 +115,11 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   assert.match(styles, /\.message-action--reaction\s*\{[^}]*left:\s*calc\(100% \+ 6px\)[^}]*top:\s*10px/);
   assert.match(styles, /\.message\.outgoing \.message-action--reaction\s*\{[^}]*right:\s*calc\(100% \+ 6px\)/);
   assert.match(styles, /\.message-action--menu\s*\{[^}]*right:\s*6px[^}]*top:\s*6px/);
-  assert.match(styles, /\.message-actions > \.message-action--reaction,[\s\S]*?height:\s*30px/);
+  assert.match(styles, /\.message-actions > \.message-action--reaction,[\s\S]*?height:\s*28px/);
+  assert.match(styles, /\.message-actions > \.message-action--reaction\s*\{[\s\S]*?border-radius:\s*50%/);
   assert.match(styles, /\.message-actions > \.message-action--menu\s*\{[\s\S]*?border-radius:\s*var\(--atomic-radius-sm\)/);
+  assert.match(styles, /\.message-actions > \.message-action--menu\s*\{[\s\S]*?border-radius:[\s\S]*?\}/);
+  assert.match(styles, /\.message-actions > \.message-action--menu:hover,[\s\S]*?background:\s*linear-gradient/);
   assert.doesNotMatch(styles, /\.message-actions\s*\{[^}]*background:/);
 });
 

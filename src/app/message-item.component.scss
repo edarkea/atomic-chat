@@ -82,33 +82,36 @@
 .message-actions > .message-action--reaction,
 .message-actions > .message-action--menu {
   align-items: center;
-  background: var(--atomic-surface-raised);
-  border: 1px solid var(--atomic-border-soft);
-  box-shadow: 0 3px 10px rgb(0 0 0 / 18%);
-  color: var(--atomic-text);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--atomic-text-muted);
   display: inline-flex;
-  height: 30px;
-  justify-content: center;
-  min-height: 30px;
-  min-width: 30px;
-  padding: 0;
-  transition: opacity 140ms ease, transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
-  width: 30px;
-}
-.message-actions > .message-action--reaction { border-radius: 50%; }
-.message-actions > .message-action--menu {
-  border-radius: var(--atomic-radius-sm);
   height: 28px;
+  justify-content: center;
   min-height: 28px;
   min-width: 28px;
+  padding: 0;
+  transition: opacity 140ms ease, transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
   width: 28px;
 }
+.message-actions > .message-action--reaction {
+  background: var(--atomic-surface-raised);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 16%);
+}
+.message-actions > .message-action--menu {
+  border-radius: var(--atomic-radius-sm);
+}
 .message-actions > .message-action--reaction:hover,
-.message-actions > .message-action--reaction:focus-visible,
+.message-actions > .message-action--reaction:focus-visible {
+  background: var(--atomic-surface-hover);
+  color: var(--atomic-text);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 22%);
+}
 .message-actions > .message-action--menu:hover,
 .message-actions > .message-action--menu:focus-visible {
-  background: var(--atomic-surface-hover);
-  border-color: var(--atomic-green);
+  background: linear-gradient(135deg, transparent 20%, var(--atomic-surface-hover));
   color: var(--atomic-text);
 }
 .message-quick-reactions { align-items: center; background: var(--atomic-surface-raised); border: 1px solid var(--atomic-border); border-radius: 999px; bottom: calc(100% + 8px); box-shadow: 0 6px 16px rgb(0 0 0 / 22%); display: flex; gap: 2px; padding: 3px; position: absolute; right: 0; z-index: 6; }
