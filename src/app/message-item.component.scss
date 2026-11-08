@@ -1,5 +1,6 @@
 :host {
-  display: contents;
+  display: block;
+  width: 100%;
 }
 .message-header {
   align-items: center;
@@ -48,23 +49,25 @@
 .message-actions > .message-action { opacity: 0; pointer-events: none; position: absolute; transition: opacity 120ms ease, transform 120ms ease; }
 .message:hover .message-actions,
 .message:focus-within .message-actions,
+:host:hover .message-actions,
 .message-actions:focus-within,
 .message-actions:hover { opacity: 1; }
 .message-actions::before { bottom: 0; content: ''; left: 100%; pointer-events: auto; position: absolute; top: 0; width: 8px; }
 .message.outgoing .message-actions::before { left: auto; right: 100%; }
 .message:hover .message-actions > .message-action,
 .message:focus-within .message-actions > .message-action,
-.message-actions:focus-within > .message-action,
-.message-actions:hover > .message-action { opacity: 1; pointer-events: auto; }
+.message-actions:focus-within > .message-action { opacity: 1; pointer-events: auto; }
+.message:hover .message-action--reaction,
+:host:hover .message-action--reaction { opacity: 1; pointer-events: auto; }
 .message-action--reaction { left: calc(100% + 8px); top: 50%; transform: translateY(-50%) scale(.96); }
 .message.outgoing .message-action--reaction { left: auto; right: calc(100% + 8px); }
 .message-action--menu { right: -5px; top: -5px; transform: scale(.96); }
 .message:hover .message-action--reaction,
 .message:focus-within .message-action--reaction,
-.message-actions:hover .message-action--reaction { transform: translateY(-50%) scale(1); }
+.message-actions:hover .message-action--reaction,
+:host:hover .message-action--reaction { transform: translateY(-50%) scale(1); }
 .message:hover .message-action--menu,
-.message:focus-within .message-action--menu,
-.message-actions:hover .message-action--menu { transform: scale(1); }
+.message:focus-within .message-action--menu { transform: scale(1); }
 @media (hover: none) {
   .message-actions { opacity: 1; }
   .message-actions > .message-action { opacity: 1; pointer-events: auto; }
