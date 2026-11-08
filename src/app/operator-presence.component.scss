@@ -7,6 +7,10 @@
   padding: 10px;
   position: relative;
 }
+.operator-card > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .operator-card strong {
   color: var(--atomic-text);
   display: block;
@@ -20,6 +24,9 @@
   display: block;
   font-size: 12px;
   margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .presence-control {
   color: var(--atomic-text-secondary);

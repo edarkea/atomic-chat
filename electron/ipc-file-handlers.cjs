@@ -35,12 +35,53 @@ function registerFileHandlers({
       throw new Error('UNAUTHORIZED');
   };
 
-  const sendFileFromPath = async (event, input, filePath) => {
+  // Request IDs represent intentions, not file content. Keep pending requests pinned
+  // and a bounded window of completed results, including cancellations and errors.
+  const sendRequests = new Map();
+  const registerSendHandler = (channel, handler) => {
+    ipcMain.handle(channel, async (event, input) => {
+      try {
+        authorizeSendInput(event, input);
+        const key = JSON.stringify([event.sender.id, input.accountId, input.requestId]);
+        const previous = sendRequests.get(key);
+        if (previous) {
+          if (previous.channel !== channel || previous.conversationId !== input.conversationId)
+            throw new Error('CONFLICT');
+          return await previous.result;
+        }
+        if (sendRequests.size >= 256) {
+          const oldest = [...sendRequests].find(([, entry]) => entry.settled);
+          if (!oldest) throw new Error('RESOURCE_CONSTRAINT');
+          sendRequests.delete(oldest[0]);
+        }
+        const { xmpp } = getRuntime();
+        const scope = {
+          session: xmpp.sessions.get(input.accountId),
+          generation: xmpp.sessionGenerations?.get(input.accountId),
+        };
+        const entry = { channel, conversationId: input.conversationId, settled: false };
+        entry.result = Promise.resolve()
+          .then(() => handler(event, input, scope))
+          .catch((error) => fileResultError(error, event, input))
+          .finally(() => {
+            entry.settled = true;
+          });
+        sendRequests.set(key, entry);
+        return await entry.result;
+      } catch (error) {
+        return fileResultError(error, event, input);
+      }
+    });
+  };
+
+  const sendFileFromPath = async (event, input, filePath, scope) => {
     authorizeSendInput(event, input);
     if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('INVALID_INPUT');
     const { xmpp } = getRuntime();
     if (
       !xmpp.sessions.has(input.accountId) ||
+      xmpp.sessions.get(input.accountId) !== scope.session ||
+      xmpp.sessionGenerations?.get(input.accountId) !== scope.generation ||
       xmpp.states.get(input.accountId)?.status !== 'connected'
     )
       throw new Error('NOT_CONNECTED');
@@ -71,25 +112,25 @@ function registerFileHandlers({
     return input;
   };
 
-  ipcMain.handle('file.send', async (event, input) => {
+  registerSendHandler('file.send', async (event, input, scope) => {
     try {
       authorizeSendInput(event, input);
       const filePath = await selectFileSource();
       if (!filePath) return { ok: true, value: null, version: 1, requestId: input.requestId };
-      return await sendFileFromPath(event, input, filePath);
+      return await sendFileFromPath(event, input, filePath, scope);
     } catch (error) {
       return fileResultError(error, event, input);
     }
   });
-  ipcMain.handle('file.sendDropped', async (event, input) => {
+  registerSendHandler('file.sendDropped', async (event, input, scope) => {
     try {
       if (input?.source !== DROPPED_FILE_SOURCE) throw new Error('INVALID_INPUT');
-      return await sendFileFromPath(event, input, input?.filePath);
+      return await sendFileFromPath(event, input, input?.filePath, scope);
     } catch (error) {
       return fileResultError(error, event, input);
     }
   });
-  ipcMain.handle('file.sendClipboard', async (event, input) => {
+  registerSendHandler('file.sendClipboard', async (event, input, scope) => {
     let temporaryDirectory;
     try {
       if (input?.source !== CLIPBOARD_FILE_SOURCE) throw new Error('INVALID_INPUT');
@@ -104,8 +145,7 @@ function registerFileHandlers({
         throw new Error('INVALID_INPUT');
       if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes < 0)
         throw new Error('INVALID_INPUT');
-      if (input.sizeBytes > MAX_CLIPBOARD_FILE_BYTES)
-        throw new Error('MEDIA_SIZE_EXCEEDED');
+      if (input.sizeBytes > MAX_CLIPBOARD_FILE_BYTES) throw new Error('MEDIA_SIZE_EXCEEDED');
       const bytes = Buffer.isBuffer(input.bytes)
         ? input.bytes
         : input.bytes instanceof Uint8Array
@@ -116,7 +156,7 @@ function registerFileHandlers({
       temporaryDirectory = await fsp.mkdtemp(path.join(os.tmpdir(), 'atomic-chat-clipboard-'));
       const filePath = path.join(temporaryDirectory, input.fileName);
       await fsp.writeFile(filePath, bytes, { flag: 'wx' });
-      return await sendFileFromPath(event, input, filePath);
+      return await sendFileFromPath(event, input, filePath, scope);
     } catch (error) {
       return fileResultError(error, event, input);
     } finally {

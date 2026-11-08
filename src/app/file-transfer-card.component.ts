@@ -129,7 +129,10 @@ export class FileTransferCardComponent {
     const eligible =
       this.previewPort &&
       transfer.state === 'completed' &&
-      (transfer.direction === 'incoming' || Boolean(media));
+      (transfer.direction === 'incoming' ||
+        Boolean(media) ||
+        transfer.offer.mimeType === 'image/png' ||
+        transfer.offer.mimeType === 'image/jpeg');
     const transferId = eligible ? transfer.offer.transferId : undefined;
     const mediaId = eligible ? media?.mediaId : undefined;
     const current = this.currentSession;
@@ -165,21 +168,36 @@ export class FileTransferCardComponent {
   }
 
   private async loadPreview(transfer: FileTransfer, session: PreviewSession): Promise<void> {
+    for (const delayMs of [0, 200, 500]) {
+      if (session.cancelled || this.currentSession !== session) return;
+      if (delayMs > 0) {
+        this.previewState.set('loading');
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        if (session.cancelled || this.currentSession !== session) return;
+      }
+      if (!(await this.loadPreviewAttempt(transfer, session))) return;
+    }
+  }
+
+  private async loadPreviewAttempt(
+    transfer: FileTransfer,
+    session: PreviewSession,
+  ): Promise<boolean> {
     const port = this.previewPort;
-    if (!port) return;
+    if (!port) return false;
     const request = this.createPreviewRequest(transfer);
     let keepGrant = false;
     try {
       const get = await port.get(request);
       if (get.ok && get.value.state === 'ready') session.preview = get.value;
-      if (session.cancelled || this.currentSession !== session) return;
+      if (session.cancelled || this.currentSession !== session) return false;
       if (!get.ok) {
         this.setUnavailable('Preview no disponible para este archivo.', session);
-        return;
+        return ['UNAUTHORIZED', 'INTERNAL', 'STORAGE_FAILED'].includes(get.error.code);
       }
       if (get.value.state !== 'ready') {
         this.setUnavailable(this.previewReason(get.value.reasonCode), session);
-        return;
+        return ['MEDIA_PREVIEW_UNAVAILABLE', 'STORAGE_FAILED'].includes(get.value.reasonCode);
       }
 
       const open = await port.open({
@@ -189,7 +207,7 @@ export class FileTransferCardComponent {
       });
       if (!open.ok) {
         this.setUnavailable('Preview no disponible para este archivo.', session);
-        return;
+        return ['UNAUTHORIZED', 'INTERNAL', 'STORAGE_FAILED'].includes(open.error.code);
       }
       session.streamId = open.value.streamId;
       const chunks: ArrayBuffer[] = [];
@@ -219,9 +237,11 @@ export class FileTransferCardComponent {
         () => this.expireSession(session),
         Math.max(0, Date.parse(get.value.expiresAt) - Date.now()),
       );
+      return false;
     } catch {
       if (!session.cancelled && this.currentSession === session)
         this.setUnavailable('No se pudo renderizar la imagen.', session);
+      return true;
     } finally {
       await this.closeSessionStream(session, request).catch(() => undefined);
       if (!keepGrant || session.cancelled)

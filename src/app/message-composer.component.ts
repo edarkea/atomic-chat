@@ -33,6 +33,7 @@ export class MessageComposerComponent {
   readonly showAttach = input(false);
   readonly showEmoji = input(false);
   readonly stickersAccountId = input('');
+  readonly replyPreview = input<{ readonly author: string; readonly quote: string }>();
   readonly draftChange = output<string>();
   readonly inputFocus = output<void>();
   readonly inputBlur = output<void>();
@@ -40,6 +41,7 @@ export class MessageComposerComponent {
   readonly stickerSend = output<string>();
   readonly attach = output<void>();
   readonly filesPasted = output<ReadonlyArray<File>>();
+  readonly replyCancel = output<void>();
   protected readonly emojiOpen = signal(false);
   @ViewChild('messageInput') private messageInput?: ElementRef<HTMLTextAreaElement>;
   private savedSelection = { start: 0, end: 0 };
@@ -66,7 +68,6 @@ export class MessageComposerComponent {
     const inserted = insertTextAtSelection(this.draft(), this.savedSelection.start, this.savedSelection.end, emoji);
     this.draftChange.emit(inserted.text);
     this.savedSelection = { start: inserted.cursor, end: inserted.cursor };
-    this.emojiOpen.set(false);
     queueMicrotask(() => {
       const input = this.messageInput?.nativeElement;
       if (!input) return;
@@ -83,8 +84,13 @@ export class MessageComposerComponent {
   protected onKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
-      if (this.draft().trim()) this.messageSubmitted.emit();
+      this.submitMessage();
     }
+  }
+  protected submitMessage(): void {
+    if (this.disabled() || !this.draft().trim()) return;
+    this.emojiOpen.set(false);
+    this.messageSubmitted.emit();
   }
   @HostListener('paste', ['$event'])
   protected onPaste(event: ClipboardEvent): void {
@@ -123,20 +129,15 @@ export class MessageComposerComponent {
     this.emojiOpen.set(false);
   }
 
-  @HostListener('document:keydown', ['$event'])
-  protected onDocumentKeydown(event: KeyboardEvent): void {
-    if (this.emojiOpen() && event.key === 'Escape' && !event.isComposing) {
-      event.preventDefault();
-      this.emojiOpen.set(false);
-      this.messageInput?.nativeElement.focus();
-    }
-  }
 }
 
 export function clipboardFiles(event: ClipboardEvent): ReadonlyArray<File> {
   const data = event.clipboardData;
   if (!data) return [];
-  const files = [...Array.from(data.files)];
+  // Chromium may expose the same clipboard file through both collections, with
+  // different metadata. Prefer the complete FileList and use items only as fallback.
+  const files = Array.from(data.files);
+  if (files.length) return files;
   for (const item of Array.from(data.items)) {
     if (item.kind !== 'file') continue;
     const file = item.getAsFile();

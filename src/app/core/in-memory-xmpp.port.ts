@@ -5,6 +5,7 @@ import {
   ConnectionState,
   Contact,
   Message,
+  MessageReactionInput,
   MessageSendInput,
   Presence,
   PresenceInput,
@@ -103,6 +104,11 @@ export class InMemoryXmppPort implements XmppPort {
   subscribe(listener: (event: TypedDomainEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+  async sendReaction(input: MessageReactionInput): Promise<Result<void>> {
+    if (this.state.status !== 'connected')
+      return this.error('NOT_CONNECTED', input.requestId, true, 'La cuenta no está conectada.');
+    return this.ok(undefined, input.requestId);
   }
   private nextState(
     accountId: string,

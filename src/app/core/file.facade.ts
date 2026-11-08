@@ -4,8 +4,10 @@ import { ChatImageRecord, FileHistoryRequest, FileTransfer, TypedDomainEvent } f
 import {
   FILE_HISTORY_PORT,
   FILE_TRANSFER_PORT,
+  MEDIA_PORT,
   FileHistoryPort,
   FileTransferPort,
+  MediaPort,
 } from './ports';
 
 const MAX_DROPPED_FILES = 8;
@@ -15,12 +17,15 @@ export class FileFacade {
   private readonly destroyRef = inject(DestroyRef);
   private readonly port = inject<FileTransferPort>(FILE_TRANSFER_PORT);
   private readonly historyPort = inject<FileHistoryPort>(FILE_HISTORY_PORT);
+  private readonly mediaPort = inject<MediaPort | null>(MEDIA_PORT, { optional: true });
   private readonly items = signal<ReadonlyArray<FileTransfer>>([]);
   private readonly liveMediaItems = signal<ReadonlyArray<ChatImageRecord>>([]);
   private readonly pendingLocalActions = signal<ReadonlySet<string>>(new Set());
   private account = '';
+  private readonly manualSendsInFlight = new Set<string>();
   private droppedBatchInFlight = false;
   private droppedBatchGeneration = 0;
+  private accountGeneration = 0;
   readonly transfers = computed(() => this.items());
   readonly media = computed(() => this.liveMediaItems());
   readonly liveMedia = computed(() => this.liveMediaItems());
@@ -37,6 +42,7 @@ export class FileFacade {
   }
 
   async setAccount(accountId: string): Promise<void> {
+    const generation = ++this.accountGeneration;
     this.droppedBatchGeneration += 1;
     this.account = accountId;
     this.items.set([]);
@@ -49,13 +55,23 @@ export class FileFacade {
       requestId: createOpaqueId('file-list'),
       accountId,
     });
-    if (this.account !== accountId) return;
+    const mediaResult = this.mediaPort
+      ? await this.mediaPort.list({
+          version: 1,
+          requestId: createOpaqueId('media-list'),
+          accountId,
+          limit: 100,
+        })
+      : undefined;
+    if (this.account !== accountId || this.accountGeneration !== generation) return;
     if (result.ok) {
       const active = new Map(result.value.map((item) => [item.offer.transferId, item]));
       for (const current of this.items())
         if (current.offer.accountId === accountId) active.set(current.offer.transferId, current);
       this.items.set([...active.values()]);
     } else this.error.set(result.error.message);
+    if (mediaResult?.ok) this.liveMediaItems.set(mediaResult.value);
+    else if (mediaResult && !mediaResult.ok && !result.ok) this.error.set(mediaResult.error.message);
   }
 
   async accept(transferId: string): Promise<void> {
@@ -91,15 +107,27 @@ export class FileFacade {
   async send(conversationId: string): Promise<void> {
     if (!this.account || !conversationId) return;
     const accountId = this.account;
-    const result = await this.port.send({
-      version: 1,
-      requestId: createOpaqueId('file-send'),
-      accountId,
-      conversationId,
-    });
-    if (this.account !== accountId) return;
-    if (result.ok && result.value) this.upsert(result.value);
-    else if (!result.ok) this.error.set(result.error.message);
+    const conversationKey = conversationId.split('/')[0].trim().toLowerCase();
+    const inFlightKey = `${accountId}|${conversationKey}`;
+    if (this.manualSendsInFlight.has(inFlightKey)) {
+      this.error.set('Ya hay una selección o transferencia de archivo en curso para este contacto.');
+      return;
+    }
+    const generation = this.accountGeneration;
+    this.manualSendsInFlight.add(inFlightKey);
+    try {
+      const result = await this.port.send({
+        version: 1,
+        requestId: createOpaqueId('file-send'),
+        accountId,
+        conversationId,
+      });
+      if (this.account !== accountId || this.accountGeneration !== generation) return;
+      if (result.ok && result.value) this.upsert(result.value);
+      else if (!result.ok) this.error.set(result.error.message);
+    } finally {
+      this.manualSendsInFlight.delete(inFlightKey);
+    }
   }
 
   async sendDropped(conversationId: string, files: ReadonlyArray<File>): Promise<void> {
@@ -131,12 +159,19 @@ export class FileFacade {
     }
 
     const accountId = this.account;
-    const sendFile = (input: { version: 1; requestId: string; accountId: string; conversationId: string; file: File }) =>
-      source === 'clipboard' ? this.port.sendClipboard(input) : this.port.sendDropped(input);
+    const generation = this.accountGeneration;
+    const sendFile = (input: {
+      version: 1;
+      requestId: string;
+      accountId: string;
+      conversationId: string;
+      file: File;
+    }) => (source === 'clipboard' ? this.port.sendClipboard(input) : this.port.sendDropped(input));
     let failed = 0;
     this.droppedBatchInFlight = true;
     try {
       for (const file of files) {
+        if (this.account !== accountId || this.accountGeneration !== generation) return;
         try {
           const result = await sendFile({
             version: 1,
@@ -145,12 +180,12 @@ export class FileFacade {
             conversationId,
             file,
           });
-          if (this.account !== accountId) return;
+          if (this.account !== accountId || this.accountGeneration !== generation) return;
           if (result.ok) {
             if (result.value) this.upsert(result.value);
           } else failed += 1;
         } catch {
-          if (this.account !== accountId) return;
+          if (this.account !== accountId || this.accountGeneration !== generation) return;
           failed += 1;
         }
       }
@@ -249,7 +284,10 @@ export class FileFacade {
       });
       if (this.account !== accountId) return;
       if (result.ok) this.error.set(null);
-      else this.error.set(action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta');
+      else
+        this.error.set(
+          action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta',
+        );
     } finally {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);
@@ -264,7 +302,8 @@ export class FileFacade {
     fileId: string,
     conversationId: string,
   ): Promise<void> {
-    if (!this.account || !fileId || !conversationId || this.pendingLocalActions().has(fileId)) return;
+    if (!this.account || !fileId || !conversationId || this.pendingLocalActions().has(fileId))
+      return;
     const accountId = this.account;
     const input: FileHistoryRequest = {
       version: 1,
@@ -278,7 +317,10 @@ export class FileFacade {
       const result = await this.historyPort[action](input);
       if (this.account !== accountId) return;
       if (result.ok) this.error.set(null);
-      else this.error.set(action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta');
+      else
+        this.error.set(
+          action === 'open' ? 'No se pudo abrir el archivo' : 'No se pudo abrir la carpeta',
+        );
     } finally {
       this.pendingLocalActions.update((pending) => {
         const next = new Set(pending);
@@ -291,7 +333,10 @@ export class FileFacade {
   private onEvent(event: TypedDomainEvent): void {
     if (event.type === 'file.offerReceived') {
       const offer = event.payload;
-      if (offer.accountId === this.account)
+      if (
+        offer.accountId === this.account &&
+        !this.items().some((item) => item.offer.transferId === offer.transferId)
+      )
         this.upsert({
           offer,
           direction: 'incoming',
@@ -303,6 +348,8 @@ export class FileFacade {
     if (event.type === 'file.stateChanged') {
       const transfer = event.payload;
       if (transfer.offer.accountId === this.account) this.upsert(transfer);
+      if (transfer.offer.accountId === this.account && transfer.state === 'completed')
+        void this.refreshMedia(transfer.offer.accountId, this.accountGeneration);
     }
     if (event.type === 'media.available') {
       const media = event.payload;
@@ -313,6 +360,10 @@ export class FileFacade {
   }
 
   private upsert(transfer: FileTransfer): void {
+    const current = this.items().find(
+      (item) => item.offer.transferId === transfer.offer.transferId,
+    );
+    if (current && ['completed', 'failed', 'cancelled'].includes(current.state)) return;
     this.items.update((items) =>
       items.some((item) => item.offer.transferId === transfer.offer.transferId)
         ? items.map((item) =>
@@ -330,14 +381,26 @@ export class FileFacade {
     );
   }
 
+  private async refreshMedia(accountId: string, generation: number): Promise<void> {
+    if (!this.mediaPort) return;
+    const result = await this.mediaPort.list({
+      version: 1,
+      requestId: createOpaqueId('media-refresh'),
+      accountId,
+      limit: 100,
+    });
+    if (this.account !== accountId || this.accountGeneration !== generation || !result.ok) return;
+    this.liveMediaItems.set(result.value);
+  }
+
   private isValidDroppedFile(file: File): boolean {
     return Boolean(
       file &&
-        typeof file.name === 'string' &&
-        file.name.trim() &&
-        Number.isFinite(file.size) &&
-        file.size >= 0 &&
-        Number.isFinite(file.lastModified),
+      typeof file.name === 'string' &&
+      file.name.trim() &&
+      Number.isFinite(file.size) &&
+      file.size >= 0 &&
+      Number.isFinite(file.lastModified),
     );
   }
 }

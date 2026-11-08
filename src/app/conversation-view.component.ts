@@ -5,6 +5,7 @@ import {
   DestroyRef,
   ElementRef,
   effect,
+  HostListener,
   inject,
   input,
   output,
@@ -18,15 +19,20 @@ import {
   FileTransfer,
   Message,
   MessageSearchHit,
+  ReactionActor,
+  ReactionState,
   StickerMessageRef,
 } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
-import { MessageItemComponent } from './message-item.component';
+import { isProtectedMessageOverlayPointer, MessageItemComponent, MessageOverlay } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
-import { formatMessageDay } from './message-date-time';
+import { ScrollToLatestButtonComponent } from './scroll-to-latest-button.component';
+import { distanceToBottom, SCROLL_TO_LATEST_HIDE_DISTANCE, scrollToLatest, shouldShowScrollToLatest } from './scroll-to-latest';
+import { formatMessageDay, formatMessageTime } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
+import { matchesDirectMessageReference } from './core/message-reference';
 
 export type ConversationTimelineItem =
   | {
@@ -66,7 +72,7 @@ export interface OlderMessagesRequest {
 
 @Component({
   selector: 'app-conversation-view',
-  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, StickerMessageCardComponent, MessageSearchComponent],
+  imports: [FileTransferCardComponent, MessageComposerComponent, MessageItemComponent, ScrollToLatestButtonComponent, StickerMessageCardComponent, MessageSearchComponent],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -89,6 +95,8 @@ export class ConversationViewComponent {
   readonly searchLoading = input(false);
   readonly searchError = input<string | null>(null);
   readonly searchHasMore = input(false);
+  readonly reactions = input<ReadonlyMap<string, ReactionState>>(new Map());
+  readonly replyingTo = input<{ readonly id: string; readonly author: string; readonly quote: string }>();
 
   readonly closeRequested = output<void>();
   readonly filesDropped = output<ReadonlyArray<File>>();
@@ -116,13 +124,19 @@ export class ConversationViewComponent {
   readonly searchScopeChange = output<'all' | 'conversation'>();
   readonly searchResultSelected = output<MessageSearchHit>();
   readonly searchLoadMore = output<void>();
+  readonly replyRequested = output<Message>();
+  readonly replyCancel = output<void>();
+  readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly searchOpen = signal(false);
+  protected readonly activeOverlay = signal<{ readonly messageId: string; readonly overlay: MessageOverlay } | undefined>(undefined);
+  protected readonly showScrollToLatest = signal(false);
 
   @ViewChild('chatContent') private chatContent?: ElementRef<HTMLElement>;
   private followLatest = true;
   private renderedConversation = '';
   private frame: number | undefined;
   private scrollGeneration = 0;
+  private programmaticLatestScroll = false;
   protected readonly dropActive = signal(false);
   private dragDepth = 0;
   private readonly destroyRef = inject(DestroyRef);
@@ -152,6 +166,12 @@ export class ConversationViewComponent {
     effect(() => {
       this.visibleMessageKey();
       const conversation = this.bareJid(this.selectedJid());
+      if (conversation !== this.renderedConversation) {
+        this.activeOverlay.set(undefined);
+        this.showScrollToLatest.set(false);
+        this.programmaticLatestScroll = false;
+        this.followLatest = true;
+      }
       if (conversation)
         this.scheduleScroll(conversation, conversation !== this.renderedConversation);
     });
@@ -163,11 +183,105 @@ export class ConversationViewComponent {
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
   }
+  protected profileTooltip(): string {
+    const name = this.activeContact()?.name?.trim() || this.selectedJid() || 'Selecciona un contacto';
+    const jid = this.selectedJid();
+    return jid && jid !== name ? `${name}\n${jid}` : name;
+  }
   protected toggleSearch(): void {
     if (!this.isSelected()) return;
     this.searchOpen.update((open) => !open);
   }
   protected dayLabel(sortAt: string): string { return formatMessageDay(sortAt); }
+  protected requestReply(message: Message): void {
+    this.replyRequested.emit(message);
+  }
+  protected overlayFor(messageId: string): MessageOverlay | undefined {
+    return this.activeOverlay()?.messageId === messageId ? this.activeOverlay()?.overlay : undefined;
+  }
+  protected setOverlay(messageId: string, overlay: MessageOverlay | undefined): void {
+    this.activeOverlay.set(overlay ? { messageId, overlay } : undefined);
+  }
+  @HostListener('document:pointerdown', ['$event'])
+  protected onDocumentPointerdown(event: PointerEvent): void {
+    const active = this.activeOverlay();
+    if (!active) return;
+    if (isProtectedMessageOverlayPointer(event, active.messageId)) return;
+    this.activeOverlay.set(undefined);
+  }
+  protected reactionFor(messageId: string): ReactionState | undefined {
+    const live = this.reactions().get(`${this.bareJid(this.selectedJid())}|${messageId}`);
+    if (live) return live;
+    const item = this.timeline().find((candidate) => candidate.kind === 'text' && candidate.message.id === messageId);
+    if (item?.kind !== 'text' || !item.message.reactions?.length) return undefined;
+    return {
+      accountId: this.accountId(),
+      conversationId: item.message.conversationId,
+      targetMessageId: messageId,
+      target: {
+        ...(item.message.messageId ? { messageId: item.message.messageId } : {}),
+        ...(item.message.originId ? { originId: item.message.originId } : {}),
+        stanzaIds: item.message.stanzaIds || [],
+        authorJid: item.message.senderJid,
+      },
+      reactions: item.message.reactions,
+      updatedAt: item.message.createdAt,
+      source: 'direct',
+    };
+  }
+  protected ownReactionEmojis(messageId: string): ReadonlyArray<string> {
+    const accountId = this.accountId().toLowerCase();
+    return this.reactionFor(messageId)?.reactions
+      .filter((reaction) => reaction.actors.some((actor) => actor.id.toLowerCase() === accountId))
+      .map((reaction) => reaction.emoji) || [];
+  }
+  protected stableActionId(message: Message): string {
+    return message.originId || message.messageId || message.stanzaIds?.[0]?.id ? message.id : '';
+  }
+  protected actionTargetId(message: Message): string {
+    return message.originId || message.messageId || message.stanzaIds?.[0]?.id || '';
+  }
+  protected replyTargetId(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const target = this.timeline().find((item) => item.kind === 'text' && matchesDirectMessageReference(item.message, reference, this.accountId(), this.selectedJid()));
+    return target?.kind === 'text' ? target.message.id : '';
+  }
+  protected replyAuthor(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
+    if (target?.kind === 'text') return target.senderLabel;
+    const author = this.bareJid(reference.authorJid);
+    if (author === this.bareJid(this.accountId())) return 'Tú';
+    if (author === this.bareJid(this.selectedJid())) return this.activeContact()?.name?.trim() || 'Contacto';
+    return 'Contacto no disponible';
+  }
+  protected replyQuote(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
+    if (target?.kind === 'text') return this.quoteFragment(target.message.body.text);
+    return reference.quote ? this.quoteFragment(reference.quote) : '';
+  }
+  protected replyTime(reference: Message['replyTo']): string {
+    if (!reference) return '';
+    const targetId = this.replyTargetId(reference);
+    const target = this.timeline().find((item) => item.kind === 'text' && item.message.id === targetId);
+    return target?.kind === 'text' ? formatMessageTime(target.message.createdAt) : '';
+  }
+  protected readonly reactionActorLabel = (actor: ReactionActor): string => {
+    const bareActor = (actor.realJid || actor.id).toLowerCase().split('/')[0];
+    const bareAccount = this.accountId().toLowerCase().split('/')[0];
+    if (bareActor === bareAccount) return 'Tú';
+    const contact = this.activeContact();
+    const bareContact = (contact?.jid || this.selectedJid()).toLowerCase().split('/')[0];
+    if (bareActor === bareContact && contact?.name?.trim()) return contact.name.trim();
+    return bareActor.split('@')[0] || 'Participante';
+  };
+  private quoteFragment(value: string): string {
+    const points = Array.from(value);
+    return points.length > 180 ? `${points.slice(0, 179).join('')}…` : value;
+  }
 
   protected onDragEnter(event: DragEvent): void {
     if (!this.isFileDrag(event)) return;
@@ -216,10 +330,13 @@ export class ConversationViewComponent {
   }
 
   public onUserScrollIntent(): void {
+    this.programmaticLatestScroll = false;
     queueMicrotask(() => {
       const element = this.chatContent?.nativeElement;
-      if (element)
+      if (element) {
+        this.updateScrollToLatest(element);
         this.followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+      }
     });
   }
 
@@ -231,12 +348,21 @@ export class ConversationViewComponent {
     const element = this.chatContent?.nativeElement;
     const conversation = this.bareJid(this.selectedJid());
     const accountId = this.accountId();
-    if (!element || !conversation || (state?.historyLoading ?? this.historyLoading())) return;
-    this.followLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    if (!element) return;
+    this.updateScrollToLatest(element);
+    if (this.programmaticLatestScroll) return;
+    if (!conversation || (state?.historyLoading ?? this.historyLoading())) return;
+    this.followLatest = distanceToBottom(element) < 48;
     if (element.scrollTop < 48 && (state?.hasOlderMessages ?? this.hasOlderMessages())) {
       this.loadOlder.emit({ conversation, accountId, previousHeight: element.scrollHeight });
     } else if (this.followLatest && (state?.hasNewerMessages ?? this.hasNewerMessages()))
       this.loadNewer.emit(conversation);
+  }
+
+  @HostListener('window:resize')
+  protected onViewportResize(): void {
+    const element = this.chatContent?.nativeElement;
+    if (element) this.updateScrollToLatest(element);
   }
 
   public restoreScrollAfterPrepend(request: OlderMessagesRequest): void {
@@ -248,7 +374,18 @@ export class ConversationViewComponent {
         this.bareJid(this.selectedJid()) === request.conversation
       )
         current.scrollTop += current.scrollHeight - request.previousHeight;
+      if (current) this.updateScrollToLatest(current);
     });
+  }
+
+  protected scrollToLatestFromButton(): void {
+    const element = this.chatContent?.nativeElement;
+    if (!element) return;
+    this.followLatest = true;
+    this.programmaticLatestScroll = true;
+    this.showScrollToLatest.set(false);
+    scrollToLatest(element);
+    if (distanceToBottom(element) < SCROLL_TO_LATEST_HIDE_DISTANCE) this.programmaticLatestScroll = false;
   }
 
   public scrollToLatest(conversation: string): void {
@@ -280,8 +417,21 @@ export class ConversationViewComponent {
       const element = this.chatContent?.nativeElement;
       if (!element) return;
       element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      this.followLatest = true;
+      this.programmaticLatestScroll = false;
+      this.showScrollToLatest.set(false);
       this.renderedConversation = conversation;
     });
+  }
+
+  private updateScrollToLatest(element: HTMLElement): void {
+    const distance = distanceToBottom(element);
+    if (this.programmaticLatestScroll) {
+      if (distance < 80) this.programmaticLatestScroll = false;
+      this.showScrollToLatest.set(false);
+      return;
+    }
+    this.showScrollToLatest.set(shouldShowScrollToLatest(this.showScrollToLatest(), distance));
   }
 
   private bareJid(jid: string): string {

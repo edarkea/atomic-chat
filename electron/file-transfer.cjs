@@ -380,6 +380,10 @@ class FileTransferCoordinator {
     return this.reject(id, 'cancelled_by_receiver');
   }
 
+  cancelBySender(id) {
+    return this.reject(id, 'cancelled_by_sender');
+  }
+
   async fail(id, reason = 'storage_failed') {
     const result = await this.terminate(id, 'failed', reason);
     this.releaseTerminalRecord(this.records.get(id));

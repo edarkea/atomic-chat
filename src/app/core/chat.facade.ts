@@ -14,6 +14,9 @@ import {
   HistoryPage,
   MessageAroundInput,
   Message,
+  MessageReactionInput,
+  MessageReference,
+  ReactionState,
   MessageSearchHit,
   MessageSearchScope,
   MessageSendInput,
@@ -28,6 +31,7 @@ import { UnreadStore } from './unread.store';
 import { ActiveConversationStore } from './active-conversation.store';
 import { ConversationVisibilityStore } from './conversation-visibility.store';
 import { WindowFocusStore } from './window-focus.store';
+import { matchesDirectMessageReference } from './message-reference';
 import {
   ACCOUNT_PORT,
   CERTIFICATE_PORT,
@@ -124,6 +128,10 @@ export class ChatFacade {
   readonly unreadCounts = this.unread.counts.asReadonly();
   readonly unreadTotal = this.unread.total;
   readonly chatStates = signal<ReadonlyMap<string, ChatState>>(new Map());
+  readonly reactions = signal<ReadonlyMap<string, ReactionState>>(new Map());
+  private readonly pendingReactionVersion = signal(0);
+  private readonly pendingReactions = new Map<string, ReactionState>();
+  private readonly reactionOperationVersions = new Map<string, number>();
   private identityGeneration = 0;
   private contactsOwner = '';
   private olderCursor: string | null = null;
@@ -139,12 +147,26 @@ export class ChatFacade {
   private messageSearchGeneration = 0;
   private readonly accountContactReset = effect(() => {
     this.accountId();
+    this.reactions.set(new Map());
+    this.pendingReactions.clear();
+    this.reactionOperationVersions.clear();
     this.contacts.set([]);
     this.conversationSummaries.set([]);
     this.messageSearchGeneration += 1;
     this.messageSearchResults.set([]);
     this.messageSearchCursor = null;
     this.messageSearchHasMore.set(false);
+  });
+  private readonly reactionReconciler = effect(() => {
+    this.pendingReactionVersion();
+    const messages = this.messages();
+    if (!messages.length || !this.pendingReactions.size) return;
+    this.pendingReactions.forEach((reaction, key) => {
+      const target = messages.find((message) => this.matchesReference(message, reaction.target, reaction.conversationId));
+      if (!target) return;
+      this.setReactionForTarget(reaction, target.id);
+      this.pendingReactions.delete(key);
+    });
   });
 
   constructor() {
@@ -198,6 +220,19 @@ export class ChatFacade {
           }
         }
       }
+      if (event.type === 'reaction.changed') {
+        const reaction = event.payload;
+        if (reaction.accountId !== this.accountId()) return;
+        const target = this.messages().find((message) => this.matchesReference(message, reaction.target, reaction.conversationId));
+        if (!target) {
+          const key = `${reaction.accountId}|${reaction.source}|${reaction.conversationId.toLowerCase()}|${reaction.targetMessageId}`;
+          this.pendingReactions.set(key, reaction);
+          if (this.pendingReactions.size > 256) this.pendingReactions.delete(this.pendingReactions.keys().next().value || '');
+          this.pendingReactionVersion.update((value) => value + 1);
+        } else this.setReactionForTarget(reaction, target.id);
+      }
+      if (event.type === 'reaction.rejected' && event.payload.accountId === this.accountId())
+        this.error.set(event.payload.message);
       if (event.type === 'sticker.messageReceived' || event.type === 'sticker.stateChanged') {
         const sticker = event.payload;
         if (sticker.accountId === this.accountId()) this.upsertStickerMessage(sticker);
@@ -775,6 +810,66 @@ export class ChatFacade {
     }
   }
 
+  async sendMessageWithReply(text: string, conversationId: string, replyToMessageId?: string): Promise<boolean> {
+    const cleanText = text;
+    const recipient = conversationId.trim();
+    if (!cleanText.trim() || !recipient || !this.accountId().trim()) return false;
+    try {
+      const result = await this.sendMessageInput({
+        version: 1,
+        requestId: createOpaqueId('req'),
+        accountId: this.accountId(),
+        conversationId: recipient,
+        clientMessageId: createOpaqueId('client-msg'),
+        body: { kind: 'text', text: cleanText },
+        ...(replyToMessageId ? { replyToMessageId } : {}),
+      });
+      if (!result.ok) {
+        this.error.set(result.error.message);
+        return false;
+      }
+      return true;
+    } catch {
+      this.error.set('No fue posible enviar el mensaje.');
+      return false;
+    }
+  }
+
+  async sendReaction(conversationId: string, targetMessageId: string, emojis: ReadonlyArray<string>): Promise<boolean> {
+    const target = this.messages().find((message) => this.messageHasTargetId(message, targetMessageId));
+    if (!target) {
+      this.error.set('El mensaje ya no está disponible para reaccionar.');
+      return false;
+    }
+    const input: MessageReactionInput = {
+      version: 1,
+      requestId: createOpaqueId('reaction'),
+      accountId: this.accountId(),
+      conversationId,
+      targetMessageId,
+      emojis,
+    };
+    const key = this.reactionKey(conversationId, target.id);
+    const actorId = this.accountId().trim().toLowerCase();
+    const previous = this.actorReactionEmojis(this.reactions().get(key), actorId);
+    const version = (this.reactionOperationVersions.get(key) || 0) + 1;
+    this.reactionOperationVersions.set(key, version);
+    this.applyLocalReaction(target, emojis, actorId);
+    try {
+      const result = await this.xmpp.sendReaction(input);
+      if (!result.ok) {
+        this.rollbackReaction(target, key, version, previous, actorId);
+        this.error.set(result.error.message);
+        return false;
+      }
+      return true;
+    } catch {
+      this.rollbackReaction(target, key, version, previous, actorId);
+      this.error.set('No fue posible enviar la reacción.');
+      return false;
+    }
+  }
+
   upsertStickerMessage(sticker: StickerMessageRef): void {
     const activeConversation = this.historyContext?.conversationId;
     if (activeConversation && this.bareConversation(sticker.conversationId) !== activeConversation) {
@@ -798,6 +893,110 @@ export class ChatFacade {
       this.upsertMessage(result.value, input.conversationId);
     }
     return result;
+  }
+
+  reactionFor(conversationId: string, messageId: string): ReactionState | undefined {
+    return this.reactions().get(this.reactionKey(conversationId, messageId));
+  }
+
+  private reactionKey(conversationId: string, messageId: string): string {
+    return `${this.bareConversation(conversationId)}|${messageId}`;
+  }
+
+  private setReactionForTarget(reaction: ReactionState, messageId: string): void {
+    const key = this.reactionKey(reaction.conversationId, messageId);
+    this.reactions.update((current) => {
+      const next = new Map(current);
+      const previous = next.get(key);
+      const reactions = reaction.actorId
+        ? this.mergeReactionActors(previous?.reactions || [], reaction.reactions, reaction.actorId, reaction.actorEmojis || [])
+        : reaction.reactions;
+      if (!reactions.length) {
+        next.delete(key);
+        return next;
+      }
+      next.set(key, {
+        ...reaction,
+        targetMessageId: messageId,
+        reactions,
+      });
+      return next;
+    });
+  }
+
+  private applyLocalReaction(message: Message, emojis: ReadonlyArray<string>, actorId: string): void {
+    this.setReactionForTarget({
+      accountId: this.accountId(),
+      conversationId: message.conversationId,
+      targetMessageId: message.id,
+      target: {
+        ...(message.messageId ? { messageId: message.messageId } : {}),
+        ...(message.originId ? { originId: message.originId } : {}),
+        stanzaIds: message.stanzaIds || [],
+        authorJid: message.senderJid,
+      },
+      reactions: this.reactions().get(this.reactionKey(message.conversationId, message.id))?.reactions || [],
+      updatedAt: new Date().toISOString(),
+      source: 'direct',
+      actorId,
+      actorEmojis: [...new Set(emojis)],
+    }, message.id);
+  }
+
+  private rollbackReaction(message: Message, key: string, version: number, previous: ReadonlyArray<string>, actorId: string): void {
+    if (this.reactionOperationVersions.get(key) !== version) return;
+    this.setReactionForTarget({
+      accountId: this.accountId(),
+      conversationId: message.conversationId,
+      targetMessageId: message.id,
+      target: {
+        ...(message.messageId ? { messageId: message.messageId } : {}),
+        ...(message.originId ? { originId: message.originId } : {}),
+        stanzaIds: message.stanzaIds || [],
+        authorJid: message.senderJid,
+      },
+      reactions: this.reactions().get(key)?.reactions || [],
+      updatedAt: new Date().toISOString(),
+      source: 'direct',
+      actorId,
+      actorEmojis: previous,
+    }, message.id);
+  }
+
+  private actorReactionEmojis(state: ReactionState | undefined, actorId: string): ReadonlyArray<string> {
+    return state?.reactions.filter((reaction) => reaction.actors.some((actor) => actor.id.toLowerCase() === actorId)).map((reaction) => reaction.emoji) || [];
+  }
+
+  private messageHasTargetId(message: Message, targetId: string): boolean {
+    if (!targetId.trim()) return false;
+    return [message.id, message.clientMessageId, message.messageId, message.originId].some((candidate) => Boolean(candidate && candidate === targetId)) ||
+      Boolean(message.stanzaIds?.some((item) => item.id === targetId && item.by.trim()));
+  }
+
+  private mergeReactionActors(
+    previous: ReactionState['reactions'],
+    incoming: ReactionState['reactions'],
+    actorId: string,
+    actorEmojis: ReadonlyArray<string>,
+  ): ReactionState['reactions'] {
+    const actors = new Map<string, { actor: ReactionState['reactions'][number]['actors'][number]; emojis: Set<string> }>();
+    for (const reaction of previous)
+      for (const actor of reaction.actors)
+        actors.set(actor.id, { actor, emojis: new Set([...(actors.get(actor.id)?.emojis || []), reaction.emoji]) });
+    for (const reaction of incoming)
+      for (const actor of reaction.actors)
+        actors.set(actor.id, { actor, emojis: new Set([...(actors.get(actor.id)?.emojis || []), reaction.emoji]) });
+    const selected = actors.get(actorId)?.actor || { id: actorId, label: actorId, identifiable: false };
+    actors.delete(actorId);
+    if (actorEmojis.length) actors.set(actorId, { actor: selected, emojis: new Set(actorEmojis) });
+    return [...new Set([...actors.values()].flatMap((entry) => [...entry.emojis]))].map((emoji) => ({
+      emoji,
+      actors: [...actors.values()].filter((entry) => entry.emojis.has(emoji)).map((entry) => entry.actor),
+    }));
+  }
+
+  private matchesReference(message: Message, reference: MessageReference, conversationId: string): boolean {
+    return matchesDirectMessageReference(message, reference, this.accountId(), conversationId, false);
   }
 
   async updateTypingState(conversationId: string, draft: string): Promise<void> {

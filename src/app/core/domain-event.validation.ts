@@ -11,20 +11,28 @@ import {
   FileOffer,
   FileTransfer,
   Message,
+  MessageReference,
   MucNotice,
   MucNoticeCode,
   MucParticipantChangedPayload,
   Presence,
+  ReactionRejected,
+  ReactionState,
   RoomMessage,
   RoomParticipant,
   RoomRef,
   RoomState,
+  XmppStanzaId,
   StickerCapability,
   StickerMessageRef,
   TypedDomainEvent,
 } from './domain';
 
 interface EventRecord {
+  actorId?: unknown;
+  actorEmojis?: unknown;
+  authorJid?: unknown;
+  by?: unknown;
   accountId?: unknown;
   affiliation?: unknown;
   body?: unknown;
@@ -71,6 +79,20 @@ interface EventRecord {
   participants?: unknown;
   pem?: unknown;
   persistenceStatus?: unknown;
+  messageId?: unknown;
+  stanzaIds?: unknown;
+  replyTo?: unknown;
+  quote?: unknown;
+  emoji?: unknown;
+  identityVerified?: unknown;
+  reactions?: unknown;
+  target?: unknown;
+  targetMessageId?: unknown;
+  actors?: unknown;
+  identifiable?: unknown;
+  label?: unknown;
+  realJid?: unknown;
+  emojis?: unknown;
   port?: unknown;
   publicKeyAlgorithm?: unknown;
   publicKeyBits?: unknown;
@@ -208,6 +230,8 @@ const domainEventTypes: readonly DomainEventType[] = [
   'roster.changed',
   'message.stateChanged',
   'message.received',
+  'reaction.changed',
+  'reaction.rejected',
   'chatState.changed',
   'certificate.trustRequired',
   'muc.stateChanged',
@@ -282,7 +306,60 @@ function isMessage(value: unknown): value is Message {
     isOptionalOneOf(value.classification, ['direct', 'broadcast']) &&
     isOptionalOneOf(value.errorCode, appErrorCodes) &&
     isOptionalOneOf(value.persistenceStatus, ['persisted', 'memory-only'])
+    && isOptionalString(value.messageId)
+    && isOptionalString(value.originId)
+    && isOptionalStanzaIds(value.stanzaIds)
+    && isOptionalMessageReference(value.replyTo)
+    && isOptionalReactions(value.reactions)
   );
+}
+
+function isStanzaId(value: unknown): value is XmppStanzaId {
+  return isRecord(value) && isString(value.id) && isString(value.by);
+}
+
+function isOptionalStanzaIds(value: unknown): value is ReadonlyArray<XmppStanzaId> | undefined {
+  return value === undefined || (isArray(value) && value.every(isStanzaId));
+}
+
+function isMessageReference(value: unknown): value is MessageReference {
+  return isRecord(value) &&
+    isOptionalString(value.messageId) &&
+    isOptionalString(value.originId) &&
+    Array.isArray(value.stanzaIds) && value.stanzaIds.every(isStanzaId) &&
+    isString(value.authorJid) && isOptionalString(value.quote);
+}
+
+function isOptionalMessageReference(value: unknown): value is MessageReference | undefined {
+  return value === undefined || isMessageReference(value);
+}
+
+function isReactionActor(value: unknown): boolean {
+  return isRecord(value) && isString(value.id) && isString(value.label) &&
+    isOptionalString(value.occupantJid) && isOptionalString(value.realJid) &&
+    isBoolean(value.identifiable);
+}
+
+function isOptionalReactions(value: unknown): boolean {
+  return value === undefined || (isArray(value) && value.every((reaction) =>
+    isRecord(reaction) && isString(reaction.emoji) && isArray(reaction.actors) && reaction.actors.every(isReactionActor)));
+}
+
+function isReactionState(value: unknown): value is ReactionState {
+  if (!isRecord(value) || !isArray(value.reactions)) return false;
+  return isString(value.accountId) && isString(value.conversationId) &&
+    isString(value.targetMessageId) && isMessageReference(value.target) &&
+    value.reactions.every((reaction) => isRecord(reaction) && isString(reaction.emoji) &&
+      isArray(reaction.actors) && reaction.actors.every(isReactionActor)) &&
+    isString(value.updatedAt) && isOneOf(value.source, ['direct', 'muc']) &&
+    isOptionalNumber(value.sessionGeneration) && isOptionalString(value.actorId) &&
+    (value.actorEmojis === undefined || (isArray(value.actorEmojis) && value.actorEmojis.every(isString)));
+}
+
+function isReactionRejected(value: unknown): value is ReactionRejected {
+  return isRecord(value) && isString(value.accountId) && isString(value.conversationId) &&
+    isString(value.targetMessageId) && isOneOf(value.reason, ['not-acceptable', 'unsupported', 'not-found', 'unauthorized', 'conflict']) &&
+    isString(value.message);
 }
 
 function isRoomRef(value: unknown): value is RoomRef {
@@ -294,6 +371,8 @@ function isRoomParticipant(value: unknown): value is RoomParticipant {
   return (
     isString(value.occupantJid) &&
     isString(value.nick) &&
+    isOptionalString(value.realJid) &&
+    (value.identityVerified === undefined || isBoolean(value.identityVerified)) &&
     isOneOf(value.role, ['none', 'visitor', 'participant', 'moderator']) &&
     isOneOf(value.affiliation, ['none', 'member', 'admin', 'owner']) &&
     isOneOf(value.availability, ['available', 'unavailable'])
@@ -335,7 +414,12 @@ function isRoomMessage(value: unknown): value is RoomMessage {
     isString(value.receivedAt) &&
     isOptionalString(value.clientMessageId) &&
     isOneOf(value.source, ['live', 'server-history']) &&
-    isPositiveInteger(value.sessionGeneration)
+    isPositiveInteger(value.sessionGeneration) &&
+    isOptionalString(value.messageId) &&
+    isOptionalString(value.originId) &&
+    isOptionalStanzaIds(value.stanzaIds) &&
+    isOptionalMessageReference(value.replyTo)
+    && isOptionalReactions(value.reactions)
   );
 }
 
@@ -591,6 +675,10 @@ export function validateDomainEvent(value: unknown): TypedDomainEvent | undefine
       return isCertificateTrustRequest(value.payload)
         ? typedEvent(value, value.type, value.payload)
         : undefined;
+    case 'reaction.changed':
+      return isReactionState(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
+    case 'reaction.rejected':
+      return isReactionRejected(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
     case 'muc.stateChanged':
       return isRoomState(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
     case 'muc.participantChanged':

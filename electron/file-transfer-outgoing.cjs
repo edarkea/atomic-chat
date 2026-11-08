@@ -115,6 +115,9 @@ class OutgoingFileTransferCoordinator {
       progressPending: false,
       progressLastEmittedAt: undefined,
       terminalRequested: false,
+      abortController: new AbortController(),
+      ibbOpened: false,
+      activePhase: undefined,
       cleanupReady: false,
       timeoutSeconds: this.getTimeoutSeconds
         ? normalizeTransferTimeout(this.getTimeoutSeconds())
@@ -130,20 +133,25 @@ class OutgoingFileTransferCoordinator {
   async run(record) {
     try {
       await this.withTimeout(
+        record,
         () => record.transport.sendOffer(record),
         this.timeoutMilliseconds(record, this.siTimeout),
         'SI acceptance timed out',
+        'si',
       );
       if (record.terminalRequested) return transferView(record);
       record.state = 'accepted';
       record.updatedAt = new Date().toISOString();
       this.emit(record);
       await this.withTimeout(
+        record,
         () => record.transport.sendOpen(record, this.blockSize),
         this.timeoutMilliseconds(record, this.iqTimeout),
         'IBB open timed out',
+        'open',
       );
       if (record.terminalRequested) return transferView(record);
+      record.ibbOpened = true;
       record.state = 'transferring';
       record.updatedAt = new Date().toISOString();
       this.emit(record);
@@ -163,10 +171,13 @@ class OutgoingFileTransferCoordinator {
           throw transferError('STORAGE_FAILED', 'source changed while reading');
         const block = buffer.subarray(0, read.bytesRead);
         await this.withTimeout(
+          record,
           () => record.transport.sendData(record, block, sequence),
           this.timeoutMilliseconds(record, this.iqTimeout),
           'IBB data acknowledgement timed out',
+          'data',
         );
+        record.activePhase = undefined;
         if (record.terminalRequested) return transferView(record);
         record.bytes += BigInt(read.bytesRead);
         record.updatedAt = new Date().toISOString();
@@ -182,9 +193,11 @@ class OutgoingFileTransferCoordinator {
       )
         throw transferError('INTEGRITY_FAILED', 'source changed while sending');
       await this.withTimeout(
+        record,
         () => record.transport.sendClose(record),
         this.timeoutMilliseconds(record, this.iqTimeout),
         'IBB close acknowledgement timed out',
+        'close',
       );
       if (record.terminalRequested) return transferView(record);
       record.state = 'completed';
@@ -214,7 +227,7 @@ class OutgoingFileTransferCoordinator {
     if (cause?.code === 'UNSUPPORTED_METHOD') return 'unsupported_method';
     if (cause?.code === 'NOT_CONNECTED' || cause?.code === 'RECIPIENT_UNAVAILABLE')
       return 'network_lost';
-    if (cause?.code === 'REMOTE_REJECTED') return 'cancelled_by_sender';
+    if (cause?.code === 'REMOTE_REJECTED') return 'cancelled_by_receiver';
     return 'network_lost';
   }
 
@@ -222,7 +235,9 @@ class OutgoingFileTransferCoordinator {
     if (TERMINAL.has(record.state)) return false;
     this.clearProgressTimer(record);
     record.terminalRequested = true;
-    record.state = reason === 'cancelled_by_sender' ? 'cancelled' : 'failed';
+    record.state = ['cancelled_by_sender', 'cancelled_by_receiver'].includes(reason)
+      ? 'cancelled'
+      : 'failed';
     record.endReason = reason;
     if (record.state === 'failed')
       record.errorCode =
@@ -231,13 +246,21 @@ class OutgoingFileTransferCoordinator {
           : 'TRANSPORT_FAILED';
     record.failureMessage = cause?.message;
     record.updatedAt = new Date().toISOString();
+    // An outstanding open IQ does not confirm that a bytestream exists.
+    if (record.ibbOpened && record.activePhase !== 'close') this.closeAbortedStream(record);
+    if (['timed_out', 'cancelled_by_sender'].includes(reason) && record.activePhase === 'si') {
+      void Promise.resolve()
+        .then(() => record.transport?.sendCancellationNotice?.(record, reason))
+        .catch(() => undefined);
+    }
+    record.abortController.abort();
     this.emit(record);
     return true;
   }
 
-  cancel(id) {
+  cancel(id, reason = 'cancelled_by_sender') {
     const record = this.get(id);
-    if (!TERMINAL.has(record.state)) this.markTerminal(record, 'cancelled_by_sender');
+    if (!TERMINAL.has(record.state)) this.markTerminal(record, reason);
     return record.operation.then(() => transferView(record));
   }
 
@@ -245,7 +268,7 @@ class OutgoingFileTransferCoordinator {
     await Promise.all(
       [...this.records.values()]
         .filter((record) => record.offer.accountId === accountId && !TERMINAL.has(record.state))
-        .map((record) => this.cancel(record.offer.transferId)),
+        .map((record) => this.cancel(record.offer.transferId, 'network_lost')),
     );
   }
 
@@ -281,6 +304,23 @@ class OutgoingFileTransferCoordinator {
     record.progressPending = false;
   }
 
+  closeAbortedStream(record) {
+    if (!record.ibbOpened || record.activePhase === 'close' || record.abortCloseRequested) return;
+    const sendClose = record.transport?.sendClose;
+    if (!sendClose) return;
+    record.abortCloseRequested = true;
+    const controller = new AbortController();
+    const timer = this.scheduleTimeout(
+      () => controller.abort(),
+      this.timeoutMilliseconds(record, this.iqTimeout),
+    );
+    timer?.unref?.();
+    void Promise.resolve()
+      .then(() => sendClose(record, { signal: controller.signal }))
+      .catch(() => undefined)
+      .finally(() => this.cancelTimeout(timer));
+  }
+
   async cleanup(record) {
     this.clearProgressTimer(record);
     try {
@@ -298,30 +338,34 @@ class OutgoingFileTransferCoordinator {
     delete record.sourceStats;
   }
 
-  withTimeout(operation, milliseconds, message) {
+  withTimeout(record, operation, milliseconds, message, phase) {
+    record.activePhase = phase;
     return new Promise((resolve, reject) => {
       let settled = false;
-      const timer = this.scheduleTimeout(() => {
+      const signal = record.abortController.signal;
+      const abort = () => finish(transferError('CANCELLED', 'transfer is terminal'));
+      const finish = (cause, value) => {
         if (settled) return;
         settled = true;
-        reject(transferError('TIMEOUT', message));
+        this.cancelTimeout(timer);
+        signal.removeEventListener('abort', abort);
+        if (cause) reject(cause);
+        else resolve(value);
+      };
+      const timer = this.scheduleTimeout(() => {
+        finish(transferError('TIMEOUT', message));
       }, milliseconds);
       timer?.unref?.();
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
       Promise.resolve()
-        .then(operation)
+        .then(() => {
+          if (settled || record.terminalRequested) return undefined;
+          return operation();
+        })
         .then(
-          (value) => {
-            if (settled) return;
-            settled = true;
-            this.cancelTimeout(timer);
-            resolve(value);
-          },
-          (cause) => {
-            if (settled) return;
-            settled = true;
-            this.cancelTimeout(timer);
-            reject(cause);
-          },
+          (value) => finish(undefined, value),
+          (cause) => finish(cause),
         );
     });
   }

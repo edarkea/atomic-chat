@@ -73,6 +73,7 @@ import {
   MucJoinInput,
   MucLeaveInput,
   MucSendInput,
+  MucReactionInput,
   XmppConnectionProfile,
 } from './domain';
 import {
@@ -426,6 +427,9 @@ export class UnavailableMucPort implements MucPort {
     return Promise.resolve(unsupported(input.requestId));
   }
   sendRoomMessage(input: MucSendInput): Promise<Result<RoomSendReceipt>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  sendReaction(input: MucReactionInput): Promise<Result<void>> {
     return Promise.resolve(unsupported(input.requestId));
   }
   subscribe(_listener: (event: TypedDomainEvent) => void): () => void {

@@ -55,7 +55,10 @@ contextBridge.exposeInMainWorld(
     session: Object.freeze({ getState: (accountId) => invoke('session.getState', accountId) }),
     presence: Object.freeze({ set: (input) => invoke('presence.set', input) }),
     roster: Object.freeze({ list: (accountId) => invoke('roster.list', accountId) }),
-    messaging: Object.freeze({ send: (input) => invoke('message.send', input) }),
+    messaging: Object.freeze({
+      send: (input) => invoke('message.send', input),
+      react: (input) => invoke('message.react', input),
+    }),
     broadcast: Object.freeze({ send: (input) => invoke('broadcast.send', input) }),
     chatState: Object.freeze({ send: (input) => invoke('chatState.send', input) }),
     muc: Object.freeze({
@@ -63,6 +66,7 @@ contextBridge.exposeInMainWorld(
       join: (input) => invoke('muc.join', input),
       leave: (input) => invoke('muc.leave', input),
       sendMessage: (input) => invoke('muc.sendMessage', input),
+      react: (input) => invoke('muc.react', input),
     }),
     file: Object.freeze({
       send: (input) => invoke('file.send', input),

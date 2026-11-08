@@ -20,6 +20,27 @@ function registerAccountHandlers({
     connectionError,
   } = helpers;
 
+  const reactionError = (error, event, input) => {
+    const raw = error?.code || error?.message;
+    const code = ['INVALID_INPUT', 'UNAUTHORIZED', 'NOT_CONNECTED', 'CONFLICT', 'UNSUPPORTED'].includes(raw)
+      ? raw
+      : 'TRANSPORT_FAILED';
+    return {
+      ok: false,
+      version: 1,
+      error: {
+        code,
+        retryable: code === 'NOT_CONNECTED' || code === 'TRANSPORT_FAILED',
+        requestId: requestId(event, input),
+        message: code === 'UNSUPPORTED'
+          ? 'El mensaje no tiene un identificador XMPP estable para responder o reaccionar.'
+          : code === 'CONFLICT'
+            ? 'El servidor rechazó la actualización de reacciones.'
+            : 'No fue posible actualizar las reacciones.',
+      },
+    };
+  };
+
   ipcMain.handle('contract.version', (event) => {
     assertSender(event);
     return { version: 1 };
@@ -245,17 +266,33 @@ function registerAccountHandlers({
     if (!validVersion(input)) throw new Error('UNSUPPORTED');
     const { persistence, xmpp } = getRuntime();
     const accountId = requireText(input.accountId, 'ACCOUNT');
+    if (!historySecurity.authorize(event.sender.id, accountId)) throw new Error('UNAUTHORIZED');
     if (!xmpp.sessions.has(accountId) || xmpp.states.get(accountId)?.status !== 'connected')
       throw new Error('NOT_CONNECTED');
     const conversationId = requireText(input.conversationId, 'CONVERSATION');
     const clientMessageId = requireText(input.clientMessageId, 'MESSAGE_ID');
+    let replyTo;
+    if (input.replyToMessageId !== undefined) {
+      const replyTargetId = requireText(input.replyToMessageId, 'MESSAGE_ID');
+      const target = persistence.getMessage(accountId, conversationId, replyTargetId);
+      if (!target) throw new Error('UNSUPPORTED');
+      const stable = target.originId || target.messageId || target.stanzaIds?.[0]?.id;
+      if (!stable) throw new Error('UNSUPPORTED');
+      replyTo = {
+        ...(target.messageId ? { messageId: target.messageId } : {}),
+        ...(target.originId ? { originId: target.originId } : {}),
+        stanzaIds: target.stanzaIds || [],
+        authorJid: target.senderJid,
+        quote: target.body.text,
+      };
+    }
     if (
       input.body?.kind !== 'text' ||
       typeof input.body.text !== 'string' ||
       !input.body.text.trim()
     )
       throw new Error('INVALID_BODY');
-    const sent = await xmpp.sendMessage(accountId, { ...input, to: conversationId });
+    const sent = await xmpp.sendMessage(accountId, { ...input, to: conversationId, replyTo });
     const value = {
       ...sent,
       id: `msg_${crypto.randomUUID()}`,
@@ -264,9 +301,51 @@ function registerAccountHandlers({
       clientMessageId,
       senderJid: accountId,
       status: 'sent',
+      messageId: clientMessageId,
+      originId: clientMessageId,
+      ...(replyTo ? { replyTo } : {}),
     };
     persistence.saveMessage(value);
     return { ok: true, value, version: 1, requestId: requestId(event, input) };
+  });
+  ipcMain.handle('message.react', async (event, input) => {
+    assertSender(event);
+    try {
+      if (!validVersion(input) || typeof input.accountId !== 'string' || typeof input.conversationId !== 'string' ||
+        typeof input.targetMessageId !== 'string' || !Array.isArray(input.emojis) || input.emojis.length > 64 ||
+        input.emojis.some((emoji) => typeof emoji !== 'string' || !emoji || emoji.length > 64 || !/\p{Extended_Pictographic}|\p{Regional_Indicator}|\uFE0F|\u20E3/u.test(emoji) || /[\u0000-\u001f\u007f]/u.test(emoji)))
+        throw new Error('INVALID_INPUT');
+      if (!historySecurity.authorize(event.sender.id, input.accountId)) throw new Error('UNAUTHORIZED');
+      const { persistence, xmpp } = getRuntime();
+      if (!xmpp.sessions.has(input.accountId) || xmpp.states.get(input.accountId)?.status !== 'connected') throw new Error('NOT_CONNECTED');
+      const target = persistence.getMessage(input.accountId, input.conversationId, input.targetMessageId);
+      if (!target) throw new Error('UNSUPPORTED');
+      const reference = {
+        ...(target.messageId ? { messageId: target.messageId } : {}),
+        ...(target.originId ? { originId: target.originId } : {}),
+        stanzaIds: target.stanzaIds || [],
+        authorJid: target.senderJid,
+      };
+      if (!(reference.originId || reference.messageId || reference.stanzaIds.length)) throw new Error('UNSUPPORTED');
+      await xmpp.sendReaction(input.accountId, {
+        to: input.conversationId,
+        targetMessageId: input.targetMessageId,
+        target: reference,
+        emojis: [...new Set(input.emojis)],
+        clientMessageId: `reaction_${crypto.randomUUID()}`,
+      });
+      xmpp.applyReaction({
+        accountId: input.accountId,
+        conversationId: input.conversationId,
+        target: { ...reference, messageId: reference.originId || reference.messageId },
+        emojis: [...new Set(input.emojis)],
+        actorJid: input.accountId,
+        source: 'direct',
+      });
+      return { ok: true, value: undefined, version: 1, requestId: requestId(event, input) };
+    } catch (error) {
+      return reactionError(error, event, input);
+    }
   });
   ipcMain.handle('chatState.send', async (event, input) => {
     assertSender(event);

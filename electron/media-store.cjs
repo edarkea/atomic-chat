@@ -168,15 +168,20 @@ class MediaStore {
   async resolveForPreview(senderId, input) {
     if (
       !Number.isInteger(senderId) ||
-      typeof input?.mediaId !== 'string' ||
-      !input.mediaId.trim() ||
+      typeof input?.accountId !== 'string' ||
+      !input.accountId.trim() ||
+      (input?.mediaId !== undefined &&
+        (typeof input.mediaId !== 'string' || !input.mediaId.trim())) ||
+      typeof input?.transferId !== 'string' ||
+      !input.transferId.trim() ||
       typeof input.conversationId !== 'string' ||
       !input.conversationId.trim()
     )
       throw this.error('UNAUTHORIZED', 'la referencia multimedia no está autorizada');
-    const record = this.persistence.getMedia?.(input.accountId, input.mediaId);
+    const record = this.persistence.getMediaByTransfer?.(input.accountId, input.transferId);
     if (
       !record ||
+      (input.mediaId !== undefined && record.mediaId !== input.mediaId) ||
       record.transferId !== input.transferId ||
       record.conversationId !== input.conversationId ||
       record.availability !== 'available' ||
@@ -199,7 +204,7 @@ class MediaStore {
     return {
       path: filePath,
       metadata: fileMetadata(stats),
-      mediaId: record.mediaId,
+      ...(input.mediaId ? { mediaId: record.mediaId } : {}),
       conversationId: record.conversationId,
     };
   }

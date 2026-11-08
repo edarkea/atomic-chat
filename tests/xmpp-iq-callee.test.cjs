@@ -13,6 +13,7 @@ const FEATURE = 'http://jabber.org/protocol/feature-neg';
 const FORM = 'jabber:x:data';
 const IBB = 'http://jabber.org/protocol/ibb';
 const STANZA = 'urn:ietf:params:xml:ns:xmpp-stanzas';
+const FILE_CANCEL = 'urn:atomic-chat:file-transfer:1';
 const accountId = 'account@example.invalid';
 const from = 'sender@example.invalid/Spark';
 
@@ -28,6 +29,169 @@ function offer(iqId, sid, size = '0') {
 
 async function tick() { await new Promise((resolve) => setImmediate(resolve)); }
 async function flush() { for (let index = 0; index < 4; index += 1) await tick(); }
+
+for (const outcome of ['reject', 'accept', 'fail', 'timeout']) {
+  test(`C5-INC-02 duplicate SI shares one operation before and after ${outcome}`, async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-si-replay-'));
+    const timers = [];
+    const coordinator = new FileTransferCoordinator({
+      selectDestination: async () => path.join(root, 'received.bin'),
+      scheduleTimeout: (callback) => { timers.push(callback); return callback; },
+      cancelTimeout: () => undefined,
+    });
+    const adapter = new XmppAdapter(false, null, [], coordinator);
+    adapter.sessions.set(accountId, { send: async () => undefined });
+    adapter.sessionGenerations.set(accountId, 1);
+    adapter.fileOwners.set(accountId, 42);
+    const events = [];
+    coordinator.onEvent((event) => events.push(event));
+    try {
+      const first = adapter.handleFileIq(accountId, offer('repeat-iq', 'repeat-sid'));
+      const duplicate = adapter.handleFileIq(accountId, offer('repeat-iq', 'repeat-sid'));
+      const sameStream = adapter.handleFileIq(accountId, offer('another-iq', 'repeat-sid'));
+      assert.equal(coordinator.records.size, 1);
+      const record = [...coordinator.records.values()][0];
+      if (outcome === 'accept') await coordinator.accept(record.offer.transferId, 42);
+      else if (outcome === 'fail') await coordinator.fail(record.offer.transferId, 'storage_failed');
+      else if (outcome === 'timeout') { timers[0](); await flush(); }
+      else await coordinator.reject(record.offer.transferId);
+      const results = await Promise.all([first, duplicate, sameStream]);
+      assert.ok(results.every((child) => child.toString() === results[0].toString()));
+      if (outcome === 'accept') await coordinator.cancel(record.offer.transferId);
+      const replay = await adapter.handleFileIq(accountId, offer('repeat-iq', 'repeat-sid'));
+      assert.equal(replay.toString(), results[0].toString());
+      const changedPayload = offer('repeat-iq', 'repeat-sid');
+      changedPayload.getChild('si', SI).attrs.profile = 'invalid';
+      const repeatedIq = await adapter.handleFileIq(accountId, changedPayload);
+      assert.equal(repeatedIq.toString(), results[0].toString());
+      assert.equal(events.filter((event) => event.type === 'file.offerReceived').length, 1);
+      assert.equal(events.filter((event) => ['completed', 'failed', 'cancelled'].includes(event.payload.state)).length, 1);
+      assert.equal(coordinator.records.size, 0);
+      assert.equal(adapter.filePending.size, 0);
+      const lateOpen = await adapter.handleFileIq(accountId, xml('iq',
+        { type: 'set', id: 'late-open', from }, xml('open', { xmlns: IBB, sid: 'repeat-sid', 'block-size': '1024' })));
+      assert.ok(lateOpen.getChild('item-not-found', STANZA));
+      const next = adapter.handleFileIq(accountId, offer('new-iq', 'new-sid'));
+      assert.equal(coordinator.records.size, 1);
+      await coordinator.reject([...coordinator.records.keys()][0]);
+      await next;
+      assert.equal(events.filter((event) => event.type === 'file.offerReceived').length, 2);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+}
+
+test('C5-INC-02 correlation includes account, generation and full sender JID', async () => {
+  const coordinator = new FileTransferCoordinator();
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  const responses = [];
+  responses.push(adapter.handleFileIq(accountId, offer('shared-iq', 'shared-sid')));
+  const otherResource = offer('shared-iq', 'shared-sid');
+  otherResource.attrs.from = 'sender@example.invalid/Other';
+  responses.push(adapter.handleFileIq(accountId, otherResource));
+  responses.push(adapter.handleFileIq('another@example.invalid', offer('shared-iq', 'shared-sid')));
+  adapter.sessionGenerations.set(accountId, 2);
+  responses.push(adapter.handleFileIq(accountId, offer('shared-iq', 'shared-sid')));
+  assert.equal(coordinator.records.size, 4);
+  for (const id of [...coordinator.records.keys()]) await coordinator.reject(id);
+  await Promise.all(responses);
+});
+
+test('C5-INC-05 sender cancellation message rejects a pending SI offer in Atomic Chat', async () => {
+  const coordinator = new FileTransferCoordinator();
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  const session = { send: async () => undefined };
+  adapter.sessions.set(accountId, session);
+  adapter.sessionGenerations.set(accountId, 1);
+  adapter.fileOwners.set(accountId, 42);
+
+  const pendingReply = adapter.handleFileIq(accountId, offer('sender-cancel-message', 'cancel-message-sid'));
+  const record = [...coordinator.records.values()][0];
+  assert.equal(record.state, 'offered');
+
+  adapter.handleStanza(accountId, xml('message', { type: 'chat', from },
+    xml('body', {}, 'La transferencia fue cancelada por el emisor.'),
+    xml('cancel', { xmlns: FILE_CANCEL, sid: 'cancel-message-sid' })));
+
+  const response = await pendingReply;
+  await flush();
+  assert.ok(response.getChild('not-acceptable', STANZA));
+  assert.equal(record.state, 'cancelled');
+  assert.equal(record.endReason, 'cancelled_by_sender');
+  assert.equal(coordinator.records.size, 0);
+});
+
+test('C5-INC-05 sender cancellation message cancels an accepted offer before IBB opens', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-si-cancel-accepted-'));
+  try {
+    const coordinator = new FileTransferCoordinator({
+      selectDestination: async () => path.join(root, 'received.bin'),
+    });
+    const adapter = new XmppAdapter(false, null, [], coordinator);
+    adapter.fileOwners.set(accountId, 42);
+    const recordPromise = adapter.handleFileIq(accountId, offer('accepted-cancel-message', 'accepted-cancel-sid'));
+    const record = [...coordinator.records.values()][0];
+    const accepted = await coordinator.accept(record.offer.transferId, 42);
+    assert.equal(accepted.state, 'accepted');
+    await recordPromise;
+
+    adapter.handleStanza(accountId, xml('message', { type: 'chat', from },
+      xml('body', {}, 'La transferencia fue cancelada por el emisor.'),
+      xml('cancel', { xmlns: FILE_CANCEL, sid: 'accepted-cancel-sid' })));
+    for (let index = 0; index < 100 && coordinator.records.size; index += 1)
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+    assert.equal(record.state, 'cancelled');
+    assert.equal(record.endReason, 'cancelled_by_sender');
+    assert.equal(coordinator.records.size, 0);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('C5-INC-02 bounded terminal memory never evicts an active negotiation', async () => {
+  const coordinator = new FileTransferCoordinator();
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  const activeResponse = adapter.handleFileIq(accountId, offer('active-iq', 'active-sid'));
+  const activeId = [...coordinator.records.keys()][0];
+  let offers = 1;
+  coordinator.onEvent((event) => { if (event.type === 'file.offerReceived') offers += 1; });
+  for (let index = 0; index < 260; index += 1) {
+    const response = adapter.handleFileIq(accountId, offer(`iq-${index}`, `sid-${index}`));
+    const id = [...coordinator.records.keys()].find((candidate) => candidate !== activeId);
+    await coordinator.reject(id);
+    await response;
+  }
+  const duplicate = adapter.handleFileIq(accountId, offer('active-iq', 'active-sid'));
+  assert.equal(coordinator.records.size, 1);
+  assert.equal(offers, 261);
+  await coordinator.reject(activeId);
+  await Promise.all([activeResponse, duplicate]);
+  // The oldest terminal entry has been evicted; the most recent remains replayable.
+  await adapter.handleFileIq(accountId, offer('iq-259', 'sid-259'));
+  assert.equal(coordinator.records.size, 0);
+  const evicted = adapter.handleFileIq(accountId, offer('iq-0', 'sid-0'));
+  assert.equal(coordinator.records.size, 1);
+  await coordinator.reject([...coordinator.records.keys()][0]);
+  await evicted;
+});
+
+test('C5-INC-02 real middleware replays consistent replies without another visible offer', async () => {
+  const coordinator = new FileTransferCoordinator();
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  const session = require('@xmpp/client').client({ service: 'xmpp://example.invalid', domain: 'example.invalid' });
+  const sent = [];
+  session.send = async (stanza) => { sent.push(stanza); };
+  adapter.sessions.set(accountId, session);
+  adapter.installFileIqHandlers(accountId, session);
+  session.emit('element', offer('duplicate', 'duplicate'));
+  session.emit('element', offer('duplicate', 'duplicate'));
+  assert.equal(coordinator.records.size, 1);
+  await coordinator.reject([...coordinator.records.keys()][0]);
+  await flush();
+  session.emit('element', offer('duplicate', 'duplicate'));
+  await flush();
+  assert.equal(sent.length, 3);
+  assert.ok(sent.every((reply) => reply.getChild('error')?.getChild('forbidden', STANZA)));
+  assert.equal(coordinator.records.size, 0);
+});
 
 test('C5-IQ-01 installed iqCallee fallback is service-unavailable without a handler', async () => {
   const { default: createMiddleware } = await import('@xmpp/middleware');
@@ -127,4 +291,47 @@ test('C5-IQ-03 real client middleware serializes accepted IBB open and close', a
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+test('C5-INC-01 premature IBB close reports sender cancellation and removes the partial file', { timeout: 2000 }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'atomic-iq-cancel-'));
+  const sent = [];
+  const session = require('@xmpp/client').client({ service: 'xmpp://example.invalid', domain: 'example.invalid' });
+  session.send = async (stanza) => { sent.push(stanza); };
+  const coordinator = new FileTransferCoordinator({ root, selectDestination: async () => path.join(root, 'received.bin') });
+  const adapter = new XmppAdapter(false, null, [], coordinator);
+  adapter.sessions.set(accountId, session);
+  adapter.sessionGenerations.set(accountId, 1);
+  adapter.fileOwners.set(accountId, 42);
+  adapter.installFileIqHandlers(accountId, session);
+  const handleFileIq = adapter.handleFileIq.bind(adapter);
+  let pendingIq;
+  adapter.handleFileIq = (id, stanza) => {
+    pendingIq = handleFileIq(id, stanza);
+    return pendingIq;
+  };
+  session.on('element', (stanza) => { if (adapter.isFileIq(stanza)) adapter.fileIqHandled.add(stanza); });
+  session.on('stanza', (stanza) => adapter.handleStanza(accountId, stanza));
+  try {
+    const incoming = offer('sender-cancel-si', 'sender-cancel-sid', '3');
+    session.emit('element', incoming);
+    session.emit('stanza', incoming);
+    const transfer = [...coordinator.records.values()][0];
+    await coordinator.accept(transfer.offer.transferId, 42);
+    for (const child of [
+      xml('open', { xmlns: IBB, sid: 'sender-cancel-sid', 'block-size': '1024' }),
+      xml('close', { xmlns: IBB, sid: 'sender-cancel-sid' }),
+    ]) {
+      const stanza = xml('iq', { type: 'set', id: `sender-cancel-${child.name}`, from }, child);
+      session.emit('element', stanza);
+      session.emit('stanza', stanza);
+      await pendingIq;
+      await flush();
+    }
+    assert.equal(transfer.state, 'cancelled');
+    assert.equal(transfer.endReason, 'cancelled_by_sender');
+    assert.equal(sent.find((reply) => reply.attrs.id === 'sender-cancel-close')?.attrs.type, 'result');
+    assert.equal(coordinator.records.size, 0);
+    await assert.rejects(fs.readFile(path.join(root, 'received.bin')), { code: 'ENOENT' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

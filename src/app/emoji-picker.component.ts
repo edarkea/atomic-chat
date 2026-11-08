@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 interface EmojiEntry {
@@ -58,33 +58,32 @@ export class EmojiPickerComponent {
         (!query || entry.name.toLocaleLowerCase().includes(query) || entry.emoji.includes(query)),
     );
   });
+  protected readonly recentEntries = computed(() =>
+    this.recent()
+      .map((emoji) => EMOJIS.find((entry) => entry.emoji === emoji))
+      .filter((entry): entry is EmojiEntry => Boolean(entry)),
+  );
+  private pendingRecent: ReadonlyArray<string> = [];
+  protected readonly showRecentSection = computed(
+    () => this.recentEntries().length > 0 && !this.query().trim() && this.category() === 'Todos',
+  );
 
   constructor() {
-    effect(() => {
-      const recents = this.recent();
-      try {
-        localStorage.setItem(RECENTS_KEY, JSON.stringify(recents));
-      } catch {
-        // Local recent emojis are optional and never block message composition.
-      }
-    });
+    this.pendingRecent = [...this.recent()];
+    inject(DestroyRef).onDestroy(() => this.persistRecent());
   }
 
   protected choose(entry: EmojiEntry): void {
-    const next = [entry.emoji, ...this.recent().filter((emoji) => emoji !== entry.emoji)].slice(0, 12);
-    this.recent.set(next);
+    this.pendingRecent = [
+      entry.emoji,
+      ...this.pendingRecent.filter((emoji) => emoji !== entry.emoji),
+    ].slice(0, 12);
     this.emojiSelected.emit(entry.emoji);
   }
 
   protected chooseRecent(emoji: string): void {
     const entry = EMOJIS.find((candidate) => candidate.emoji === emoji);
     if (entry) this.choose(entry);
-  }
-
-  protected recentEntries(): ReadonlyArray<EmojiEntry> {
-    return this.recent()
-      .map((emoji) => EMOJIS.find((entry) => entry.emoji === emoji))
-      .filter((entry): entry is EmojiEntry => Boolean(entry));
   }
 
   private readRecent(): ReadonlyArray<string> {
@@ -95,6 +94,14 @@ export class EmojiPickerComponent {
         : [];
     } catch {
       return [];
+    }
+  }
+
+  private persistRecent(): void {
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(this.pendingRecent));
+    } catch {
+      // Local recent emojis are optional and never block message composition.
     }
   }
 }

@@ -26,6 +26,7 @@ import {
   MessageSearchHit,
   Preferences,
   RoomState,
+  RoomMessage,
   XmppTransport,
 } from './core/domain';
 import { BroadcastFacade, bareBroadcastJid } from './core/broadcast.facade';
@@ -132,6 +133,7 @@ export class App {
   protected readonly fileActionPending = (transferId: string): boolean =>
     this.files.isLocalActionPending(transferId);
   protected readonly draft = signal('');
+  protected readonly replyingTo = signal<{ readonly id: string; readonly author: string; readonly quote: string } | undefined>(undefined);
   protected readonly login = signal({
     accountId: '',
     domain: '',
@@ -988,9 +990,13 @@ export class App {
   }
   protected async send(): Promise<void> {
     const sentDraft = this.draft();
+    const replyId = this.replyingTo()?.id;
     try {
-      const accepted = await this.chat.send(sentDraft, this.selectedJid());
-      if (accepted && this.draft() === sentDraft) this.draft.set('');
+      const accepted = await this.chat.sendMessageWithReply(sentDraft, this.selectedJid(), replyId);
+      if (accepted && this.draft() === sentDraft) {
+        this.draft.set('');
+        this.replyingTo.set(undefined);
+      }
     } catch {
       this.chat.error.set('No fue posible enviar el mensaje.');
     }
@@ -1299,10 +1305,38 @@ export class App {
     const sent = this.mucDraft();
     if (
       selection.kind === 'muc' &&
-      (await this.muc.send(selection.accountId, selection.roomJid, sent)) &&
+      (await this.muc.send(selection.accountId, selection.roomJid, sent, this.replyingTo()?.id)) &&
       this.mucDraft() === sent
-    )
+    ) {
       this.mucDraft.set('');
+      this.replyingTo.set(undefined);
+    }
+  }
+  protected startReply(message: Message | RoomMessage, muc: boolean): void {
+    if (muc) {
+      if ('roomJid' in message) {
+        const roomStanzaId = message.stanzaIds?.find((item) => item.by.toLowerCase() === message.roomJid.toLowerCase())?.id;
+        if (roomStanzaId) this.replyingTo.set({ id: roomStanzaId, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
+      }
+      return;
+    }
+    if ('conversationId' in message) {
+      const targetId = message.originId || message.messageId || message.stanzaIds?.[0]?.id;
+      if (targetId) this.replyingTo.set({ id: targetId, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
+    }
+  }
+  protected cancelReply(): void { this.replyingTo.set(undefined); }
+  protected async changeReaction(messageId: string, emojis: ReadonlyArray<string>, muc: boolean): Promise<void> {
+    const selection = this.activeSelection();
+    if (muc && selection.kind === 'muc') await this.muc.sendReaction(selection.accountId, selection.roomJid, messageId, emojis);
+    if (!muc && selection.kind === 'direct') await this.chat.sendReaction(selection.jid, messageId, emojis);
+  }
+  private mucLabel(message: import('./core/domain').RoomMessage): string {
+    return message.occupantJid.split('/').slice(1).join('/') || message.occupantJid;
+  }
+  private replyQuote(value: string): string {
+    const text = Array.from(value);
+    return text.length > 180 ? `${text.slice(0, 179).join('')}…` : value;
   }
   protected updatePreferences(changes: Partial<Preferences>): void {
     void this.chat.updatePreferences(changes);

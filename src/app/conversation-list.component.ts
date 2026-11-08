@@ -74,6 +74,12 @@ export class ConversationListComponent {
         ? this.contactGroups(contact).join(' · ')
         : 'Sin grupo';
   }
+  protected contactTooltip(contact: Contact): string {
+    return `${this.contactName(contact)}\n${this.contactKind(contact)} · ${this.remotePresenceLabel(contact)}`;
+  }
+  protected roomTooltip(room: RoomState): string {
+    return `${room.room.room}\n${room.room.service} · ${room.status}`;
+  }
   protected remotePresenceLabel(contact: Contact): string {
     const presence = contact.presence;
     if (!presence) return 'Estado desconocido';

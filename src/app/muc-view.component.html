@@ -57,7 +57,7 @@
       </button>
     }
   </div>
-  <div class="muc-messages" aria-live="polite">
+  <div #mucMessages class="muc-messages" aria-live="polite" (scroll)="onMessagesScroll()">
     @for (display of displayMessages(); track display.item.id) {
       @let message = display.item;
       @if (display.daySeparator) { <div class="day-separator" role="separator"><span>{{ dayLabel(message.receivedAt) }}</span></div> }
@@ -71,11 +71,33 @@
         [showTime]="display.showHeader"
         [timestampLabel]="display.timestampLabel"
         [groupPosition]="display.position"
+        [messageId]="stableActionId(message)"
+        [activeOverlay]="overlayFor(message.id)"
+        [replyTo]="message.replyTo"
+        [replyAuthor]="replyAuthor(message.replyTo)"
+        [replyTime]="replyTime(message.replyTo)"
+        [replyText]="replyQuote(message.replyTo)"
+        [replyTargetId]="replyTargetId(message.replyTo)"
+        [reactions]="reactionFor(message.id)"
+        [ownReactionEmojis]="ownReactionEmojis(message.id)"
+        [reactionActorLabel]="reactionActorLabel"
+        [attr.data-message-id]="message.id"
+        (replyRequested)="requestReply(message)"
+        (overlayRequested)="setOverlay(message.id, $event)"
+        (replyNavigation)="navigateToMessage($event)"
+        (reactionChanged)="reactionChanged.emit({ messageId: actionTargetId(message), emojis: $event })"
       />
     }
     @if (!messages().length) {
       <p class="reference-message empty-state">No hay mensajes todavía.</p>
     }
+  </div>
+  @if (error()) { <p class="composer-error" role="alert">{{ error() }}</p> }
+  <div class="scroll-to-latest-slot">
+    <app-scroll-to-latest-button
+      [visible]="showScrollToLatest()"
+      (requested)="scrollToLatestFromButton()"
+    />
   </div>
   <app-message-composer
     [inputName]="'muc-message'"
@@ -84,7 +106,9 @@
     [disabled]="false"
     [showEmoji]="true"
     [stickersAccountId]="roomState().accountId"
+    [replyPreview]="replyingTo() ? { author: replyingTo()!.author, quote: replyingTo()!.quote } : undefined"
     (draftChange)="draftChange.emit($event)"
     (messageSubmitted)="send.emit()"
+    (replyCancel)="replyCancel.emit()"
   />
 </section>

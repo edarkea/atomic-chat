@@ -113,17 +113,23 @@ function createXmppSession(adapter) {
       adapter.states.set(input.accountId, state);
       void loadDisplayName(adapter, input.accountId, session);
       void adapter.carbons
-        .negotiate(input.accountId, session, domain, adapter.sessionGenerations.get(input.accountId))
+        .negotiate(
+          input.accountId,
+          session,
+          domain,
+          adapter.sessionGenerations.get(input.accountId),
+        )
         .catch(() => undefined);
+      void adapter.discoverMessageCapabilities(
+        input.accountId,
+        session,
+        domain,
+        adapter.sessionGenerations.get(input.accountId),
+      ).catch(() => undefined);
       return state;
     },
     async disconnect(accountId) {
       adapter.cancelPendingDecision(accountId);
-      await adapter.fileTransfers?.cancelAccount(accountId).catch(() => undefined);
-      await adapter.outgoingTransfers?.cancelAccount(accountId).catch(() => undefined);
-      for (const [key] of adapter.filePending)
-        if (key.startsWith(`${accountId}|`)) adapter.filePending.delete(key);
-      adapter.clearMucRooms(accountId);
       const session = adapter.sessions.get(accountId);
       adapter.states.set(accountId, {
         accountId,
@@ -131,6 +137,13 @@ function createXmppSession(adapter) {
         retryable: false,
         since: new Date().toISOString(),
       });
+      await Promise.all([
+        adapter.fileTransfers?.cancelAccount(accountId).catch(() => undefined),
+        adapter.outgoingTransfers?.cancelAccount(accountId).catch(() => undefined),
+      ]);
+      for (const [key] of adapter.filePending)
+        if (key.startsWith(`${accountId}|`)) adapter.filePending.delete(key);
+      adapter.clearMucRooms(accountId);
       if (session) await session.stop();
       adapter.sessions.delete(accountId);
       adapter.rosters.delete(accountId);

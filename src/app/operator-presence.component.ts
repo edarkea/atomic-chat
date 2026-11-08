@@ -46,6 +46,10 @@ export class OperatorPresenceComponent {
       .map((part) => part.charAt(0).toLocaleUpperCase('es') + part.slice(1))
       .join(' ') || username;
   });
+  protected operatorTooltip(): string {
+    const model = this.model();
+    return `${this.displayName()}\n${model.connectionLabel} · ${model.presenceLabel}`;
+  }
   readonly presenceToggle = output<void>();
   readonly presenceClose = output<void>();
   readonly presenceSelected = output<PresenceOption>();

@@ -6,7 +6,7 @@
   (drop)="onDrop($event)"
 >
   <header class="chat-header">
-    <button class="conversation-profile" type="button" aria-label="Buscar en mensajes" title="Buscar en mensajes" [attr.aria-expanded]="searchOpen()" [disabled]="!isSelected()" (click)="toggleSearch()">
+    <button class="conversation-profile" type="button" aria-label="Buscar en mensajes" [attr.title]="profileTooltip()" [attr.aria-expanded]="searchOpen()" [disabled]="!isSelected()" (click)="toggleSearch()">
       <span class="avatar header-avatar" aria-hidden="true"><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false"><use href="#ac-contact" /></svg></span>
       <span class="conversation-profile-copy">
         <strong>{{
@@ -73,6 +73,20 @@
           [timestampLabel]="display.timestampLabel"
           [groupPosition]="display.position"
           [attr.data-message-id]="item.message.id"
+          [messageId]="stableActionId(item.message)"
+          [activeOverlay]="overlayFor(item.message.id)"
+          [replyTo]="item.message.replyTo"
+          [replyAuthor]="replyAuthor(item.message.replyTo)"
+          [replyTime]="replyTime(item.message.replyTo)"
+          [replyText]="replyQuote(item.message.replyTo)"
+          [replyTargetId]="replyTargetId(item.message.replyTo)"
+          [reactions]="reactionFor(item.message.id)"
+          [ownReactionEmojis]="ownReactionEmojis(item.message.id)"
+          [reactionActorLabel]="reactionActorLabel"
+          (replyRequested)="requestReply(item.message)"
+          (overlayRequested)="setOverlay(item.message.id, $event)"
+          (replyNavigation)="scrollToMessage($event)"
+          (reactionChanged)="reactionChanged.emit({ messageId: actionTargetId(item.message), emojis: $event })"
         />
       } @else if (item.kind === 'sticker') {
         <app-sticker-message-card
@@ -106,6 +120,12 @@
   @if (error()) {
     <p class="composer-error" role="alert">{{ error() }}</p>
   }
+  <div class="scroll-to-latest-slot">
+    <app-scroll-to-latest-button
+      [visible]="showScrollToLatest()"
+      (requested)="scrollToLatestFromButton()"
+    />
+  </div>
   <app-message-composer
     [inputName]="'message'"
     [placeholder]="'Escribir mensaje...'"
@@ -114,6 +134,7 @@
     [showAttach]="true"
     [showEmoji]="true"
     [stickersAccountId]="accountId()"
+    [replyPreview]="replyingTo() ? { author: replyingTo()!.author, quote: replyingTo()!.quote } : undefined"
     (draftChange)="draftChange.emit($event)"
     (inputFocus)="typingFocus.emit()"
     (inputBlur)="typingBlur.emit()"
@@ -121,6 +142,7 @@
     (stickerSend)="stickerSend.emit($event)"
     (filesPasted)="filesPasted.emit($event)"
     (attach)="attach.emit()"
+    (replyCancel)="replyCancel.emit()"
   />
   @if (dropActive()) {
     <div class="drop-overlay" aria-hidden="true">Suelta aquí tus archivos</div>
