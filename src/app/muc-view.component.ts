@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, HostListener, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, HostListener, input, output, signal } from '@angular/core';
 import { MucNotice, ReactionActor, ReactionState, RoomMessage, RoomParticipant, RoomState } from './core/domain';
 import { MessageComposerComponent } from './message-composer.component';
-import { MessageItemComponent, MessageOverlay } from './message-item.component';
+import { isProtectedMessageOverlayPointer, MessageItemComponent, MessageOverlay } from './message-item.component';
 import { formatMessageDay, formatMessageTime } from './message-date-time';
 import { matchesRoomMessageReference } from './core/message-reference';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
@@ -36,6 +36,17 @@ export class MucViewComponent {
   readonly replyCancel = output<void>();
   readonly reactionChanged = output<{ readonly messageId: string; readonly emojis: ReadonlyArray<string> }>();
   protected readonly activeOverlay = signal<{ readonly messageId: string; readonly overlay: MessageOverlay } | undefined>(undefined);
+  private renderedRoom = '';
+
+  constructor() {
+    effect(() => {
+      const room = `${this.roomState().room.jid.toLowerCase()}|${this.roomState().sessionGeneration}`;
+      if (room !== this.renderedRoom) {
+        this.renderedRoom = room;
+        this.activeOverlay.set(undefined);
+      }
+    });
+  }
 
   protected readonly displayMessages = computed(() =>
     groupMessagesForDisplay(
@@ -77,8 +88,7 @@ export class MucViewComponent {
   protected onDocumentPointerdown(event: PointerEvent): void {
     const active = this.activeOverlay();
     if (!active) return;
-    const host = (event.target as HTMLElement | null)?.closest('app-message-item');
-    if (host?.getAttribute('data-message-id') === active.messageId) return;
+    if (isProtectedMessageOverlayPointer(event, active.messageId)) return;
     this.activeOverlay.set(undefined);
   }
   protected requestReply(message: RoomMessage): void {

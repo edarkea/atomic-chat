@@ -14,6 +14,19 @@ export const QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', 
 export type MessageOverlay = 'quick' | 'menu' | 'picker';
 const EMOJI_TOKEN_PATTERN = /(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?)*)/gu;
 
+export function isProtectedMessageOverlayPointer(event: PointerEvent, activeMessageId: string): boolean {
+  let insideActiveMessage = false;
+  let insideOverlaySurface = false;
+  for (const target of event.composedPath()) {
+    if (!(target instanceof HTMLElement)) continue;
+    if (target.tagName.toLowerCase() === 'app-message-item' && target.dataset['messageId'] === activeMessageId)
+      insideActiveMessage = true;
+    if (target.hasAttribute('data-overlay-panel') || target.hasAttribute('data-overlay-trigger'))
+      insideOverlaySurface = true;
+  }
+  return insideActiveMessage && insideOverlaySurface;
+}
+
 /** Returns the number of emoji grapheme-like tokens when no other content is present. */
 export function emojiOnlyCount(value: string): number {
   const normalized = value.trim().replace(/\s/gu, '');

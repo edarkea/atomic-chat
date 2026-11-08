@@ -1,10 +1,29 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { MessageItemComponent, emojiOnlyCount, messageContentSegments } from './message-item.component';
+import { isProtectedMessageOverlayPointer, MessageItemComponent, emojiOnlyCount, messageContentSegments } from './message-item.component';
 import { EXTERNAL_LINK_PORT } from './core/ports';
 import { ReactionState } from './core/domain';
 
 describe('message links', () => {
+  it('protects only the active overlay surface from document pointerdown', () => {
+    const host = document.createElement('app-message-item');
+    host.dataset['messageId'] = 'wire-1';
+    const message = document.createElement('article');
+    const panel = document.createElement('div');
+    panel.dataset['overlayPanel'] = 'menu';
+    const body = document.createElement('p');
+    message.append(panel, body);
+    host.append(message);
+    document.body.append(host);
+
+    const insideEvent = { composedPath: () => [panel, message, host] } as unknown as PointerEvent;
+    const bodyEvent = { composedPath: () => [body, message, host] } as unknown as PointerEvent;
+
+    expect(isProtectedMessageOverlayPointer(insideEvent, 'wire-1')).toBe(true);
+    expect(isProtectedMessageOverlayPointer(bodyEvent, 'wire-1')).toBe(false);
+    host.remove();
+  });
+
   it('counts emoji-only messages without treating text as an emoji', () => {
     expect(emojiOnlyCount('😀')).toBe(1);
     expect(emojiOnlyCount('😎😎')).toBe(2);

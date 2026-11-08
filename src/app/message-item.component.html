@@ -87,15 +87,15 @@
   }
   @if (messageId()) {
     <div class="message-actions" aria-label="Acciones del mensaje">
-      <button type="button" class="message-action message-action--compact message-action--reaction" (click)="toggleReactionPicker()" [attr.aria-expanded]="quickReactionOpen() || reactionOpen()" aria-label="Abrir reacciones">
+      <button type="button" class="message-action message-action--compact message-action--reaction" data-overlay-trigger="quick" (click)="toggleReactionPicker()" [attr.aria-expanded]="quickReactionOpen() || reactionOpen()" aria-label="Abrir reacciones">
         <svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-smile-plus" /></svg>
       </button>
-      <button type="button" class="message-action message-action--compact message-action--menu" (click)="toggleActionMenu()" [attr.aria-expanded]="actionMenuOpen()" aria-label="Abrir acciones del mensaje">
+      <button type="button" class="message-action message-action--compact message-action--menu" data-overlay-trigger="menu" (click)="toggleActionMenu()" [attr.aria-expanded]="actionMenuOpen()" aria-label="Abrir acciones del mensaje">
         <svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false"><use href="#ac-chevron-down" /></svg>
       </button>
     </div>
     @if (quickReactionOpen()) {
-      <div class="message-quick-reactions" role="toolbar" aria-label="Reacciones rápidas">
+      <div class="message-quick-reactions" data-overlay-panel="quick" role="toolbar" aria-label="Reacciones rápidas">
         @for (emoji of quickReactionEmojis; track emoji) {
           <button type="button" class="message-action message-action--emoji" (click)="toggleQuickReaction(emoji)" [attr.aria-label]="'Reaccionar con ' + emoji">{{ emoji }}</button>
         }
@@ -103,13 +103,13 @@
       </div>
     }
     @if (actionMenuOpen()) {
-      <div class="message-action-menu" role="menu">
+      <div class="message-action-menu" data-overlay-panel="menu" role="menu">
         <button type="button" role="menuitem" (click)="replyRequested.emit(messageId()); closeOverlays()">Responder</button>
         <button type="button" role="menuitem" (click)="openFullPicker()">Reaccionar</button>
       </div>
     }
     @if (reactionOpen()) {
-      <div class="message-reaction-picker" role="dialog" aria-label="Selector de reacciones">
+      <div class="message-reaction-picker" data-overlay-panel="picker" role="dialog" aria-label="Selector de reacciones">
         <app-emoji-picker (emojiSelected)="chooseReaction($event)" (closed)="closeReactionPicker()" />
       </div>
     }

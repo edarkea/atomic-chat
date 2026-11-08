@@ -105,6 +105,15 @@ test('reply presentation and contextual actions stay outside the bubble flow', (
   assert.match(styles, /\.message-actions\s*\{[^}]*position:\s*absolute/);
   assert.match(template, /message-action--reaction/);
   assert.match(template, /message-action--menu/);
+  assert.match(template, /data-overlay-trigger="quick"/);
+  assert.match(template, /data-overlay-trigger="menu"/);
+  assert.match(template, /data-overlay-panel="quick"/);
+  assert.match(template, /data-overlay-panel="menu"/);
+  assert.match(template, /data-overlay-panel="picker"/);
+  assert.match(conversation, /isProtectedMessageOverlayPointer\(event, active\.messageId\)/);
+  assert.match(muc, /isProtectedMessageOverlayPointer\(event, active\.messageId\)/);
+  assert.doesNotMatch(conversation, /closest\('app-message-item'\)/);
+  assert.doesNotMatch(muc, /closest\('app-message-item'\)/);
   assert.match(styles, /\.message-actions\s*\{[^}]*inset:\s*0/);
   assert.match(styles, /:host\s*\{[^}]*display:\s*block[^}]*width:\s*100%/);
   assert.match(styles, /\.message:hover \.message-actions,[\s\S]*?opacity:\s*1/);

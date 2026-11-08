@@ -25,7 +25,7 @@ import {
 } from './core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
-import { MessageItemComponent, MessageOverlay } from './message-item.component';
+import { isProtectedMessageOverlayPointer, MessageItemComponent, MessageOverlay } from './message-item.component';
 import { StickerMessageCardComponent } from './sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
 import { formatMessageDay, formatMessageTime } from './message-date-time';
@@ -162,6 +162,7 @@ export class ConversationViewComponent {
     effect(() => {
       this.visibleMessageKey();
       const conversation = this.bareJid(this.selectedJid());
+      if (conversation !== this.renderedConversation) this.activeOverlay.set(undefined);
       if (conversation)
         this.scheduleScroll(conversation, conversation !== this.renderedConversation);
     });
@@ -196,8 +197,7 @@ export class ConversationViewComponent {
   protected onDocumentPointerdown(event: PointerEvent): void {
     const active = this.activeOverlay();
     if (!active) return;
-    const host = (event.target as HTMLElement | null)?.closest('app-message-item');
-    if (host?.getAttribute('data-message-id') === active.messageId) return;
+    if (isProtectedMessageOverlayPointer(event, active.messageId)) return;
     this.activeOverlay.set(undefined);
   }
   protected reactionFor(messageId: string): ReactionState | undefined {

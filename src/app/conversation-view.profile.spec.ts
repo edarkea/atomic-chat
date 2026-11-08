@@ -47,4 +47,27 @@ describe('ConversationViewComponent profile search target', () => {
     fixture.detectChanges();
     expect(label(contact)).toBe('barbara');
   });
+
+  it('clears the active overlay when the selected conversation changes', async () => {
+    await TestBed.configureTestingModule({ imports: [ConversationViewComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'barbara@localhost');
+    fixture.componentRef.setInput('accountId', 'steeven@localhost');
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      setOverlay: (messageId: string, overlay: 'quick' | 'menu' | 'picker' | undefined) => void;
+      overlayFor: (messageId: string) => 'quick' | 'menu' | 'picker' | undefined;
+    };
+    component.setOverlay('wire-1', 'menu');
+    expect(component.overlayFor('wire-1')).toBe('menu');
+    fixture.componentRef.setInput('selectedJid', 'carla@localhost');
+    fixture.detectChanges();
+    expect(component.overlayFor('wire-1')).toBeUndefined();
+  });
 });

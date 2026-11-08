@@ -35,4 +35,41 @@ describe('MucViewComponent reaction actor labels', () => {
     expect(label({ id: state.accountId, label: 'ignored', identifiable: true })).toBe('Tú');
     expect(label({ id: 'anonymous', label: 'real identity', identifiable: false })).toBe('Participante');
   });
+
+  it('clears the active overlay when the room session changes', async () => {
+    await TestBed.configureTestingModule({ imports: [MucViewComponent] }).compileComponents();
+    const room: RoomRef = {
+      service: 'conference.example.invalid',
+      room: 'lobby',
+      jid: 'lobby@conference.example.invalid',
+    };
+    const state: RoomState = {
+      accountId: 'operator@example.invalid',
+      room,
+      status: 'joined',
+      selfOccupantJid: `${room.jid}/operator`,
+      participants: [],
+      sessionGeneration: 1,
+    };
+    const fixture = TestBed.createComponent(MucViewComponent);
+    fixture.componentRef.setInput('roomState', state);
+    fixture.componentRef.setInput('notices', []);
+    fixture.componentRef.setInput('participants', []);
+    fixture.componentRef.setInput('allParticipantCount', 0);
+    fixture.componentRef.setInput('participantPage', 0);
+    fixture.componentRef.setInput('hasMoreParticipants', false);
+    fixture.componentRef.setInput('messages', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      setOverlay: (messageId: string, overlay: 'quick' | 'menu' | 'picker' | undefined) => void;
+      overlayFor: (messageId: string) => 'quick' | 'menu' | 'picker' | undefined;
+    };
+    component.setOverlay('room-message', 'picker');
+    expect(component.overlayFor('room-message')).toBe('picker');
+    fixture.componentRef.setInput('roomState', { ...state, sessionGeneration: 2 });
+    fixture.detectChanges();
+    expect(component.overlayFor('room-message')).toBeUndefined();
+  });
 });
