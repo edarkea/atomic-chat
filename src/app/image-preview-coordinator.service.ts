@@ -71,7 +71,24 @@ export class ImagePreviewCoordinator {
   }
 
   enqueue(key: string, priority: PreviewVisibilityPriority, run: () => Promise<void>): () => void {
-    if (this.activeKeys.has(key)) return () => undefined;
+    return this.enqueueInternal(key, priority, run, false);
+  }
+
+  enqueueAfterActive(
+    key: string,
+    priority: PreviewVisibilityPriority,
+    run: () => Promise<void>,
+  ): () => void {
+    return this.enqueueInternal(key, priority, run, true);
+  }
+
+  private enqueueInternal(
+    key: string,
+    priority: PreviewVisibilityPriority,
+    run: () => Promise<void>,
+    allowAfterActive: boolean,
+  ): () => void {
+    if (this.activeKeys.has(key) && !allowAfterActive) return () => undefined;
     const existing = this.jobs.get(key);
     if (existing) {
       existing.priority = priority;

@@ -36,7 +36,9 @@ interface PreviewSession {
   streamId?: string;
   objectUrl?: string;
   retryTimer?: ReturnType<typeof setTimeout>;
+  releaseTimer?: ReturnType<typeof setTimeout>;
   visible: boolean;
+  loading: boolean;
   priority: PreviewVisibilityPriority;
   cancelQueued?: () => void;
   resourceConstraintRetries: number;
@@ -185,6 +187,7 @@ export class FileTransferCardComponent {
           ...(mediaId ? { mediaId } : {}),
           cancelled: false,
           visible: false,
+          loading: false,
           priority: 'prefetch',
           resourceConstraintRetries: 0,
         }
@@ -225,6 +228,8 @@ export class FileTransferCardComponent {
     if (!session || session.cancelled) return;
     if (this.previewState() === 'unavailable') return;
     if (active) {
+      if (session.releaseTimer) clearTimeout(session.releaseTimer);
+      session.releaseTimer = undefined;
       session.visible = true;
       session.priority = priority;
       if (session.objectUrl) {
@@ -235,6 +240,7 @@ export class FileTransferCardComponent {
         this.coordinator.reprioritize(sessionKey(session), priority);
         return;
       }
+      if (session.loading) return;
       this.previewState.set('pending');
       session.cancelQueued = this.coordinator.enqueue(sessionKey(session), priority, async () => {
         session.cancelQueued = undefined;
@@ -248,40 +254,70 @@ export class FileTransferCardComponent {
     session.cancelQueued = undefined;
     if (session.retryTimer) clearTimeout(session.retryTimer);
     session.retryTimer = undefined;
-    if (session.objectUrl || session.preview || session.streamId) {
-      this.currentSession = undefined;
-      this.clearView();
-      void this.cancelSession(session);
-    } else if (this.previewState() !== 'unavailable') {
-      session.resourceConstraintRetries = 0;
+    if (session.releaseTimer) clearTimeout(session.releaseTimer);
+    session.releaseTimer = setTimeout(() => {
+      session.releaseTimer = undefined;
+      if (!session.visible && this.currentSession === session) this.releaseSession(session);
+    }, 250);
+    if (this.previewState() !== 'unavailable' && !session.loading && !session.objectUrl)
       this.previewState.set('inactive');
-    }
   }
 
   private async loadPreview(transfer: FileTransfer, session: PreviewSession): Promise<void> {
-    if (session.cancelled || !session.visible || this.currentSession !== session) return;
+    if (session.cancelled || !session.visible || this.currentSession !== session || session.loading)
+      return;
+    session.loading = true;
     this.previewState.set('loading');
-    const outcome = await this.loadPreviewAttempt(transfer, session);
-    if (
-      outcome === 'resource-constraint' &&
-      session.visible &&
-      session.resourceConstraintRetries < 1
-    ) {
-      session.resourceConstraintRetries += 1;
-      this.previewState.set('pending');
-      session.retryTimer = setTimeout(() => {
-        session.retryTimer = undefined;
-        if (!session.visible || session.cancelled || this.currentSession !== session) return;
-        session.cancelQueued = this.coordinator.enqueue(
-          sessionKey(session),
-          session.priority,
-          async () => {
-            session.cancelQueued = undefined;
-            await this.loadPreview(this.transfer(), session);
-          },
-        );
-      }, 250);
+    try {
+      const outcome = await this.loadPreviewAttempt(transfer, session);
+      if (
+        outcome === 'resource-constraint' &&
+        session.visible &&
+        session.resourceConstraintRetries < 1
+      ) {
+        session.resourceConstraintRetries += 1;
+        this.previewState.set('pending');
+        session.retryTimer = setTimeout(() => {
+          session.retryTimer = undefined;
+          this.queuePreview(session);
+        }, 250);
+      }
+    } finally {
+      session.loading = false;
+      if (
+        session.visible &&
+        !session.cancelled &&
+        this.currentSession === session &&
+        !session.objectUrl &&
+        this.previewState() !== 'unavailable' &&
+        !session.retryTimer
+      ) {
+        this.queuePreview(session, true);
+      }
     }
+  }
+
+  private queuePreview(session: PreviewSession, afterCurrentRun = false): void {
+    if (!session.visible || session.cancelled || this.currentSession !== session) return;
+    if (session.cancelQueued) {
+      this.coordinator.reprioritize(sessionKey(session), session.priority);
+      return;
+    }
+    this.previewState.set('pending');
+    const enqueue = afterCurrentRun
+      ? this.coordinator.enqueueAfterActive.bind(this.coordinator)
+      : this.coordinator.enqueue.bind(this.coordinator);
+    session.cancelQueued = enqueue(sessionKey(session), session.priority, async () => {
+      session.cancelQueued = undefined;
+      await this.loadPreview(this.transfer(), session);
+    });
+  }
+
+  private releaseSession(session: PreviewSession): void {
+    if (this.currentSession !== session) return;
+    this.currentSession = undefined;
+    this.clearView();
+    void this.cancelSession(session);
   }
 
   private async loadPreviewAttempt(
@@ -366,6 +402,8 @@ export class FileTransferCardComponent {
     session.cancelQueued = undefined;
     if (session.retryTimer) clearTimeout(session.retryTimer);
     session.retryTimer = undefined;
+    if (session.releaseTimer) clearTimeout(session.releaseTimer);
+    session.releaseTimer = undefined;
     const request: ImagePreviewRequest = {
       version: 1,
       requestId: createOpaqueId('preview-cancel'),

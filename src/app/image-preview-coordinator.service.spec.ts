@@ -143,4 +143,28 @@ describe('ImagePreviewCoordinator', () => {
 
     expect(started).toEqual(['active', 'active-two']);
   });
+
+  it('ignores duplicate active work while allowing an explicit follow-up after it', async () => {
+    const coordinator = new ImagePreviewCoordinator();
+    let finishActive: (() => void) | undefined;
+    const active = new Promise<void>((resolve) => {
+      finishActive = resolve;
+    });
+    const started: string[] = [];
+    coordinator.enqueue('same-key', 'visible', async () => {
+      started.push('first');
+      await active;
+    });
+    await Promise.resolve();
+    coordinator.enqueue('same-key', 'visible', async () => {
+      started.push('duplicate');
+    });
+    coordinator.enqueueAfterActive('same-key', 'visible', async () => {
+      started.push('follow-up');
+    });
+
+    finishActive?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual(['first', 'follow-up']);
+  });
 });
