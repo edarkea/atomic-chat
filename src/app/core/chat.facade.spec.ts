@@ -287,7 +287,15 @@ describe('ChatFacade roster reconciliation', () => {
     const facade = TestBed.inject(ChatFacade);
     const pending = facade.loadConversation('first@example.invalid');
     await Promise.resolve();
+    const firstGeneration = facade.initialHistory()?.generation;
     const second = facade.loadConversation('second@example.invalid');
+    expect(facade.initialHistory()).toEqual({
+      accountId: 'a@example.invalid',
+      conversationId: 'second@example.invalid',
+      generation: expect.any(Number),
+      status: 'loading',
+    });
+    expect(facade.initialHistory()?.generation).toBeGreaterThan(firstGeneration ?? 0);
     releaseFirst(
       ok({
         items: [historyMessage('a@example.invalid', 'first@example.invalid', 1)],
@@ -301,6 +309,10 @@ describe('ChatFacade roster reconciliation', () => {
     releaseSecond(ok({ items: [], nextCursor: null, hasMore: false }));
     await second;
     expect(facade.historyLoading()).toBe(false);
+    expect(facade.initialHistory()).toMatchObject({
+      conversationId: 'second@example.invalid',
+      status: 'ready',
+    });
   });
 
   it('ignores a stale timeline response after changing conversations', async () => {
@@ -355,6 +367,43 @@ describe('ChatFacade roster reconciliation', () => {
     expect(facade.timelineItems().map((item) => item.id)).toEqual(['second-history']);
     expect(facade.messages().map((message) => message.id)).toEqual(['message-2']);
     expect(facade.historyLoading()).toBe(false);
+  });
+
+  it('keeps the timeline unavailable while a search hit replaces the initial page', async () => {
+    historyPort.listPage = async () => ok({ items: [], nextCursor: null, hasMore: false });
+    let releaseAround!: (value: ReturnType<typeof ok>) => void;
+    historyPort.around = () =>
+      new Promise((resolve) => {
+        releaseAround = resolve as (value: ReturnType<typeof ok>) => void;
+      });
+    const facade = TestBed.inject(ChatFacade);
+    const pending = facade.revealSearchHit({
+      accountId: 'a@example.invalid',
+      conversationId: 'search@example.invalid',
+      messageId: 'message-1',
+      senderJid: 'search@example.invalid',
+      bodyPreview: 'resultado',
+      createdAt: new Date(1700000000000).toISOString(),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(facade.initialHistory()).toMatchObject({
+      conversationId: 'search@example.invalid',
+      status: 'loading',
+    });
+
+    releaseAround(
+      ok({
+        items: [historyMessage('a@example.invalid', 'search@example.invalid', 1)],
+        nextCursor: null,
+        hasMore: false,
+      }),
+    );
+    await pending;
+    expect(facade.initialHistory()).toMatchObject({
+      conversationId: 'search@example.invalid',
+      status: 'ready',
+    });
   });
 
   it('keeps an incoming message that arrives while history is loading', async () => {

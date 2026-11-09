@@ -54,6 +54,10 @@
   >
     @if (!isSelected()) {
       <div class="reference-message empty-state">Selecciona una conversación para comenzar.</div>
+    } @else if (!initialTimelineReady()) {
+      <div class="reference-message empty-state" role="status" aria-live="polite">
+        Cargando conversación…
+      </div>
     } @else if (!timeline().length) {
       <div class="reference-message empty-state">No hay mensajes todavía.</div>
     }

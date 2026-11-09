@@ -21,11 +21,11 @@ class VisibleIntersectionObserver implements IntersectionObserver {
     VisibleIntersectionObserver.instance = this;
   }
   observe(target: Element): void {
-    const entry = { target, isIntersecting: true, boundingClientRect: { top: 10, bottom: 100 } } as IntersectionObserverEntry;
+    const entry = { target, isIntersecting: true, intersectionRatio: 1, boundingClientRect: { top: 10, bottom: 100 } } as IntersectionObserverEntry;
     this.callback([entry], this);
   }
   emit(target: Element, isIntersecting: boolean): void {
-    const entry = { target, isIntersecting, boundingClientRect: { top: -400, bottom: -300 } } as IntersectionObserverEntry;
+    const entry = { target, isIntersecting, intersectionRatio: isIntersecting ? 1 : 0, boundingClientRect: { top: -400, bottom: -300 } } as IntersectionObserverEntry;
     this.callback([entry], this);
   }
   unobserve(_target: Element): void {}
@@ -130,6 +130,14 @@ describe('FileTransferCardComponent preview lifecycle', () => {
     const root = document.createElement('div');
     vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 500 } as DOMRect);
     fixture.componentRef.setInput('previewRoot', root);
+  });
+
+  it('does not request image bytes until its chat scroll root is available', async () => {
+    fixture.componentRef.setInput('previewRoot', undefined);
+    fixture.componentRef.setInput('transfer', transfer());
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('does not loop or duplicate the load when the completed transfer is unchanged', async () => {

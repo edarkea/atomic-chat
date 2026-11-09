@@ -51,7 +51,15 @@ interface HistoryContext {
   readonly accountId: string;
   readonly conversationId: string;
   readonly generation: number;
+  readonly loadGeneration: number;
   readonly requestId: string;
+}
+
+export interface InitialHistoryState {
+  readonly accountId: string;
+  readonly conversationId: string;
+  readonly generation: number;
+  readonly status: 'loading' | 'ready';
 }
 
 function loginErrorMessage(error: unknown): string {
@@ -103,6 +111,7 @@ export class ChatFacade {
   readonly messageSearchHasMore = signal(false);
   readonly timelineItems = signal<ReadonlyArray<HistoryTimelineItem>>([]);
   readonly timelineSupported = signal(false);
+  readonly initialHistory = signal<InitialHistoryState | null>(null);
   readonly historyLoading = signal(false);
   readonly hasOlderMessages = signal(false);
   readonly hasNewerMessages = signal(false);
@@ -140,6 +149,7 @@ export class ChatFacade {
   private timelinePages: Array<{ cursor: string }> = [];
   private timelineMode = false;
   private historyContext: HistoryContext | null = null;
+  private historyLoadGeneration = 0;
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly typingStates = new Map<string, ChatState>();
   private readonly outgoingChatStates = new Map<string, ChatState>();
@@ -385,6 +395,8 @@ export class ChatFacade {
     this.messages.set([]);
     this.timelineItems.set([]);
     this.timelineSupported.set(false);
+    this.initialHistory.set(null);
+    this.historyLoadGeneration += 1;
     this.olderCursor = null;
     this.newerCursor = null;
     this.historyPages = [];
@@ -531,7 +543,10 @@ export class ChatFacade {
     }
   }
 
-  async loadConversation(conversationId: string): Promise<void> {
+  async loadConversation(
+    conversationId: string,
+    options?: { readonly deferInitialReady?: boolean },
+  ): Promise<void> {
     if (!this.isAvailable() || !conversationId) return;
     const accountId = this.accountId();
     const generation = this.identityGeneration;
@@ -540,9 +555,16 @@ export class ChatFacade {
       accountId,
       conversationId: this.bareConversation(conversationId),
       generation,
+      loadGeneration: ++this.historyLoadGeneration,
       requestId,
     };
     this.historyContext = context;
+    this.initialHistory.set({
+      accountId,
+      conversationId: context.conversationId,
+      generation: context.loadGeneration,
+      status: 'loading',
+    });
     this.historyLoading.set(true);
     this.olderCursor = null;
     this.newerCursor = null;
@@ -643,7 +665,16 @@ export class ChatFacade {
         );
       } else this.error.set(result.error.message);
     } finally {
-      if (this.isHistoryContextCurrent(context)) this.historyLoading.set(false);
+      if (this.isHistoryContextCurrent(context)) {
+        this.historyLoading.set(false);
+        if (!options?.deferInitialReady)
+          this.initialHistory.set({
+            accountId: context.accountId,
+            conversationId: context.conversationId,
+            generation: context.loadGeneration,
+            status: 'ready',
+          });
+      }
     }
   }
 
@@ -696,8 +727,14 @@ export class ChatFacade {
 
   async revealSearchHit(hit: MessageSearchHit): Promise<void> {
     if (hit.accountId !== this.accountId()) return;
-    await this.loadConversation(hit.conversationId);
-    if (this.historyContext?.conversationId !== this.bareConversation(hit.conversationId)) return;
+    await this.loadConversation(hit.conversationId, { deferInitialReady: true });
+    const context = this.historyContext;
+    if (
+      !context ||
+      context.conversationId !== this.bareConversation(hit.conversationId) ||
+      !this.isHistoryContextCurrent(context)
+    )
+      return;
     const input: MessageAroundInput = {
       version: 1,
       requestId: createOpaqueId('message-around'),
@@ -707,16 +744,26 @@ export class ChatFacade {
       createdAt: hit.createdAt,
       limit: 100,
     };
-    const result: Result<HistoryPage> = await this.history.around(input);
-    const context = this.historyContext;
-    if (!context || !this.isHistoryContextCurrent(context)) return;
-    if (!result.ok) {
-      this.error.set(result.error.message);
-      return;
+    try {
+      const result: Result<HistoryPage> = await this.history.around(input);
+      if (!this.isHistoryContextCurrent(context)) return;
+      if (!result.ok) {
+        this.error.set(result.error.message);
+        return;
+      }
+      this.messages.set(result.value.items);
+      this.hasOlderMessages.set(false);
+      this.hasNewerMessages.set(false);
+    } finally {
+      if (this.isHistoryContextCurrent(context)) {
+        this.initialHistory.set({
+          accountId: context.accountId,
+          conversationId: context.conversationId,
+          generation: context.loadGeneration,
+          status: 'ready',
+        });
+      }
     }
-    this.messages.set(result.value.items);
-    this.hasOlderMessages.set(false);
-    this.hasNewerMessages.set(false);
   }
 
   async loadOlderMessages(conversationId: string): Promise<void> {

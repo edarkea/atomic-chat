@@ -3,7 +3,6 @@ import { Injectable } from '@angular/core';
 export type PreviewVisibilityPriority = 'visible' | 'prefetch';
 
 interface VisibilityRegistration {
-  readonly root: HTMLElement;
   readonly observer: IntersectionObserver;
   readonly callbacks: Map<
     HTMLElement,
@@ -43,19 +42,16 @@ export class ImagePreviewCoordinator {
           for (const entry of entries) {
             const notify = callbacks.get(entry.target as HTMLElement);
             if (!notify) continue;
-            if (!entry.isIntersecting) {
+            if (!entry.isIntersecting || entry.intersectionRatio <= 0) {
               notify(false, 'prefetch');
               continue;
             }
-            const rootBounds = root.getBoundingClientRect();
-            const bounds = entry.boundingClientRect;
-            const visible = bounds.bottom > rootBounds.top && bounds.top < rootBounds.bottom;
-            notify(true, visible ? 'visible' : 'prefetch');
+            notify(true, 'visible');
           }
         },
-        { root, rootMargin: '250px 0px' },
+        { root, rootMargin: '0px' },
       );
-      registration = { root, observer, callbacks };
+      registration = { observer, callbacks };
       this.registrations.set(root, registration);
     }
 

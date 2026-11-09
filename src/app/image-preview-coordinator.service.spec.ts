@@ -34,6 +34,7 @@ class FakeIntersectionObserver implements IntersectionObserver {
     const entry = {
       target,
       isIntersecting,
+      intersectionRatio: isIntersecting ? 1 : 0,
       boundingClientRect: { top, bottom },
     } as IntersectionObserverEntry;
     this.callback([entry], this);
@@ -90,7 +91,7 @@ describe('ImagePreviewCoordinator', () => {
     expect(started).toEqual(['recent-visible', 'first', 'second', 'old-nearby']);
   });
 
-  it('observes against the chat container, activates near items and disconnects when removed', () => {
+  it('observes against the chat container, activates only intersections and disconnects when removed', () => {
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
     const coordinator = new ImagePreviewCoordinator();
     const root = document.createElement('div');
@@ -103,11 +104,11 @@ describe('ImagePreviewCoordinator', () => {
     );
     const observer = FakeIntersectionObserver.instances[0];
     expect(observer.root).toBe(root);
-    expect(observer.rootMargin).toBe('250px 0px');
-    observer.emit(target, true, 20, 80);
+    expect(observer.rootMargin).toBe('0px');
+    observer.emit(target, false, 20, 80);
     observer.emit(target, true, 120, 180);
     expect(states).toEqual([
-      [true, 'prefetch'],
+      [false, 'prefetch'],
       [true, 'visible'],
     ]);
 

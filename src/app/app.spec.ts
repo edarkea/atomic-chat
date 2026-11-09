@@ -3,13 +3,29 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { App } from './app';
 import { ChatFacade } from './core/chat.facade';
-import { CertificateTrustRequest, Message, RoomMessage, RoomRef, RoomState } from './core/domain';
+import type { InitialHistoryState } from './core/chat.facade';
+import {
+  CertificateTrustRequest,
+  HistoryTimelineItem,
+  Message,
+  RoomMessage,
+  RoomRef,
+  RoomState,
+  TypedDomainEvent,
+} from './core/domain';
 import { MucFacade } from './core/muc.facade';
+import { FileFacade } from './core/file.facade';
 import { corePortProviders } from './core/port-providers';
 import { BROADCAST_PORT, FILE_TRANSFER_PORT } from './core/ports';
 import { UnavailableFileTransferPort } from './core/unavailable.ports';
 
 function fakeFacade() {
+  const initialHistory = signal<InitialHistoryState>({
+    accountId: 'a@example.invalid',
+    conversationId: 'contact@example.invalid',
+    generation: 1,
+    status: 'ready' as const,
+  });
   return {
     accountId: signal('a@example.invalid'),
     connection: signal({
@@ -20,8 +36,14 @@ function fakeFacade() {
     }),
     contacts: signal([]),
     messages: signal([]),
-    timelineItems: vi.fn(() => []),
-    timelineSupported: vi.fn(() => true),
+    reactions: signal(new Map()),
+    initialHistory,
+    messageSearchResults: signal([]),
+    messageSearchLoading: signal(false),
+    messageSearchError: signal<string | null>(null),
+    messageSearchHasMore: signal(false),
+    timelineItems: signal<ReadonlyArray<HistoryTimelineItem>>([]),
+    timelineSupported: signal(true),
     presence: signal({ jid: 'a@example.invalid', availability: 'available' }),
     preferences: signal({
       theme: 'atomic',
@@ -43,7 +65,15 @@ function fakeFacade() {
     hasNewerMessages: signal(false),
     connect: vi.fn(async () => true),
     send: vi.fn(async () => true),
-    loadConversation: vi.fn(async () => undefined),
+    loadConversation: vi.fn(async (conversationId: string) => {
+      initialHistory.set({
+        accountId: 'a@example.invalid',
+        conversationId: conversationId.split('/')[0].toLowerCase(),
+        generation: initialHistory().generation + 1,
+        status: 'loading',
+      });
+      initialHistory.update((current) => ({ ...current, status: 'ready' }));
+    }),
     loadOlderMessages: vi.fn(async () => undefined),
     loadNewerMessages: vi.fn(async () => undefined),
     setAvailability: vi.fn(),
@@ -87,6 +117,7 @@ function fakeMucFacade() {
     hasMoreParticipants: signal(false),
     participantPage: signal(0),
     messages,
+    reactions: signal(new Map()),
     error: signal<string | null>(null),
     visibleNotices: signal([]),
     discover: vi.fn(async () => undefined),
@@ -202,6 +233,60 @@ describe('App composer integration', () => {
       expect(icon.getAttribute('aria-hidden')).toBe('true');
       expect(icon.getAttribute('focusable')).toBe('false');
     }
+  });
+
+  it('publishes precached image records with their history page, never as an isolated early timeline', () => {
+    const media = {
+      mediaId: 'media-cached',
+      transferId: 'transfer-cached',
+      accountId: 'a@example.invalid',
+      conversationId: 'contact@example.invalid',
+      direction: 'incoming' as const,
+      senderJid: 'contact@example.invalid',
+      originalName: 'cached.jpg',
+      mimeType: 'image/jpeg' as const,
+      sizeBytes: '128',
+      width: 320,
+      height: 240,
+      createdAt: '2026-11-01T10:00:00.000Z',
+      availability: 'available' as const,
+    };
+    const files = TestBed.inject(FileFacade);
+    (files as unknown as { onEvent(event: TypedDomainEvent): void }).onEvent({
+      version: 1,
+      eventId: 'media-event',
+      type: 'media.available',
+      payload: media,
+    });
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'contact@example.invalid',
+      generation: 2,
+      status: 'loading',
+    });
+    facade.messages.set([chatMessage('historial unificado', 'history-message')]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.file-message')).toHaveLength(0);
+    expect(fixture.nativeElement.textContent).toContain('Cargando conversación');
+
+    facade.timelineItems.set([
+      {
+        kind: 'text',
+        id: 'history-message',
+        sortAt: '2026-11-01T09:00:00.000Z',
+        message: chatMessage('historial unificado', 'history-message'),
+      },
+      { kind: 'image', id: 'media-cached', sortAt: media.createdAt, media },
+    ]);
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'contact@example.invalid',
+      generation: 2,
+      status: 'ready',
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('historial unificado');
+    expect(fixture.nativeElement.querySelectorAll('.file-message')).toHaveLength(1);
   });
 
   it('opens an accessible Nuevo mensaje dialog with discovery and nickname controls', () => {
@@ -838,6 +923,12 @@ describe('App composer integration', () => {
       accountId: 'a@example.invalid',
       jid: 'other@example.invalid',
     });
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'other@example.invalid',
+      generation: 2,
+      status: 'ready',
+    });
     input.value = 'cuenta B';
     input.dispatchEvent(new Event('input'));
     resolve(true);
@@ -911,7 +1002,15 @@ describe('App composer integration', () => {
       accountId: 'a@example.invalid',
       jid: 'other@example.invalid',
     });
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'other@example.invalid',
+      generation: 2,
+      status: 'ready',
+    });
     fixture.detectChanges();
+    await fixture.whenStable();
+    await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(900);
   });

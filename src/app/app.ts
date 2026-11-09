@@ -431,12 +431,23 @@ export class App {
           (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid),
       );
   });
+  protected readonly initialTimelineReady = computed(() => {
+    const jid = this.bareJid(this.selectedJid());
+    if (!jid) return true;
+    const history = this.chat.initialHistory();
+    return Boolean(
+      history?.status === 'ready' &&
+        history.accountId === this.chat.accountId() &&
+        history.conversationId === jid,
+    );
+  });
   protected readonly typingContact = computed(() => {
     const jid = this.bareJid(this.selectedJid());
     return Boolean(jid && this.chat.chatStates?.().get(jid) === 'composing');
   });
   protected readonly conversationTimeline = computed<ReadonlyArray<ConversationTimelineItem>>(
     () => {
+      if (!this.initialTimelineReady()) return [];
       const messages: ConversationTimelineItem[] = this.visibleMessages().map((message) => ({
         kind: 'text',
         id: `text:${message.clientMessageId || message.id}`,
@@ -466,8 +477,7 @@ export class App {
         )
         .map((item) => item.media);
       const persistedImages = this.chat.timelineSupported() ? timelineMedia : [];
-      const liveMedia = this.files.liveMedia();
-      const historicalImages: ConversationTimelineItem[] = [...persistedImages, ...liveMedia]
+      const historicalImages: ConversationTimelineItem[] = [...persistedImages]
         .filter(
           (media, index, all) =>
             all.findIndex((candidate) => candidate.mediaId === media.mediaId) === index,
@@ -1186,6 +1196,7 @@ export class App {
   }
   protected async selectMessageSearchHit(hit: MessageSearchHit): Promise<void> {
     if (hit.accountId !== this.chat.accountId()) return;
+    this.conversationView?.beginSearchNavigation();
     const contact = this.chat
       .contacts()
       .find((item) => this.bareJid(item.jid) === this.bareJid(hit.conversationId)) || {

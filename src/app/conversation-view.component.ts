@@ -82,6 +82,7 @@ export class ConversationViewComponent {
   readonly selectedJid = input.required<string>();
   readonly accountId = input.required<string>();
   readonly timeline = input.required<ReadonlyArray<ConversationTimelineItem>>();
+  readonly initialTimelineReady = input.required<boolean>();
   readonly error = input<string | null>(null);
   readonly draft = input.required<string>();
   readonly historyLoading = input.required<boolean>();
@@ -137,6 +138,7 @@ export class ConversationViewComponent {
   private frame: number | undefined;
   private scrollGeneration = 0;
   private programmaticLatestScroll = false;
+  private searchNavigationPending = false;
   protected readonly dropActive = signal(false);
   private dragDepth = 0;
   private readonly destroyRef = inject(DestroyRef);
@@ -167,6 +169,16 @@ export class ConversationViewComponent {
     effect(() => {
       this.visibleMessageKey();
       const conversation = this.bareJid(this.selectedJid());
+      const initialTimelineReady = this.initialTimelineReady();
+      if (!initialTimelineReady || this.searchNavigationPending) {
+        this.previewRoot.set(undefined);
+        this.scrollGeneration += 1;
+        if (this.frame !== undefined) {
+          cancelAnimationFrame(this.frame);
+          this.frame = undefined;
+        }
+        return;
+      }
       if (conversation !== this.renderedConversation) {
         this.activeOverlay.set(undefined);
         this.showScrollToLatest.set(false);
@@ -404,17 +416,36 @@ export class ConversationViewComponent {
           (element) => element.dataset['messageId'] === messageId,
         );
         message?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        this.searchNavigationPending = false;
+        this.renderedConversation = this.bareJid(this.selectedJid());
+        this.previewRoot.set(content);
       });
     });
   }
 
+  public beginSearchNavigation(): void {
+    this.searchNavigationPending = true;
+    this.previewRoot.set(undefined);
+    this.scrollGeneration += 1;
+    if (this.frame !== undefined) {
+      cancelAnimationFrame(this.frame);
+      this.frame = undefined;
+    }
+  }
+
   private scheduleScroll(conversation: string, force: boolean): void {
+    if (!this.initialTimelineReady() || this.searchNavigationPending) return;
     const generation = ++this.scrollGeneration;
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     if (!force && !this.followLatest) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = undefined;
-      if (generation !== this.scrollGeneration || this.bareJid(this.selectedJid()) !== conversation)
+      if (
+        generation !== this.scrollGeneration ||
+        !this.initialTimelineReady() ||
+        this.searchNavigationPending ||
+        this.bareJid(this.selectedJid()) !== conversation
+      )
         return;
       const element = this.chatContent?.nativeElement;
       if (!element) return;
