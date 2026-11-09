@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ChatFileHistoryRecord,
   FileTransfer,
@@ -9,6 +9,29 @@ import {
 } from './core/domain';
 import { PREVIEW_PORT, PreviewPort } from './core/ports';
 import { FileTransferCardComponent } from './file-transfer-card.component';
+
+class VisibleIntersectionObserver implements IntersectionObserver {
+  static instance: VisibleIntersectionObserver | undefined;
+  readonly root: Element | Document | null;
+  readonly rootMargin: string;
+  readonly thresholds: ReadonlyArray<number> = [0];
+  constructor(private readonly callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    this.root = options?.root ?? null;
+    this.rootMargin = options?.rootMargin ?? '0px';
+    VisibleIntersectionObserver.instance = this;
+  }
+  observe(target: Element): void {
+    const entry = { target, isIntersecting: true, boundingClientRect: { top: 10, bottom: 100 } } as IntersectionObserverEntry;
+    this.callback([entry], this);
+  }
+  emit(target: Element, isIntersecting: boolean): void {
+    const entry = { target, isIntersecting, boundingClientRect: { top: -400, bottom: -300 } } as IntersectionObserverEntry;
+    this.callback([entry], this);
+  }
+  unobserve(_target: Element): void {}
+  disconnect(): void {}
+  takeRecords(): IntersectionObserverEntry[] { return []; }
+}
 
 const transfer = (state: FileTransfer['state'] = 'completed'): FileTransfer => ({
   offer: {
@@ -63,6 +86,11 @@ const historicalFile = (availability: ChatFileHistoryRecord['availability']): Ch
   availability,
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+  VisibleIntersectionObserver.instance = undefined;
+});
+
 describe('FileTransferCardComponent preview lifecycle', () => {
   let fixture: ComponentFixture<FileTransferCardComponent>;
   let get: ReturnType<typeof vi.fn<PreviewPort['get']>>;
@@ -72,6 +100,7 @@ describe('FileTransferCardComponent preview lifecycle', () => {
   let revoke: ReturnType<typeof vi.fn<PreviewPort['revoke']>>;
 
   beforeEach(async () => {
+    vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver);
     get = vi.fn<PreviewPort['get']>(async () => unavailable());
     open = vi.fn<PreviewPort['open']>(async () => {
       throw new Error('open no preparado');
@@ -98,6 +127,9 @@ describe('FileTransferCardComponent preview lifecycle', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(FileTransferCardComponent);
     fixture.componentRef.setInput('label', 'Archivo recibido correctamente');
+    const root = document.createElement('div');
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 500 } as DOMRect);
+    fixture.componentRef.setInput('previewRoot', root);
   });
 
   it('does not loop or duplicate the load when the completed transfer is unchanged', async () => {
@@ -105,6 +137,8 @@ describe('FileTransferCardComponent preview lifecycle', () => {
     fixture.componentRef.setInput('transfer', completed);
     fixture.detectChanges();
     await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
     fixture.componentRef.setInput('transfer', { ...completed });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -135,7 +169,8 @@ describe('FileTransferCardComponent preview lifecycle', () => {
     );
     fixture.componentRef.setInput('transfer', transfer());
     fixture.detectChanges();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(open).toHaveBeenCalledOnce();
     fixture.destroy();
     resolveOpen({
       ok: true,
@@ -147,6 +182,55 @@ describe('FileTransferCardComponent preview lifecycle', () => {
 
     expect(read).not.toHaveBeenCalled();
     expect(revoke).toHaveBeenCalledOnce();
+  });
+
+  it('closes and revokes a completed read, then frees its URL outside the active region', async () => {
+    const createObjectURL = vi.fn(() => 'blob:preview');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+    const ready: ImagePreviewRef = {
+      state: 'ready',
+      previewId: 'preview-1',
+      accountId: 'account@example.invalid',
+      transferId: 'transfer-preview',
+      mimeType: 'image/jpeg',
+      sizeBytes: '17',
+      width: 2,
+      height: 2,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    get.mockResolvedValueOnce({ ok: true, version: 1, requestId: 'get', value: ready });
+    open.mockResolvedValueOnce({
+      ok: true,
+      version: 1,
+      requestId: 'open',
+      value: { previewId: 'preview-1', streamId: 'stream-1', expiresAt: ready.expiresAt, chunkSize: 65_536 },
+    });
+    read.mockResolvedValueOnce({
+      ok: true,
+      version: 1,
+      requestId: 'read',
+      value: { previewId: 'preview-1', streamId: 'stream-1', sequence: 0, bytes: new ArrayBuffer(4), done: true },
+    });
+    fixture.componentRef.setInput('transfer', transfer());
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(read).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledOnce();
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(fixture.nativeElement.querySelector('img')?.getAttribute('src')).toBe('blob:preview');
+
+    const target = fixture.nativeElement.querySelector('article') as Element;
+    VisibleIntersectionObserver.instance?.emit(target, false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview');
+
+    VisibleIntersectionObserver.instance?.emit(target, true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(get).toHaveBeenCalledTimes(2);
   });
 
   it('opens an available historical file from its compact heading', async () => {

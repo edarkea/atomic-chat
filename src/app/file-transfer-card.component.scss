@@ -111,6 +111,21 @@
   cursor: zoom-in;
   max-width: 100%;
   padding: 4px;
+  width: min(300px, 76vw);
+}
+.file-preview-placeholder {
+  align-items: center;
+  background: var(--atomic-surface);
+  border: 1px solid var(--atomic-border);
+  color: var(--atomic-text-secondary);
+  display: flex;
+  justify-content: center;
+  max-height: 280px;
+  min-height: 120px;
+  overflow: hidden;
+  padding: 4px;
+  text-align: center;
+  width: min(300px, 76vw);
 }
 .file-preview img {
   display: block;

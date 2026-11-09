@@ -100,6 +100,7 @@
         <app-file-transfer-card
           [transfer]="item.transfer"
           [media]="item.media"
+          [previewRoot]="previewRoot()"
           [label]="item.label"
           (accepted)="accept.emit($event)"
           (rejected)="reject.emit($event)"

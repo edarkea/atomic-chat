@@ -140,6 +140,7 @@ export class ConversationViewComponent {
   protected readonly dropActive = signal(false);
   private dragDepth = 0;
   private readonly destroyRef = inject(DestroyRef);
+  protected readonly previewRoot = signal<HTMLElement | undefined>(undefined);
   private readonly visibleMessageKey = computed(() => {
     const items = this.timeline();
     const last = items[items.length - 1];
@@ -169,6 +170,7 @@ export class ConversationViewComponent {
       if (conversation !== this.renderedConversation) {
         this.activeOverlay.set(undefined);
         this.showScrollToLatest.set(false);
+        this.previewRoot.set(undefined);
         this.programmaticLatestScroll = false;
         this.followLatest = true;
       }
@@ -421,6 +423,7 @@ export class ConversationViewComponent {
       this.programmaticLatestScroll = false;
       this.showScrollToLatest.set(false);
       this.renderedConversation = conversation;
+      this.previewRoot.set(element);
     });
   }
 

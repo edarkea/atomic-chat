@@ -2,12 +2,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   effect,
   inject,
   input,
   output,
   signal,
   untracked,
+  viewChild,
 } from '@angular/core';
 import {
   ChatImageRecord,
@@ -19,6 +21,10 @@ import {
 } from './core/domain';
 import { createOpaqueId } from './core/ids';
 import { PREVIEW_PORT, PreviewPort } from './core/ports';
+import {
+  ImagePreviewCoordinator,
+  PreviewVisibilityPriority,
+} from './image-preview-coordinator.service';
 
 interface PreviewSession {
   readonly accountId: string;
@@ -29,7 +35,11 @@ interface PreviewSession {
   preview?: ImagePreviewReady;
   streamId?: string;
   objectUrl?: string;
-  expiryTimer?: ReturnType<typeof setTimeout>;
+  retryTimer?: ReturnType<typeof setTimeout>;
+  visible: boolean;
+  priority: PreviewVisibilityPriority;
+  cancelQueued?: () => void;
+  resourceConstraintRetries: number;
 }
 
 @Component({
@@ -41,11 +51,16 @@ interface PreviewSession {
 export class FileTransferCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly previewPort = inject<PreviewPort | null>(PREVIEW_PORT, { optional: true });
+  private readonly coordinator = inject(ImagePreviewCoordinator);
   private currentSession: PreviewSession | undefined;
   private destroyed = false;
+  private stopObserving: (() => void) | undefined;
+  private observedTarget: HTMLElement | undefined;
+  private observedRoot: HTMLElement | undefined;
 
   readonly transfer = input.required<FileTransfer>();
   readonly media = input<ChatImageRecord>();
+  readonly previewRoot = input<HTMLElement>();
   readonly history = input<ChatFileHistoryRecord>();
   readonly label = input.required<string>();
   readonly accepted = output<string>();
@@ -57,13 +72,18 @@ export class FileTransferCardComponent {
   readonly historicalRevealed = output<string>();
   readonly actionBusy = input(false);
   protected readonly previewUrl = signal<string | null>(null);
-  protected readonly previewState = signal<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+  protected readonly previewState = signal<
+    'inactive' | 'pending' | 'loading' | 'ready' | 'unavailable' | 'cancelled'
+  >('inactive');
   protected readonly previewMessage = signal<string | null>(null);
   protected readonly enlarged = signal(false);
+  private readonly previewTarget = viewChild<ElementRef<HTMLElement>>('previewTarget');
 
   constructor() {
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
+      this.stopObserving?.();
+      this.stopObserving = undefined;
       const session = this.currentSession;
       this.currentSession = undefined;
       this.clearView();
@@ -73,7 +93,10 @@ export class FileTransferCardComponent {
       () => {
         const transfer = this.transfer();
         const media = this.media();
+        const root = this.previewRoot();
+        const target = this.previewTarget()?.nativeElement;
         untracked(() => this.synchronizePreview(transfer, media));
+        this.synchronizeVisibility(target, root);
       },
       { allowSignalWrites: true },
     );
@@ -125,6 +148,13 @@ export class FileTransferCardComponent {
     this.enlarged.set(false);
   }
 
+  protected previewAspectRatio(): string {
+    const media = this.media();
+    return media && media.width > 0 && media.height > 0
+      ? `${media.width} / ${media.height}`
+      : '4 / 3';
+  }
+
   private synchronizePreview(transfer: FileTransfer, media?: ChatImageRecord): void {
     const eligible =
       this.previewPort &&
@@ -154,50 +184,126 @@ export class FileTransferCardComponent {
           transferId,
           ...(mediaId ? { mediaId } : {}),
           cancelled: false,
+          visible: false,
+          priority: 'prefetch',
+          resourceConstraintRetries: 0,
         }
       : undefined;
+    this.observedTarget = undefined;
+    this.observedRoot = undefined;
     this.clearView();
     if (previous) void this.cancelSession(previous);
     if (this.currentSession && media && media.availability !== 'available') {
       this.previewState.set('unavailable');
       this.previewMessage.set('Preview no disponible: el contenido ya no está disponible.');
     } else if (this.currentSession) {
-      this.previewState.set('loading');
-      void this.loadPreview(transfer, this.currentSession);
+      this.previewState.set('inactive');
+    }
+  }
+
+  private synchronizeVisibility(target?: HTMLElement, root?: HTMLElement): void {
+    if (this.observedTarget === target && this.observedRoot === root) return;
+    this.stopObserving?.();
+    this.stopObserving = undefined;
+    this.observedTarget = target;
+    this.observedRoot = root;
+    if (!target || !root || !this.currentSession) {
+      this.visibilityChanged(false, 'prefetch');
+      return;
+    }
+    this.stopObserving = this.coordinator.observe(target, root, (active, priority) =>
+      this.visibilityChanged(active, priority),
+    );
+  }
+
+  private visibilityChanged(active: boolean, priority: PreviewVisibilityPriority): void {
+    let session = this.currentSession;
+    if (active && !session) {
+      this.synchronizePreview(this.transfer(), this.media());
+      session = this.currentSession;
+    }
+    if (!session || session.cancelled) return;
+    if (this.previewState() === 'unavailable') return;
+    if (active) {
+      session.visible = true;
+      session.priority = priority;
+      if (session.objectUrl) {
+        this.previewState.set('ready');
+        return;
+      }
+      if (session.cancelQueued) {
+        this.coordinator.reprioritize(sessionKey(session), priority);
+        return;
+      }
+      this.previewState.set('pending');
+      session.cancelQueued = this.coordinator.enqueue(sessionKey(session), priority, async () => {
+        session.cancelQueued = undefined;
+        await this.loadPreview(this.transfer(), session);
+      });
+      return;
+    }
+
+    session.visible = false;
+    session.cancelQueued?.();
+    session.cancelQueued = undefined;
+    if (session.retryTimer) clearTimeout(session.retryTimer);
+    session.retryTimer = undefined;
+    if (session.objectUrl || session.preview || session.streamId) {
+      this.currentSession = undefined;
+      this.clearView();
+      void this.cancelSession(session);
+    } else if (this.previewState() !== 'unavailable') {
+      session.resourceConstraintRetries = 0;
+      this.previewState.set('inactive');
     }
   }
 
   private async loadPreview(transfer: FileTransfer, session: PreviewSession): Promise<void> {
-    for (const delayMs of [0, 200, 500]) {
-      if (session.cancelled || this.currentSession !== session) return;
-      if (delayMs > 0) {
-        this.previewState.set('loading');
-        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-        if (session.cancelled || this.currentSession !== session) return;
-      }
-      if (!(await this.loadPreviewAttempt(transfer, session))) return;
+    if (session.cancelled || !session.visible || this.currentSession !== session) return;
+    this.previewState.set('loading');
+    const outcome = await this.loadPreviewAttempt(transfer, session);
+    if (
+      outcome === 'resource-constraint' &&
+      session.visible &&
+      session.resourceConstraintRetries < 1
+    ) {
+      session.resourceConstraintRetries += 1;
+      this.previewState.set('pending');
+      session.retryTimer = setTimeout(() => {
+        session.retryTimer = undefined;
+        if (!session.visible || session.cancelled || this.currentSession !== session) return;
+        session.cancelQueued = this.coordinator.enqueue(
+          sessionKey(session),
+          session.priority,
+          async () => {
+            session.cancelQueued = undefined;
+            await this.loadPreview(this.transfer(), session);
+          },
+        );
+      }, 250);
     }
   }
 
   private async loadPreviewAttempt(
     transfer: FileTransfer,
     session: PreviewSession,
-  ): Promise<boolean> {
+  ): Promise<'complete' | 'failed' | 'resource-constraint' | 'cancelled'> {
     const port = this.previewPort;
-    if (!port) return false;
+    if (!port) return 'failed';
     const request = this.createPreviewRequest(transfer);
-    let keepGrant = false;
     try {
       const get = await port.get(request);
       if (get.ok && get.value.state === 'ready') session.preview = get.value;
-      if (session.cancelled || this.currentSession !== session) return false;
+      if (session.cancelled || !session.visible || this.currentSession !== session)
+        return 'cancelled';
       if (!get.ok) {
+        if (get.error.code === 'RESOURCE_CONSTRAINT') return 'resource-constraint';
         this.setUnavailable('Preview no disponible para este archivo.', session);
-        return ['UNAUTHORIZED', 'INTERNAL', 'STORAGE_FAILED'].includes(get.error.code);
+        return 'failed';
       }
       if (get.value.state !== 'ready') {
         this.setUnavailable(this.previewReason(get.value.reasonCode), session);
-        return ['MEDIA_PREVIEW_UNAVAILABLE', 'STORAGE_FAILED'].includes(get.value.reasonCode);
+        return 'failed';
       }
 
       const open = await port.open({
@@ -206,14 +312,15 @@ export class FileTransferCardComponent {
         previewId: get.value.previewId,
       });
       if (!open.ok) {
+        if (open.error.code === 'RESOURCE_CONSTRAINT') return 'resource-constraint';
         this.setUnavailable('Preview no disponible para este archivo.', session);
-        return ['UNAUTHORIZED', 'INTERNAL', 'STORAGE_FAILED'].includes(open.error.code);
+        return 'failed';
       }
       session.streamId = open.value.streamId;
       const chunks: ArrayBuffer[] = [];
       let sequence = 0;
       let done = false;
-      while (!done && !session.cancelled && sequence < 256) {
+      while (!done && !session.cancelled && session.visible && sequence < 256) {
         const chunk = await port.read({
           ...request,
           requestId: createOpaqueId('preview-read'),
@@ -221,42 +328,44 @@ export class FileTransferCardComponent {
           streamId: open.value.streamId,
           sequence,
         });
-        if (!chunk.ok) throw new Error(chunk.error.message);
+        if (!chunk.ok) {
+          if (chunk.error.code === 'RESOURCE_CONSTRAINT') return 'resource-constraint';
+          throw new Error(chunk.error.message);
+        }
         chunks.push(chunk.value.bytes);
         done = chunk.value.done;
         sequence += 1;
       }
-      if (!done || session.cancelled || this.currentSession !== session)
-        throw new Error('La previsualización expiró.');
-
+      if (session.cancelled || !session.visible || this.currentSession !== session)
+        return 'cancelled';
+      if (!done) throw new Error('La previsualización expiró.');
       session.objectUrl = URL.createObjectURL(new Blob(chunks, { type: get.value.mimeType }));
       this.previewUrl.set(session.objectUrl);
       this.previewState.set('ready');
-      keepGrant = true;
-      session.expiryTimer = setTimeout(
-        () => this.expireSession(session),
-        Math.max(0, Date.parse(get.value.expiresAt) - Date.now()),
-      );
-      return false;
+      return 'complete';
     } catch {
-      if (!session.cancelled && this.currentSession === session)
+      if (!session.cancelled && session.visible && this.currentSession === session)
         this.setUnavailable('No se pudo renderizar la imagen.', session);
-      return true;
+      return 'failed';
     } finally {
       await this.closeSessionStream(session, request).catch(() => undefined);
-      if (!keepGrant || session.cancelled)
-        await this.revokeSession(session, request).catch(() => undefined);
-      if (!keepGrant && session.objectUrl) {
-        URL.revokeObjectURL(session.objectUrl);
-        session.objectUrl = undefined;
+      await this.revokeSession(session, request).catch(() => undefined);
+      if (session.cancelled || !session.visible) {
+        if (session.objectUrl) {
+          URL.revokeObjectURL(session.objectUrl);
+          session.objectUrl = undefined;
+        }
       }
     }
   }
 
   private async cancelSession(session: PreviewSession): Promise<void> {
     session.cancelled = true;
-    if (session.expiryTimer) clearTimeout(session.expiryTimer);
-    session.expiryTimer = undefined;
+    session.visible = false;
+    session.cancelQueued?.();
+    session.cancelQueued = undefined;
+    if (session.retryTimer) clearTimeout(session.retryTimer);
+    session.retryTimer = undefined;
     const request: ImagePreviewRequest = {
       version: 1,
       requestId: createOpaqueId('preview-cancel'),
@@ -291,7 +400,10 @@ export class FileTransferCardComponent {
       .catch(() => undefined);
   }
 
-  private async revokeSession(session: PreviewSession, request: ImagePreviewRequest): Promise<void> {
+  private async revokeSession(
+    session: PreviewSession,
+    request: ImagePreviewRequest,
+  ): Promise<void> {
     const preview = session.preview;
     session.preview = undefined;
     if (!this.previewPort || !preview) return;
@@ -304,17 +416,10 @@ export class FileTransferCardComponent {
       .catch(() => undefined);
   }
 
-  private expireSession(session: PreviewSession): void {
-    if (this.currentSession !== session) return;
-    this.currentSession = undefined;
-    this.clearView();
-    void this.cancelSession(session);
-  }
-
   private clearView(): void {
     this.enlarged.set(false);
     this.previewUrl.set(null);
-    this.previewState.set('idle');
+    this.previewState.set('inactive');
     this.previewMessage.set(null);
   }
 
@@ -340,7 +445,12 @@ export class FileTransferCardComponent {
   private previewReason(code: ImagePreviewFailureCode): string {
     if (code === 'MEDIA_TYPE_UNSUPPORTED') return 'Preview no disponible: solo PNG/JPEG estático.';
     if (code === 'MEDIA_SIZE_EXCEEDED') return 'Preview no disponible: imagen demasiado grande.';
-    if (code === 'MEDIA_DIMENSIONS_INVALID') return 'Preview no disponible: dimensiones no permitidas.';
+    if (code === 'MEDIA_DIMENSIONS_INVALID')
+      return 'Preview no disponible: dimensiones no permitidas.';
     return 'Preview no disponible para este archivo.';
   }
+}
+
+function sessionKey(session: PreviewSession): string {
+  return `${session.accountId}|${session.conversationId}|${session.transferId}|${session.mediaId ?? ''}`;
 }
