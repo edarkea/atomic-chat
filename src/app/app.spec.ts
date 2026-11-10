@@ -11,6 +11,7 @@ import {
   RoomMessage,
   RoomRef,
   RoomState,
+  FileTransfer,
   TypedDomainEvent,
 } from './core/domain';
 import { MucFacade } from './core/muc.facade';
@@ -287,6 +288,76 @@ describe('App composer integration', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('historial unificado');
     expect(fixture.nativeElement.querySelectorAll('.file-message')).toHaveLength(1);
+  });
+
+  it('hides only cancelled outgoing images while retaining their internal transfer record', async () => {
+    const files = TestBed.inject(FileFacade);
+    await fixture.whenStable();
+    const createTransfer = (transferId: string, changes: Partial<FileTransfer>): FileTransfer => ({
+      offer: {
+        transferId,
+        accountId: 'a@example.invalid',
+        conversationId: 'contact@example.invalid',
+        senderJid: 'a@example.invalid',
+        name: `${transferId}.jpg`,
+        mimeType: 'image/jpeg',
+        sizeBytes: '12',
+        transport: 'ibb',
+        offeredAt: `2026-11-01T10:00:0${transferId.length}.000Z`,
+      },
+      direction: 'outgoing',
+      state: 'transferring',
+      bytesTransferred: '4',
+      updatedAt: '2026-11-01T10:00:00.000Z',
+      ...changes,
+    });
+    const emit = (transfer: FileTransfer): void => {
+      (files as unknown as { onEvent(event: TypedDomainEvent): void }).onEvent({
+        version: 1,
+        eventId: transfer.offer.transferId,
+        type: 'file.stateChanged',
+        payload: transfer,
+      });
+    };
+    const cancelledImage = createTransfer('cancelled-image', {
+      state: 'cancelled',
+      endReason: 'cancelled_by_sender',
+      bytesTransferred: '0',
+    });
+    emit(cancelledImage);
+    emit(createTransfer('active-image', { state: 'transferring' }));
+    emit(
+      createTransfer('completed-image', {
+        state: 'completed',
+        bytesTransferred: '12',
+      }),
+    );
+    emit({
+      ...createTransfer('cancelled-document', {
+        state: 'cancelled',
+        endReason: 'cancelled_by_sender',
+      }),
+      offer: {
+        ...createTransfer('cancelled-document', {}).offer,
+        name: 'cancelled-document.pdf',
+        mimeType: 'application/pdf',
+      },
+    });
+    fixture.detectChanges();
+
+    expect(files.transfers()).toContainEqual(cancelledImage);
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente cancelled-image.jpg"]'),
+    ).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente active-image.jpg"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente completed-image.jpg"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente cancelled-document.pdf"]'),
+    ).not.toBeNull();
   });
 
   it('opens an accessible Nuevo mensaje dialog with discovery and nickname controls', () => {

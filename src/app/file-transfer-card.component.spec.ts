@@ -500,4 +500,49 @@ describe('FileTransferCardComponent preview lifecycle', () => {
     expect(fixture.nativeElement.textContent).not.toContain('image/png');
     expect(fixture.nativeElement.textContent).not.toContain('17 bytes');
   });
+
+  it('does not render a sender-only card for a cancelled outgoing image', () => {
+    fixture.componentRef.setInput('transfer', {
+      ...transfer('cancelled'),
+      direction: 'outgoing',
+      state: 'cancelled',
+      endReason: 'cancelled_by_sender',
+    });
+    fixture.componentRef.setInput('label', 'Envío cancelado');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('article')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Tú');
+  });
+
+  it('shows a terminal status instead of an empty preview for a failed image', () => {
+    fixture.componentRef.setInput('transfer', {
+      ...transfer('failed'),
+      direction: 'outgoing',
+      state: 'failed',
+      endReason: 'storage_failed',
+    });
+    fixture.componentRef.setInput('label', 'No se pudo leer el archivo');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.file-preview-frame')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[role="status"]')?.textContent).toContain(
+      'No se pudo leer el archivo',
+    );
+  });
+
+  it('keeps an incoming cancelled image visible with an informative status', () => {
+    fixture.componentRef.setInput('transfer', {
+      ...transfer('cancelled'),
+      state: 'cancelled',
+      endReason: 'cancelled_by_receiver',
+    });
+    fixture.componentRef.setInput('label', 'Transferencia cancelada');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('article')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[role="status"]')?.textContent).toContain(
+      'Transferencia cancelada',
+    );
+  });
 });

@@ -458,17 +458,24 @@ export class App {
       }));
       const files = this.files
         .forConversation(this.chat.accountId(), this.selectedJid())
-        .map((transfer) => ({
-          kind: 'file' as const,
-          id: `file:${transfer.offer.transferId}`,
-          sortAt: transfer.offer.offeredAt,
-          transfer,
-          media: this.files.mediaForTransfer(this.chat.accountId(), transfer.offer.transferId),
-          senderLabel: transfer.direction === 'outgoing' ? 'Tú' : transfer.offer.senderJid,
-          outgoing: transfer.direction === 'outgoing',
-          label: this.files.label(transfer.state, transfer.endReason, transfer.direction),
-          progressLabel: this.files.label(transfer.state, transfer.endReason, transfer.direction),
-        }));
+        .map((transfer) => {
+          const media = this.files.mediaForTransfer(
+            this.chat.accountId(),
+            transfer.offer.transferId,
+          );
+          return {
+            kind: 'file' as const,
+            id: `file:${transfer.offer.transferId}`,
+            sortAt: transfer.offer.offeredAt,
+            transfer,
+            media,
+            senderLabel: transfer.direction === 'outgoing' ? 'Tú' : transfer.offer.senderJid,
+            outgoing: transfer.direction === 'outgoing',
+            label: this.files.label(transfer.state, transfer.endReason, transfer.direction),
+            progressLabel: this.files.label(transfer.state, transfer.endReason, transfer.direction),
+          };
+        })
+        .filter(({ transfer, media }) => !this.isHiddenCancelledImage(transfer, media));
       const activeTransferIds = new Set(files.map((item) => item.transfer.offer.transferId));
       const timelineMedia = this.chat
         .timelineItems()
@@ -1476,6 +1483,16 @@ export class App {
   }
   private bareJid(jid: string): string {
     return jid.split('/')[0].toLowerCase();
+  }
+
+  private isHiddenCancelledImage(transfer: FileTransfer, media?: ChatImageRecord): boolean {
+    // An associated media record is evidence of a completed historical medium.
+    return (
+      transfer.direction === 'outgoing' &&
+      transfer.state === 'cancelled' &&
+      media === undefined &&
+      transfer.offer.mimeType?.toLowerCase().startsWith('image/') === true
+    );
   }
 
   private mediaAsTransfer(media: ChatImageRecord): FileTransfer {

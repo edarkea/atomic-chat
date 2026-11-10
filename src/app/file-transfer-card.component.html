@@ -1,87 +1,95 @@
-<article
-  #previewTarget
-  class="message file-message"
-  [class.outgoing]="transfer().direction === 'outgoing'"
-  [class.incoming]="transfer().direction === 'incoming'"
-  role="group"
-  [attr.aria-label]="
-    (transfer().direction === 'outgoing' ? 'Archivo saliente ' : 'Archivo entrante ') +
-    transfer().offer.name
-  "
->
-  <p class="message-sender">
-    {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
-  </p>
-  @if (!isImageTransfer()) {
-    <button
-      class="file-heading"
-      type="button"
-      [disabled]="!canOpenFile() || actionBusy()"
-      [attr.aria-label]="
-        canOpenFile() ? 'Abrir archivo ' + transfer().offer.name : 'Archivo no disponible'
-      "
-      [attr.title]="canOpenFile() ? 'Abrir archivo' : 'Archivo no disponible'"
-      (click)="openFile()"
-    >
-      <svg class="ac-icon ac-icon--20 file-heading-icon" aria-hidden="true" focusable="false">
-        <use href="#ac-file" />
-      </svg>
-      <span class="file-heading-copy">
-        <span class="file-title">{{ transfer().offer.name }}</span>
-        <small class="file-meta">Archivo · {{ transfer().offer.sizeBytes }} bytes</small>
-      </span>
-    </button>
-  }
-  @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
-    <p class="file-security">
-      Sin cifrado de extremo a extremo. Solo archivos ficticios de laboratorio.
+@if (shouldRenderCard()) {
+  <article
+    #previewTarget
+    class="message file-message"
+    [class.outgoing]="transfer().direction === 'outgoing'"
+    [class.incoming]="transfer().direction === 'incoming'"
+    role="group"
+    [attr.aria-label]="
+      (transfer().direction === 'outgoing' ? 'Archivo saliente ' : 'Archivo entrante ') +
+      transfer().offer.name
+    "
+  >
+    <p class="message-sender">
+      {{ transfer().direction === 'outgoing' ? 'Tú' : transfer().offer.senderJid }}
     </p>
-    <div class="file-actions">
-      <button type="button" (click)="accepted.emit(transfer().offer.transferId)">
-        Aceptar y guardar</button
-      ><button type="button" (click)="rejected.emit(transfer().offer.transferId)">Rechazar</button>
-    </div>
-  }
-  @if (isInProgress()) {
-    <p aria-live="polite">
-      {{ label() }} · {{ transfer().bytesTransferred }} / {{ transfer().offer.sizeBytes }} bytes
-    </p>
-    <button type="button" (click)="cancelled.emit(transfer().offer.transferId)">Cancelar</button>
-  }
-  @if (isTerminal() && !isImageTransfer() && !history()) {
-    <p aria-live="polite">{{ label() }}</p>
-  }
-  @if (history(); as historical) {
-    @if (historical.availability !== 'available') {
-      <p class="file-preview-status" role="status">{{ historyStatus() }}</p>
+    @if (!isImageTransfer()) {
+      <button
+        class="file-heading"
+        type="button"
+        [disabled]="!canOpenFile() || actionBusy()"
+        [attr.aria-label]="
+          canOpenFile() ? 'Abrir archivo ' + transfer().offer.name : 'Archivo no disponible'
+        "
+        [attr.title]="canOpenFile() ? 'Abrir archivo' : 'Archivo no disponible'"
+        (click)="openFile()"
+      >
+        <svg class="ac-icon ac-icon--20 file-heading-icon" aria-hidden="true" focusable="false">
+          <use href="#ac-file" />
+        </svg>
+        <span class="file-heading-copy">
+          <span class="file-title">{{ transfer().offer.name }}</span>
+          <small class="file-meta">Archivo · {{ transfer().offer.sizeBytes }} bytes</small>
+        </span>
+      </button>
     }
-  }
-  @if (isImageTransfer()) {
-    <div class="file-preview-frame" [style.aspect-ratio]="previewAspectRatio()">
-      @if (previewState() === 'ready' && previewUrl(); as preview) {
-        <button
-          class="file-preview"
-          type="button"
-          (click)="openPreview()"
-          aria-label="Ampliar imagen recibida"
-        >
-          <img [src]="preview" [alt]="'Preview de ' + transfer().offer.name" />
+    @if (transfer().direction === 'incoming' && transfer().state === 'offered') {
+      <p class="file-security">
+        Sin cifrado de extremo a extremo. Solo archivos ficticios de laboratorio.
+      </p>
+      <div class="file-actions">
+        <button type="button" (click)="accepted.emit(transfer().offer.transferId)">
+          Aceptar y guardar</button
+        ><button type="button" (click)="rejected.emit(transfer().offer.transferId)">
+          Rechazar
         </button>
-      } @else if (previewState() === 'unavailable') {
-        <p class="file-preview-status" role="status">{{ previewMessage() }}</p>
+      </div>
+    }
+    @if (isInProgress()) {
+      <p aria-live="polite">
+        {{ label() }} · {{ transfer().bytesTransferred }} / {{ transfer().offer.sizeBytes }} bytes
+      </p>
+      <button type="button" (click)="cancelled.emit(transfer().offer.transferId)">Cancelar</button>
+    }
+    @if (isTerminal() && !isImageTransfer() && !history()) {
+      <p aria-live="polite">{{ label() }}</p>
+    }
+    @if (history(); as historical) {
+      @if (historical.availability !== 'available') {
+        <p class="file-preview-status" role="status">{{ historyStatus() }}</p>
+      }
+    }
+    @if (isImageTransfer()) {
+      @if (transfer().state === 'failed' || transfer().state === 'cancelled') {
+        <p class="file-preview-status" role="status">{{ label() }}</p>
       } @else {
-        <div class="file-preview-placeholder" role="status" aria-live="polite">
-          @if (previewState() === 'pending') {
-            Preparando preview segura…
-          }
-          @if (previewState() === 'loading') {
-            Cargando imagen…
+        <div class="file-preview-frame" [style.aspect-ratio]="previewAspectRatio()">
+          @if (previewState() === 'ready' && previewUrl(); as preview) {
+            <button
+              class="file-preview"
+              type="button"
+              (click)="openPreview()"
+              aria-label="Ampliar imagen recibida"
+            >
+              <img [src]="preview" [alt]="'Preview de ' + transfer().offer.name" />
+            </button>
+          } @else if (previewState() === 'unavailable') {
+            <p class="file-preview-status" role="status">{{ previewMessage() }}</p>
+          } @else {
+            <div class="file-preview-placeholder" role="status" aria-live="polite">
+              @if (previewState() === 'pending') {
+                Preparando preview segura…
+              }
+              @if (previewState() === 'loading') {
+                Cargando imagen…
+              }
+            </div>
           }
         </div>
       }
-    </div>
-  }
-</article>
+    }
+  </article>
+}
 @if (enlarged() && previewUrl(); as preview) {
   <div class="file-preview-overlay" role="dialog" aria-modal="true" aria-label="Imagen ampliada">
     <button

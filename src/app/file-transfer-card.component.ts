@@ -116,7 +116,18 @@ export class FileTransferCardComponent {
 
   protected isImageTransfer(): boolean {
     if (this.history()) return false;
-    return Boolean(this.media() || this.transfer().offer.mimeType?.startsWith('image/'));
+    return Boolean(
+      this.media() || this.transfer().offer.mimeType?.toLowerCase().startsWith('image/'),
+    );
+  }
+
+  protected shouldRenderCard(): boolean {
+    return !(
+      this.transfer().direction === 'outgoing' &&
+      this.transfer().state === 'cancelled' &&
+      this.isImageTransfer() &&
+      !this.media()
+    );
   }
 
   protected canOpenFile(): boolean {
