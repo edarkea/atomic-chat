@@ -299,6 +299,7 @@ export class ConversationViewComponent {
     readonly hasOlderMessages: boolean;
     readonly hasNewerMessages: boolean;
   }): void {
+    this.activeOverlay.set(undefined);
     this.scroll.onChatScroll(state);
   }
 

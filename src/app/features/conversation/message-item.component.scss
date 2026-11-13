@@ -391,19 +391,9 @@ button.message-reaction--own {
   grid-column: 2;
 }
 .message-reaction-picker {
-  bottom: calc(100% + 8px);
   max-width: min(92vw, 320px);
-  position: absolute;
-  right: 0;
-  z-index: 6;
-}
-.message.incoming .message-reaction-picker {
-  left: 0;
-  right: auto;
-}
-.message.overlay-below .message-reaction-picker {
-  bottom: auto;
-  top: calc(100% + 8px);
+  position: fixed;
+  z-index: 30;
 }
 .message-time {
   color: var(--atomic-text-muted);
