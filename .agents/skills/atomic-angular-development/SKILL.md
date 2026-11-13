@@ -6,11 +6,14 @@ description: Desarrollar o refactorizar funcionalidades autorizadas de Atomic Ch
 # Desarrollo Angular y TypeScript — Atomic Chat
 
 ## Entrada obligatoria
+
 1. Leer `AGENTS.md`, el ID y los criterios de aceptación de la tarea aprobada y los archivos implicados.
 2. Inspeccionar `package.json`, `tsconfig.json`, `angular.json` y contratos en `src/app/core/`. No dar por hechos los requisitos que no estén en esas fuentes o en la tarea.
 3. Identificar el flujo **UI → fachada/puerto → API Preload → Main → XMPP/SQLite** y quién es propietario de cada estado/dato.
+4. Confirmar la rama, el estado del working tree y las rutas actuales. No usar rutas históricas de componentes o scripts sin verificarlas con `rg --files` y `package.json`.
 
 ## Reglas de implementación (solo con autorización)
+
 - Escribir TypeScript estricto para código nuevo de Angular y contratos. Evitar `any`, casts inseguros, `!` injustificado y promesas sin manejo de errores. Modelar los errores con los `Result<T>`/`AppError` existentes cuando aplique.
 - Aplicar **SRP** por componente/servicio; **OCP** con extensión justificada, no herencia innecesaria; **LSP** al conservar contratos; **ISP** mediante puertos pequeños; **DIP** entre lógica y adaptadores. Preferir composición y cambios mínimos.
 - Preservar el contrato actual de `src/app/core/domain.ts`, `ports.ts` y `electron-api.ts`: nombres, estados, correlación, `requestId`, `clientMessageId`, versión y semántica de errores. No alterarlos silenciosamente.
@@ -21,13 +24,17 @@ description: Desarrollar o refactorizar funcionalidades autorizadas de Atomic Ch
 - Seguridad: preservar aislamiento del contexto, TLS seguro, secretos en Main y contenido remoto tratado como no confiable. Temas por tokens CSS sin lógica de mensajes.
 - Respetar el código Electron `.cjs` existente; **no migrarlo a TypeScript** sin una tarea específica y estrategia de compilación aprobada.
 - No agregar bibliotecas, frameworks de estado, patrones o capas nuevos sin necesidad demostrada y aprobación conforme al roadmap.
+- Mantener la estructura actual: `src/app/core` para contratos/estado transversal, `src/app/features` para funcionalidades y `electron/` separado por composición, aplicación, IPC, persistencia, seguridad, plataforma, XMPP, archivos, stickers y bandeja.
 
 ## Flujo y salida
+
 1. Diseñar el cambio mínimo y enumerar archivos/contratos afectados.
 2. Implementar una unidad coherente, con casos normales, límites y fallos; actualizar pruebas existentes o proponerlas si la tarea lo permite.
-3. En implementación autorizada, validar con los scripts existentes adecuados al alcance. `npm run build` comprueba el bundle; `npm run test:p0` o `npm test` solo si su entorno/datos y posibles efectos están autorizados. No afirmar pruebas no ejecutadas.
+3. En implementación autorizada, validar con los scripts existentes adecuados al alcance: `npm run typecheck`, `npm run typecheck:electron`, `npm run lint`, `npm run format:check:all`, `npm run test:angular`, `npm run test:node`, `npm run test:ci:focused`, `npm run build` y `npm run docs:links`. Seleccionar según el alcance; no inventar scripts ni reintroducir `test:p0`. No afirmar pruebas no ejecutadas y reportar skips/bloqueos por separado.
 4. Revisar formato, complejidad y compatibilidad de API; indicar regresiones potenciales.
-5. Reportar ID de tarea, archivos, contratos afectados, resultado real de validaciones y pendientes. Commit/push únicamente al terminar la implementación autorizada y con permiso vigente.
+5. Si se modifica documentación, ejecutar `npm run docs:links`; si se normaliza formato histórico, revisar que el diff semántico se limite al alcance solicitado.
+6. Reportar ID de tarea, archivos, contratos afectados, resultado real de validaciones y pendientes. Commit/push únicamente al terminar la implementación autorizada y con permiso vigente.
 
 ## Criterio de listo
+
 La solución cubre únicamente el alcance, mantiene límites de confianza y contratos, es legible y testeable, maneja errores y evita dependencias o abstracciones superfluas. Si falta evidencia o aprobación, dejar la parte incierta explícitamente bloqueada.

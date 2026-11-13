@@ -15,6 +15,29 @@
 - Mantener seguridad por defecto: TLS verificado, mínimo privilegio IPC, no secretos en renderer/SQLite/logs, saneamiento de contenido externo. No desactivar controles para optimizar.
 - Conservar la identidad visual original **Wasteland Terminal**. No mezclar presentación con reglas XMPP.
 
+## Mapa actual del repositorio
+
+- Angular Renderer: `src/app/`, organizado por `core/` y `features/`, con coordinadores y fachadas de aplicación donde corresponde.
+- Electron Main: `electron/main.cjs`, con composición en `electron/composition/`, casos de uso y adaptadores en `electron/application/`, límites IPC en `electron/ipc/`, persistencia en `electron/persistence/`, seguridad en `electron/security/`, plataforma en `electron/platform/`, XMPP en `electron/xmpp/`, archivos en `electron/files/`, stickers en `electron/stickers/` y bandeja en `electron/tray/`.
+- Preload: `electron/preload.cjs`; debe continuar exponiendo únicamente capacidades explícitas y mínimas.
+- Pruebas: `src/**/*.spec.ts` para Angular y `tests/**/*.test.cjs` para Node/Electron.
+- Los módulos de Electron permanecen en CommonJS (`.cjs`). No migrarlos a TypeScript como parte de una tarea ordinaria.
+
+## Flujo de trabajo y Git
+
+- Trabajar en la rama autorizada por la tarea. `dev` no se modifica directamente durante refactors salvo autorización explícita.
+- Antes de modificar, revisar `git status`, la rama actual, `package.json` y el diff existente. No descartar cambios preexistentes.
+- Un merge de una rama de refactor a `dev` puede hacerse con `git merge --squash` cuando se quiera conservar el resultado sin trasladar su historial de commits. Revisar el diff y ejecutar las validaciones antes del commit.
+- Commit y push solo cuando el usuario los solicite o la tarea los autorice expresamente. Informar siempre la rama y el SHA reales.
+
+## Pruebas y comandos vigentes
+
+- Usar los nombres actuales de scripts: `test:node`, `test:node:outgoing`, `test:node:outgoing:safety`, `test:angular`, `test:ci:focused`, `test:electron`, `typecheck`, `typecheck:electron`, `lint`, `format:check:all`, `docs:links` y `build`.
+- No reintroducir los nombres históricos `test:p0` ni selectores opacos `cal01`/`C5-OUT-*` en nuevos documentos o scripts.
+- `npm run test:node` puede terminar con skips legítimos cuando el entorno Windows no permite symlinks o cuando una prueba XMPP requiere infraestructura autorizada. Reportar `SKIP` o `BLOCKED`; nunca presentarlos como `PASS`.
+- Para cambios de formato histórico, usar Prettier sobre el alcance declarado y verificar después `format:check:all`, `git diff --check` y las pruebas afectadas. El formateo no autoriza cambios semánticos.
+- No ejecutar servidores XMPP, cuentas reales, credenciales ni pruebas de interoperabilidad fuera del entorno autorizado.
+
 ## Skills del repositorio
 
 - Usar `.agents/skills/atomic-angular-development/SKILL.md` para desarrollar o refactorizar Angular/TypeScript y límites de Electron.
