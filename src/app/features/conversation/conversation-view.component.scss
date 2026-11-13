@@ -115,6 +115,11 @@
 .chat-content::-webkit-scrollbar-thumb:hover {
   background: var(--atomic-green);
 }
+.typing-indicator-slot {
+  flex: 0 0 27px;
+  min-height: 27px;
+  overflow: hidden;
+}
 .typing-indicator {
   color: var(--atomic-green-soft);
   font-size: 12px;

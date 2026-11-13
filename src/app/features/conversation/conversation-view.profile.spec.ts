@@ -4,6 +4,33 @@ import { ConversationTimelineItem, ConversationViewComponent } from './conversat
 import { Message, ReactionActor } from '../../core/domain';
 
 describe('ConversationViewComponent profile search target', () => {
+  it('keeps the typing indicator in a reserved slot and names the contact', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationViewComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'steeven@example.invalid');
+    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.componentRef.setInput('initialTimelineReady', true);
+    fixture.componentRef.setInput('typing', 'Steeven');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.typing-indicator')?.textContent).toContain(
+      'Steeven está escribiendo',
+    );
+    expect(fixture.nativeElement.querySelector('.typing-indicator-slot')).toBeTruthy();
+
+    fixture.componentRef.setInput('typing', '');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.typing-indicator-slot')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.typing-indicator')).toBeNull();
+  });
+
   it('uses the complete selected-user profile as the search target', async () => {
     await TestBed.configureTestingModule({
       imports: [ConversationViewComponent],

@@ -60,6 +60,71 @@
   overflow: hidden;
 }
 
+.workspace-empty {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--atomic-space-6);
+  text-align: center;
+}
+
+.workspace-empty-mark {
+  align-items: center;
+  background: var(--atomic-surface-raised);
+  border: 1px solid var(--atomic-border);
+  border-radius: 50%;
+  color: var(--atomic-green);
+  display: inline-flex;
+  height: 72px;
+  justify-content: center;
+  margin-bottom: var(--atomic-space-4);
+  width: 72px;
+}
+
+.workspace-empty-logo {
+  height: 36px;
+  width: 36px;
+}
+
+.workspace-empty h1 {
+  color: var(--atomic-text);
+  font-size: 22px;
+  margin: 8px 0;
+}
+
+.workspace-empty-copy {
+  color: var(--atomic-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 360px;
+}
+
+.workspace-empty .primary {
+  background: var(--atomic-green);
+  border: 1px solid var(--atomic-green);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-bg);
+  cursor: pointer;
+  font-family: var(--atomic-font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-top: var(--atomic-space-5);
+  min-height: 36px;
+  padding: 6px 12px;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+  white-space: nowrap;
+}
+
+.workspace-empty .primary:hover {
+  background: var(--atomic-green-soft);
+  border-color: var(--atomic-green-soft);
+}
+
 @media (max-width: 760px) {
   .workspace {
     grid-template-columns: 246px minmax(0, 1fr);

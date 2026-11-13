@@ -225,7 +225,13 @@ export class App {
     this.conversationTimelineCoordinator.initialTimelineReady;
   protected readonly typingContact = computed(() => {
     const jid = bareJid(this.selectedJid());
-    return Boolean(jid && this.chat.chatStates?.().get(jid) === 'composing');
+    if (!jid || this.chat.chatStates?.().get(jid) !== 'composing') return '';
+    const contactName = this.contactsByBareJid().get(jid)?.name?.trim();
+    if (contactName) return contactName;
+    const localPart = jid.split('@')[0]?.trim();
+    return localPart
+      ? `${localPart.charAt(0).toLocaleUpperCase()}${localPart.slice(1)}`
+      : 'Contacto';
   });
   protected readonly conversationTimeline = this.conversationTimelineCoordinator.timeline;
   protected readonly activeContact = computed(() => {

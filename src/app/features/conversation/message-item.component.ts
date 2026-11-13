@@ -208,7 +208,14 @@ export class MessageItemComponent {
     if (overlay) {
       const element = this.host.nativeElement.querySelector('.message') as HTMLElement | null;
       const bounds = element?.getBoundingClientRect();
-      this.overlayPlacement.set(bounds && bounds.top < 190 ? 'below' : 'above');
+      const scrollViewport = element
+        ?.closest<HTMLElement>('.chat-content')
+        ?.getBoundingClientRect();
+      const topOffset =
+        bounds && scrollViewport
+          ? bounds.top - scrollViewport.top
+          : bounds?.top || Number.POSITIVE_INFINITY;
+      this.overlayPlacement.set(topOffset < 128 ? 'below' : 'above');
     }
     this.overlayRequested.emit(overlay);
   }

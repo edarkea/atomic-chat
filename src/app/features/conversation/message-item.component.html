@@ -83,7 +83,9 @@
           <span class="message-reply-fragment">{{
             replyText() || reply.quote || 'Original no disponible'
           }}</span>
-          <small>Original no disponible</small>
+          @if (!replyText() && !reply.quote) {
+            <small>Original no disponible</small>
+          }
         </div>
       }
     </div>

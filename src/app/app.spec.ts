@@ -1176,6 +1176,33 @@ describe('App composer integration', () => {
     expect(app.mucDraft()).toBe('');
     expect(muc.leave).not.toHaveBeenCalled();
   });
+  it('leaves the conversation panel blank when there is no active selection', () => {
+    appSurface(fixture).conversationSelection.set({
+      kind: 'none',
+      accountId: 'a@example.invalid',
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-conversation-view')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-muc-view')).toBeNull();
+  });
+  it('offers a new conversation from the empty workspace', () => {
+    appSurface(fixture).conversationSelection.set({
+      kind: 'none',
+      accountId: 'a@example.invalid',
+    });
+    fixture.detectChanges();
+
+    const startButton = fixture.nativeElement.querySelector(
+      '.workspace-empty button.primary',
+    ) as HTMLButtonElement;
+    expect(startButton?.textContent).toContain('Iniciar nueva conversación');
+
+    startButton.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-new-message-dialog')).not.toBeNull();
+  });
   it('closes the active conversation on Escape and leaves modal priority intact', () => {
     const close = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     document.dispatchEvent(close);

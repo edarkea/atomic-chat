@@ -7,21 +7,18 @@
     <strong>{{ displayName() }}</strong
     ><small>{{ model().connectionLabel }} · {{ model().presenceLabel }}</small>
   </div>
-  <span class="online-dot" [class]="'online-dot ' + model().presenceDot" aria-hidden="true"></span>
-</div>
-<div class="presence-control">
-  <span>Estado</span
-  ><button
+  <button
     #presenceTrigger
     type="button"
     class="presence-trigger"
     aria-haspopup="menu"
+    [attr.aria-label]="'Cambiar estado: ' + model().presenceLabel"
     [attr.aria-expanded]="model().presenceOpen"
     (click)="presenceToggle.emit()"
     (keydown)="onTriggerKeydown($event)"
   >
     <i class="presence-dot" [class]="'presence-dot ' + model().presenceDot"></i
-    ><span>{{ model().presenceLabel }}</span
+    ><span class="presence-trigger-label">{{ model().presenceLabel }}</span
     ><span class="presence-arrow" aria-hidden="true"
       ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false">
         <use href="#ac-expand" /></svg

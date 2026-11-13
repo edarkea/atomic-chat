@@ -239,7 +239,7 @@
             (replyCancel)="cancelReply()"
             (reactionChanged)="changeReaction($event.messageId, $event.emojis, true)"
           />
-        } @else {
+        } @else if (activeSelection().kind !== 'none') {
           <app-conversation-view
             [activeContact]="activeContact()"
             [selectedJid]="selectedJid()"
@@ -291,6 +291,22 @@
             (loadOlder)="loadOlderMessages($event)"
             (loadNewer)="loadNewerMessages($event)"
           />
+        } @else {
+          <section class="workspace-empty" aria-labelledby="workspace-empty-title">
+            <div class="workspace-empty-mark" aria-hidden="true">
+              <svg class="ac-icon workspace-empty-logo" focusable="false">
+                <use href="#ac-brand" />
+              </svg>
+            </div>
+            <p class="eyebrow">ATOMIC CHAT</p>
+            <h1 id="workspace-empty-title">Tu espacio de conversaciones</h1>
+            <p class="workspace-empty-copy">
+              Selecciona un contacto para empezar a conversar de forma segura y sencilla.
+            </p>
+            <button type="button" class="primary" (click)="openNewMessageDialog()">
+              Iniciar nueva conversación
+            </button>
+          </section>
         }
       </section>
     </section>

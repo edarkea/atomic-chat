@@ -35,4 +35,31 @@ describe('ConversationListComponent name tooltips', () => {
     const item = fixture.nativeElement.querySelector('.conversation-item') as HTMLButtonElement;
     expect(item.title).toBe('Neiser Joel Cordova Cordova\nCoopErco · En línea');
   });
+
+  it('labels missing presence as disconnected instead of unknown', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationListComponent],
+    }).compileComponents();
+    const contact: Contact = {
+      jid: 'lara@example.invalid',
+      name: 'Lara',
+      groups: ['Familia'],
+      source: 'roster',
+    };
+    const fixture = TestBed.createComponent(ConversationListComponent);
+    fixture.componentRef.setInput('model', {
+      accountId: 'operator@example.invalid',
+      search: '',
+      joinedRooms: [],
+      filteredContacts: [contact],
+      workspaceContacts: [contact],
+      workspaceItems: [{ kind: 'direct', contact, lastActivity: 0 }],
+      selectedJid: '',
+      selectedRoomJid: '',
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Familia · Desconectado');
+    expect(fixture.nativeElement.textContent).not.toContain('Estado desconocido');
+  });
 });

@@ -83,8 +83,8 @@ export class ConversationListComponent {
   }
   protected remotePresenceLabel(contact: Contact): string {
     const presence = contact.presence;
-    if (!presence) return 'Estado desconocido';
-    if (presence.availability === 'unknown') return 'Estado desconocido';
+    if (!presence) return 'Desconectado';
+    if (presence.availability === 'unknown') return 'Desconectado';
     if (presence.availability === 'unavailable') return 'No disponible';
     if (presence.availability === 'away') return 'Ausente';
     if (presence.availability === 'extended-away') return 'Ausencia extendida';

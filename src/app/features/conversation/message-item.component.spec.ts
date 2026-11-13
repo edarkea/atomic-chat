@@ -128,6 +128,59 @@ describe('message links', () => {
     expect(overlays.at(-1)).toBeUndefined();
   });
 
+  it('opens the action menu below a message near the scroll viewport top', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> =
+      TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.test');
+    fixture.componentRef.setInput('body', 'Mensaje reciente');
+    fixture.componentRef.setInput('outgoing', false);
+    fixture.componentRef.setInput('messageId', 'wire-top');
+    fixture.detectChanges();
+
+    const viewport = document.createElement('div');
+    viewport.className = 'chat-content';
+    Object.defineProperty(viewport, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 100, bottom: 500 }),
+    });
+    const article = fixture.nativeElement.querySelector('article') as HTMLElement;
+    Object.defineProperty(article, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 116, bottom: 180 }),
+    });
+    viewport.append(fixture.nativeElement);
+    document.body.append(viewport);
+
+    (fixture.nativeElement.querySelector('.message-action--menu') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(article.classList.contains('overlay-below')).toBe(true);
+    viewport.remove();
+  });
+
+  it('keeps a persisted quote visible when its original is outside the loaded timeline', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> =
+      TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'Tú');
+    fixture.componentRef.setInput('body', 'Respuesta histórica');
+    fixture.componentRef.setInput('outgoing', true);
+    fixture.componentRef.setInput('replyTo', {
+      authorJid: 'barbara@example.test',
+      messageId: 'wire-not-loaded',
+      stanzaIds: [],
+      quote: 'Mensaje original fuera de la ventana',
+    });
+    fixture.componentRef.setInput('replyAuthor', 'Barbara');
+    fixture.componentRef.setInput('replyText', 'Mensaje original fuera de la ventana');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Mensaje original fuera de la ventana');
+    expect(fixture.nativeElement.querySelector('.message-reply-link--unavailable')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.message-reply-link small')).toBeNull();
+  });
+
   it('renders a Gajim-style quote and toggles reaction chips with participant tooltip', async () => {
     await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
     const fixture: ComponentFixture<MessageItemComponent> =

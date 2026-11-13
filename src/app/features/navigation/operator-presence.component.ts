@@ -4,6 +4,8 @@ import {
   computed,
   effect,
   ElementRef,
+  HostListener,
+  inject,
   input,
   output,
   ViewChild,
@@ -31,6 +33,7 @@ export interface OperatorPresenceModel {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OperatorPresenceComponent {
+  private readonly host = inject(ElementRef<HTMLElement>);
   @ViewChild('presenceTrigger') private readonly presenceTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('presenceMenu') private readonly presenceMenu?: ElementRef<HTMLElement>;
   readonly model = input.required<OperatorPresenceModel>();
@@ -115,6 +118,13 @@ export class OperatorPresenceComponent {
   protected onStatusKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Escape') return;
     event.preventDefault();
+    this.presenceClose.emit();
+  }
+  @HostListener('document:pointerdown', ['$event'])
+  protected onDocumentPointerdown(event: PointerEvent): void {
+    if (!this.model().presenceOpen) return;
+    const target = event.target;
+    if (target instanceof Node && this.host.nativeElement.contains(target)) return;
     this.presenceClose.emit();
   }
   private focusSelectedOption(): void {

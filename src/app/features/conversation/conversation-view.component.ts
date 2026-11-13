@@ -66,7 +66,7 @@ export class ConversationViewComponent {
   readonly historyLoading = input.required<boolean>();
   readonly hasOlderMessages = input.required<boolean>();
   readonly hasNewerMessages = input.required<boolean>();
-  readonly typing = input(false);
+  readonly typing = input('');
   readonly searchQuery = input('');
   readonly searchScope = input<'all' | 'conversation'>('conversation');
   readonly searchConversationNames = input<ReadonlyMap<string, string>>(new Map());

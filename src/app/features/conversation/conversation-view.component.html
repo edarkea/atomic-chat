@@ -151,9 +151,15 @@
       }
     }
   </div>
-  @if (typing()) {
-    <p class="typing-indicator" role="status">Está escribiendo…</p>
-  }
+  <div
+    class="typing-indicator-slot"
+    [class.typing-indicator-slot--active]="typing()"
+    aria-live="polite"
+  >
+    @if (typing()) {
+      <p class="typing-indicator" role="status">{{ typing() }} está escribiendo…</p>
+    }
+  </div>
   @if (error()) {
     <p class="composer-error" role="alert">{{ error() }}</p>
   }
