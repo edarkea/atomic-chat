@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { PersistenceStore } = require('../electron/storage.cjs');
-const { MediaStore } = require('../electron/media-store.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
+const { MediaStore } = require('../electron/files/media-store.cjs');
 
 const accountId = 'media@example.invalid';
 const conversationId = 'contact@example.invalid';
@@ -17,10 +17,8 @@ const nativeImage = {
 
 function jpegFixture() {
   return Buffer.from([
-    0xff, 0xd8,
-    0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03,
-    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
-    0xff, 0xd9,
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03, 0x03, 0x01, 0x11, 0x00, 0x02,
+    0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
   ]);
 }
 
@@ -95,10 +93,21 @@ test('persists image metadata outside SQLite and rehydrates a mixed timeline', a
   assert.equal(saved.mimeType, 'image/jpeg');
   assert.equal(saved.width, 3);
   assert.equal(saved.height, 2);
-  assert.equal(persistence.database.prepare('SELECT COUNT(*) AS count FROM media_assets').get().count, 1);
-  assert.equal(persistence.database.prepare('SELECT COUNT(*) AS count FROM media_assets WHERE storage_key IS NOT NULL').get().count, 1);
+  assert.equal(
+    persistence.database.prepare('SELECT COUNT(*) AS count FROM media_assets').get().count,
+    1,
+  );
+  assert.equal(
+    persistence.database
+      .prepare('SELECT COUNT(*) AS count FROM media_assets WHERE storage_key IS NOT NULL')
+      .get().count,
+    1,
+  );
   const page = persistence.listTimelinePage(accountId, conversationId, 10, 'older', null);
-  assert.deepEqual(page.items.map((item) => item.kind), ['text', 'image']);
+  assert.deepEqual(
+    page.items.map((item) => item.kind),
+    ['text', 'image'],
+  );
   persistence.close();
 
   const reopened = new PersistenceStore(directory);
@@ -142,10 +151,7 @@ test('serializes repeated persistence and isolates listener failures', async () 
     persistence.database.prepare('SELECT COUNT(*) AS count FROM media_assets').get().count,
     1,
   );
-  assert.equal(
-    fs.existsSync(path.join(directory, 'media', `${first.mediaId}.bin`)),
-    true,
-  );
+  assert.equal(fs.existsSync(path.join(directory, 'media', `${first.mediaId}.bin`)), true);
   persistence.close();
   fs.rmSync(directory, { recursive: true, force: true });
 });

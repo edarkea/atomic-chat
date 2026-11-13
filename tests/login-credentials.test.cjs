@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const PlainMechanism = require('sasl-plain');
-const { SecretStore } = require('../electron/secrets.cjs');
-const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
-const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+const { SecretStore } = require('../electron/security/secrets.cjs');
+const { createIpcHelpers } = require('../electron/ipc/ipc-helpers.cjs');
+const { registerAccountHandlers } = require('../electron/ipc/ipc-account-handlers.cjs');
 
 const syntheticPassword = '"Demo·2026!';
 
@@ -91,6 +91,133 @@ test('preserves U+0022 and U+00B7 through temporary and remembered IPC credentia
     );
     assert.doesNotMatch(fs.readFileSync(path.join(directory, 'secrets.json'), 'utf8'), /Demo/);
   }
+});
+
+test('keeps the previous encrypted file when atomic replacement fails', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-login-atomic-'));
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8'),
+    decryptString: (value) => value.toString('utf8'),
+  };
+  const store = new SecretStore(safeStorage, directory);
+  store.put('account:demo@example.test', 'previous', { remember: true });
+  const file = path.join(directory, 'secrets.json');
+  const before = fs.readFileSync(file, 'utf8');
+  const rename = fs.renameSync;
+  fs.renameSync = () => {
+    throw new Error('simulated interruption');
+  };
+  try {
+    assert.throws(
+      () => store.put('account:demo@example.test', 'replacement', { remember: true }),
+      /secret_unavailable/,
+    );
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert.equal(store.get('account:demo@example.test'), 'previous');
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.deepEqual(
+    fs.readdirSync(directory).filter((name) => name.endsWith('.tmp')),
+    [],
+  );
+});
+
+test('fails closed without overwriting a corrupt secret file', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-login-corrupt-'));
+  const file = path.join(directory, 'secrets.json');
+  const corrupt = '{"account:demo@example.test":';
+  fs.writeFileSync(file, corrupt, 'utf8');
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8'),
+    decryptString: (value) => value.toString('utf8'),
+  };
+  const store = new SecretStore(safeStorage, directory);
+
+  assert.equal(store.hasPersistent('account:demo@example.test'), false);
+  assert.throws(() => store.get('account:demo@example.test'), /secret_unavailable/);
+  assert.throws(
+    () => store.put('account:demo@example.test', 'replacement', { remember: true }),
+    /secret_unavailable/,
+  );
+  assert.equal(fs.readFileSync(file, 'utf8'), corrupt);
+});
+
+test('allows a session-only credential while persistent storage awaits recovery', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-login-corrupt-session-'));
+  const file = path.join(directory, 'secrets.json');
+  const corrupt = '{corrupt';
+  fs.writeFileSync(file, corrupt, 'utf8');
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8'),
+    decryptString: (value) => value.toString('utf8'),
+  };
+  const store = new SecretStore(safeStorage, directory);
+
+  store.put('account:demo@example.test', 'session-password', { remember: false });
+  assert.equal(store.get('account:demo@example.test'), 'session-password');
+  assert.equal(fs.readFileSync(file, 'utf8'), corrupt);
+});
+
+test('restores the latest valid encrypted backup and preserves corrupt evidence', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-login-recovery-'));
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8'),
+    decryptString: (value) => value.toString('utf8'),
+  };
+  const store = new SecretStore(safeStorage, directory);
+  store.put('account:demo@example.test', 'first', { remember: true });
+  store.put('account:demo@example.test', 'latest', { remember: true });
+  const file = path.join(directory, 'secrets.json');
+  fs.writeFileSync(file, '{corrupt', 'utf8');
+
+  const damaged = new SecretStore(safeStorage, directory);
+  assert.equal(damaged.getStatus(), 'recovery_available');
+  assert.throws(() => damaged.get('account:demo@example.test'), /secret_unavailable/);
+  damaged.recover();
+
+  assert.equal(damaged.getStatus(), 'available');
+  assert.equal(damaged.get('account:demo@example.test'), 'latest');
+  assert.ok(fs.readdirSync(directory).some((name) => name.startsWith('secrets.json.corrupt-')));
+  assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /latest/);
+});
+
+test('resets a corrupt store without deleting profiles or leaving a recoverable backup', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-login-reset-'));
+  const file = path.join(directory, 'secrets.json');
+  fs.writeFileSync(file, '{corrupt', 'utf8');
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(value, 'utf8'),
+    decryptString: (value) => value.toString('utf8'),
+  };
+  const store = new SecretStore(safeStorage, directory);
+  store.reset();
+
+  assert.equal(store.getStatus(), 'available');
+  assert.equal(fs.readFileSync(file, 'utf8'), '{}');
+  assert.equal(fs.existsSync(path.join(directory, 'secrets.json.bak')), false);
+  store.put('account:demo@example.test', 'new-password', { remember: true });
+  assert.equal(store.get('account:demo@example.test'), 'new-password');
+});
+
+test('keeps temporary credentials usable when platform secure storage is unavailable', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-login-session-only-'));
+  const safeStorage = {
+    isEncryptionAvailable: () => false,
+    encryptString: () => Buffer.from('unreachable'),
+    decryptString: () => 'unreachable',
+  };
+  const store = new SecretStore(safeStorage, directory);
+
+  store.put('account:demo@example.test', 'session-password', { remember: false });
+  assert.equal(store.get('account:demo@example.test'), 'session-password');
+  store.clearSession('account:demo@example.test');
+  assert.throws(() => store.get('account:demo@example.test'), /secret_unavailable/);
 });
 
 test('PLAIN SASL payload retains the exact UTF-8 password without XML interpolation', () => {

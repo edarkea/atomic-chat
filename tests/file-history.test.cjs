@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { FileHistoryStore } = require('../electron/file-history.cjs');
-const { PersistenceStore } = require('../electron/storage.cjs');
+const { FileHistoryStore } = require('../electron/files/file-history.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
 
 const ACCOUNT = 'one@example.invalid';
 const OTHER_ACCOUNT = 'two@example.invalid';
@@ -69,11 +69,14 @@ test('persists incoming and outgoing history by path without copying bytes', asy
     assert.equal(fs.existsSync(path.join(directory, 'media')), false);
     const outgoing = await store.persistTransfer(completed(source, 'outgoing-1'), 'outgoing');
     assert.equal(outgoing.direction, 'outgoing');
-    assert.equal(persistence.database.prepare('SELECT COUNT(*) AS count FROM file_assets').get().count, 2);
+    assert.equal(
+      persistence.database.prepare('SELECT COUNT(*) AS count FROM file_assets').get().count,
+      2,
+    );
   });
 });
 
-test('migration v9 and repeated persistence are idempotent', async () => {
+test('current schema and repeated persistence are idempotent', async () => {
   await withSetup(async ({ directory, persistence }) => {
     const source = path.join(directory, 'repeat.pdf');
     await fsp.writeFile(source, 'payload');
@@ -84,10 +87,16 @@ test('migration v9 and repeated persistence are idempotent', async () => {
       store.persistTransfer(record, 'outgoing'),
     ]);
     assert.equal(first.fileId, second.fileId);
-    assert.equal(persistence.database.prepare('SELECT version FROM schema_meta').get().version, 9);
-    assert.equal(persistence.database.prepare('SELECT COUNT(*) AS count FROM file_assets').get().count, 1);
+    assert.equal(persistence.database.prepare('SELECT version FROM schema_meta').get().version, 15);
+    assert.equal(
+      persistence.database.prepare('SELECT COUNT(*) AS count FROM file_assets').get().count,
+      1,
+    );
     const page = persistence.listTimelinePage(ACCOUNT, CONVERSATION, 10, 'older', null);
-    assert.deepEqual(page.items.map((item) => item.kind), ['file']);
+    assert.deepEqual(
+      page.items.map((item) => item.kind),
+      ['file'],
+    );
     assert.equal(Object.hasOwn(page.items[0].file, 'localPath'), false);
   });
 });
@@ -126,7 +135,10 @@ test('mixed timeline and conversation index include files without duplicating C6
     fileRecord.updatedAt = '2026-01-03T00:00:00.000Z';
     await store.persistTransfer(fileRecord, 'incoming');
     const page = persistence.listTimelinePage(ACCOUNT, CONVERSATION, 10, 'older', null);
-    assert.deepEqual(page.items.map((item) => item.kind), ['text', 'image', 'file']);
+    assert.deepEqual(
+      page.items.map((item) => item.kind),
+      ['text', 'image', 'file'],
+    );
     assert.deepEqual(
       persistence.listConversations(ACCOUNT).map((item) => item.jid),
       [CONVERSATION],
@@ -134,7 +146,7 @@ test('mixed timeline and conversation index include files without duplicating C6
   });
 });
 
-test('refresh marks moved, changed and symlinked files without deleting history', async () => {
+test('refresh marks moved, changed and symlinked files without deleting history', async (t) => {
   await withSetup(async ({ directory, persistence }) => {
     const source = path.join(directory, 'tracked.pdf');
     await fsp.writeFile(source, 'payload');
@@ -146,7 +158,15 @@ test('refresh marks moved, changed and symlinked files without deleting history'
     assert.equal((await store.refreshFile(ACCOUNT, saved.fileId)).availability, 'missing');
     const replacement = path.join(directory, 'replacement.pdf');
     await fsp.writeFile(replacement, 'replacement');
-    await fsp.symlink(replacement, source);
+    try {
+      await fsp.symlink(replacement, source);
+    } catch (error) {
+      if (['EACCES', 'EPERM', 'ENOTSUP', 'UNKNOWN'].includes(error.code)) {
+        t.skip(`symlink creation unavailable in this environment: ${error.code}`);
+        return;
+      }
+      throw error;
+    }
     assert.equal((await store.refreshFile(ACCOUNT, saved.fileId)).availability, 'blocked');
     assert.equal(persistence.getFileAsset(ACCOUNT, saved.fileId).fileId, saved.fileId);
   });
@@ -187,17 +207,26 @@ test('revalidates the path and authorization immediately before a historical act
     await fsp.writeFile(source, 'payload');
     const opened = [];
     let releaseValidation;
-    const validation = new Promise((resolve) => { releaseValidation = resolve; });
-    let lstatCalls = 0;
-    const store = new FileHistoryStore(persistence, {
-      openPath: async (filePath) => { opened.push(filePath); return ''; },
-    }, {
-      lstat: async (filePath) => {
-        lstatCalls += 1;
-        if (lstatCalls === 2) await validation;
-        return fsp.lstat(filePath, { bigint: true });
-      },
+    const validation = new Promise((resolve) => {
+      releaseValidation = resolve;
     });
+    let lstatCalls = 0;
+    const store = new FileHistoryStore(
+      persistence,
+      {
+        openPath: async (filePath) => {
+          opened.push(filePath);
+          return '';
+        },
+      },
+      {
+        lstat: async (filePath) => {
+          lstatCalls += 1;
+          if (lstatCalls === 2) await validation;
+          return fsp.lstat(filePath, { bigint: true });
+        },
+      },
+    );
     const saved = await store.persistTransfer(completed(source, 'async-action-1'), 'outgoing');
     let authorized = true;
     const action = store.open(ACCOUNT, CONVERSATION, saved.fileId, () => authorized);
@@ -215,7 +244,10 @@ test('does not open a file replaced by a symlink between validation phases', asy
     await fsp.writeFile(source, 'payload');
     const opened = [];
     const store = new FileHistoryStore(persistence, {
-      openPath: async (filePath) => { opened.push(filePath); return ''; },
+      openPath: async (filePath) => {
+        opened.push(filePath);
+        return '';
+      },
     });
     const saved = await store.persistTransfer(completed(source, 'race-1'), 'outgoing');
     const originalLstat = store.lstat;
@@ -239,7 +271,10 @@ test('blocks executable extensions from the recorded name as well as the local p
     await fsp.writeFile(source, 'payload');
     const opened = [];
     const store = new FileHistoryStore(persistence, {
-      openPath: async (filePath) => { opened.push(filePath); return ''; },
+      openPath: async (filePath) => {
+        opened.push(filePath);
+        return '';
+      },
     });
     const saved = await store.persistTransfer(
       completed(source, 'blocked-extension-1', ACCOUNT, 'payload.exe'),
@@ -263,6 +298,9 @@ test('SQLite failure does not alter the transfer source or create a binary copy'
     };
     assert.equal(await store.persistTransfer(completed(source, 'failure-1'), 'incoming'), null);
     assert.equal(await fsp.readFile(source, 'utf8'), 'payload');
-    assert.equal(fs.readdirSync(directory).some((name) => name === 'media'), false);
+    assert.equal(
+      fs.readdirSync(directory).some((name) => name === 'media'),
+      false,
+    );
   });
 });

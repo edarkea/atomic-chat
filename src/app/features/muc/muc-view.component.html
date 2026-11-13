@@ -1,0 +1,136 @@
+<header class="chat-header">
+  <span class="avatar header-avatar muc-avatar" aria-hidden="true"
+    ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-room" /></svg
+  ></span>
+  <div>
+    <strong>{{ roomState().room.room }}</strong
+    ><small>Sala MUC · {{ roomState().participants.length }} participantes</small>
+  </div>
+  <button
+    class="conversation-close"
+    type="button"
+    aria-label="Cerrar conversación"
+    title="Cerrar conversación"
+    (click)="closeRequested.emit()"
+  >
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-close" />
+    </svg>
+  </button>
+</header>
+<section class="muc-room-view" aria-label="Sala MUC">
+  <div class="muc-room-meta">
+    <div>
+      <strong>{{ roomState().room.room }}</strong
+      ><small>{{ roomState().participants.length }} participantes · estado joined</small>
+    </div>
+    <button type="button" (click)="leave.emit()">Salir</button>
+  </div>
+  @if (displayNotices().length) {
+    <div class="muc-notices" aria-live="polite">
+      @for (notice of displayNotices(); track notice.code) {
+        <p>El servidor asignó el nickname {{ notice.nickname }}.</p>
+      }
+    </div>
+  }
+  <div class="muc-participants">
+    @for (participant of participants(); track participant.occupantJid) {
+      <span
+        [title]="
+          participantAvailabilityLabel(participant.availability) +
+          ' · ' +
+          participant.role +
+          ' / ' +
+          participant.affiliation
+        "
+        ><i
+          class="presence-dot"
+          [class.away]="participant.availability === 'away'"
+          [class.xa]="participant.availability === 'extended-away'"
+          [class.dnd]="participant.availability === 'dnd'"
+        ></i
+        >{{ participant.nick }}</span
+      >
+    }
+    @if (allParticipantCount() > 100) {
+      <button
+        type="button"
+        (click)="previousParticipantPage.emit()"
+        [disabled]="!participantPage()"
+      >
+        Anterior</button
+      ><button
+        type="button"
+        (click)="nextParticipantPage.emit()"
+        [disabled]="!hasMoreParticipants()"
+      >
+        Siguiente
+      </button>
+    }
+  </div>
+  <div #mucMessages class="muc-messages" aria-live="polite" (scroll)="onMessagesScroll()">
+    @for (display of displayMessages(); track display.item.id) {
+      @let message = display.item;
+      @if (display.daySeparator) {
+        <div class="day-separator" role="separator">
+          <span>{{ dayLabel(message.receivedAt) }}</span>
+        </div>
+      }
+      <app-message-item
+        [sender]="senderLabel(message)"
+        [body]="message.body.text"
+        [outgoing]="isOutgoing(message)"
+        [createdAt]="message.receivedAt"
+        [receivedLocally]="true"
+        [showSender]="display.showHeader"
+        [showTime]="display.showHeader"
+        [timestampLabel]="display.timestampLabel"
+        [groupPosition]="display.position"
+        [messageId]="stableActionId(message)"
+        [activeOverlay]="overlayFor(message.id)"
+        [replyTo]="message.replyTo"
+        [replyAuthor]="replyAuthor(message.replyTo)"
+        [replyTime]="replyTime(message.replyTo)"
+        [replyText]="replyQuote(message.replyTo)"
+        [replyTargetId]="replyTargetId(message.replyTo)"
+        [reactions]="reactionFor(message.id)"
+        [ownReactionEmojis]="ownReactionEmojis(message.id)"
+        [reactionActorLabel]="reactionActorLabel"
+        [attr.data-message-id]="message.id"
+        (replyRequested)="requestReply(message)"
+        (overlayRequested)="setOverlay(message.id, $event)"
+        (replyNavigation)="navigateToMessage($event)"
+        (reactionChanged)="
+          reactionChanged.emit({ messageId: actionTargetId(message), emojis: $event })
+        "
+      />
+    }
+    @if (!messages().length) {
+      <p class="reference-message empty-state">No hay mensajes todavía.</p>
+    }
+  </div>
+  @if (error()) {
+    <p class="composer-error" role="alert">{{ error() }}</p>
+  }
+  <div class="scroll-to-latest-slot">
+    <app-scroll-to-latest-button
+      [visible]="showScrollToLatest()"
+      (requested)="scrollToLatestFromButton()"
+    />
+  </div>
+  <app-message-composer
+    [inputName]="'muc-message'"
+    [placeholder]="'Escribir en la sala...'"
+    [draft]="draft()"
+    [disabled]="false"
+    [showEmoji]="true"
+    [stickersAccountId]="roomState().accountId"
+    [replyPreview]="
+      replyingTo() ? { author: replyingTo()!.author, quote: replyingTo()!.quote } : undefined
+    "
+    (draftChange)="draftChange.emit($event)"
+    (messageSubmitted)="send.emit()"
+    (replyCancel)="replyCancel.emit()"
+  />
+</section>

@@ -115,7 +115,8 @@ const PRESET_PALETTES: Readonly<Record<'atomic' | 'atomic-light', ThemePalette>>
   'atomic-light': ATOMIC_LIGHT_THEME_PALETTE,
 });
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}(?:[0-9a-f]{2})?)$/i;
-const COLOR_FUNCTION = /^(?:rgba?|hsla?)\(\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?)?\s*\)$/i;
+const COLOR_FUNCTION =
+  /^(?:rgba?|hsla?)\(\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*|\s+)[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?(?:\s*(?:,|\/)\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?)?\s*\)$/i;
 const TRANSPARENT_COLOR = /^transparent$/i;
 
 export interface ThemeValidation {
@@ -127,8 +128,7 @@ function parseNumber(value: string, max: number, percentageAllowed: boolean): nu
   const isPercentage = value.endsWith('%');
   if (isPercentage && !percentageAllowed) return null;
   const numeric = Number.parseFloat(isPercentage ? value.slice(0, -1) : value);
-  if (!Number.isFinite(numeric) || numeric < 0 || numeric > (isPercentage ? 100 : max))
-    return null;
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > (isPercentage ? 100 : max)) return null;
   return isPercentage ? (numeric / 100) * max : numeric;
 }
 
@@ -137,7 +137,13 @@ function parseColor(value: string): readonly [number, number, number] | null {
   if (TRANSPARENT_COLOR.test(normalized)) return [0, 0, 0];
   if (HEX_COLOR.test(normalized)) {
     const compact = normalized.slice(1);
-    const expanded = compact.length <= 4 ? compact.split('').map((channel) => channel + channel).join('') : compact;
+    const expanded =
+      compact.length <= 4
+        ? compact
+            .split('')
+            .map((channel) => channel + channel)
+            .join('')
+        : compact;
     return [
       Number.parseInt(expanded.slice(0, 2), 16),
       Number.parseInt(expanded.slice(2, 4), 16),
@@ -174,11 +180,21 @@ function parseColor(value: string): readonly [number, number, number] | null {
   };
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;
-  return [hueToRgb(p, q, h + 1 / 3) * 255, hueToRgb(p, q, h) * 255, hueToRgb(p, q, h - 1 / 3) * 255];
+  return [
+    hueToRgb(p, q, h + 1 / 3) * 255,
+    hueToRgb(p, q, h) * 255,
+    hueToRgb(p, q, h - 1 / 3) * 255,
+  ];
 }
 
 function isThemeColor(value: string): value is HexColor {
-  return typeof value === 'string' && (HEX_COLOR.test(value.trim()) || COLOR_FUNCTION.test(value.trim()) || TRANSPARENT_COLOR.test(value.trim())) && parseColor(value) !== null;
+  return (
+    typeof value === 'string' &&
+    (HEX_COLOR.test(value.trim()) ||
+      COLOR_FUNCTION.test(value.trim()) ||
+      TRANSPARENT_COLOR.test(value.trim())) &&
+    parseColor(value) !== null
+  );
 }
 
 export function isThemeId(value: string): value is ThemeId {

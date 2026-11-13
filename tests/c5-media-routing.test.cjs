@@ -4,24 +4,29 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { PersistenceStore } = require('../electron/storage.cjs');
-const { MediaStore } = require('../electron/media-store.cjs');
-const { persistCompletedTransfer } = require('../electron/media-transfer-persistence.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
+const { MediaStore } = require('../electron/files/media-store.cjs');
+const { persistCompletedTransfer } = require('../electron/files/media-transfer-persistence.cjs');
 
 const accountId = 'media-routing@example.invalid';
 const conversationId = 'contact@example.invalid';
-const pngFixture = () => Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-  'base64',
-);
-const jpegFixture = () => Buffer.from([
-  0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03,
-  0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
-]);
+const pngFixture = () =>
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
+const jpegFixture = () =>
+  Buffer.from([
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03, 0x03, 0x01, 0x11, 0x00, 0x02,
+    0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
+  ]);
 const nativeImage = {
   createFromBuffer(buffer) {
     const png = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    return { isEmpty: () => false, getSize: () => (png ? { width: 1, height: 1 } : { width: 3, height: 2 }) };
+    return {
+      isEmpty: () => false,
+      getSize: () => (png ? { width: 1, height: 1 } : { width: 3, height: 2 }),
+    };
   },
 };
 
@@ -66,7 +71,11 @@ test('routes MIME-less PNG and JPEG transfers through the real image inspection 
     ]) {
       const sourcePath = path.join(context.directory, name);
       await fsp.writeFile(sourcePath, bytes);
-      const fileHistory = { persistTransfer: async () => { throw new Error('no C5 fallback'); } };
+      const fileHistory = {
+        persistTransfer: async () => {
+          throw new Error('no C5 fallback');
+        },
+      };
       const saved = await persistCompletedTransfer({
         record: completed(sourcePath, transferId, name),
         direction: 'incoming',
@@ -91,9 +100,16 @@ test('routes a MIME-less non-image only to the path-based C5 history store', asy
     let historyPersisted = false;
     const media = {
       isStaticImageCandidate: context.media.isStaticImageCandidate.bind(context.media),
-      persistTransfer: async () => { mediaPersisted = true; return null; },
+      persistTransfer: async () => {
+        mediaPersisted = true;
+        return null;
+      },
     };
-    const fileHistory = { persistTransfer: async () => { historyPersisted = true; } };
+    const fileHistory = {
+      persistTransfer: async () => {
+        historyPersisted = true;
+      },
+    };
     await persistCompletedTransfer({
       record: completed(sourcePath, 'document-without-mime', 'document.bin'),
       direction: 'incoming',

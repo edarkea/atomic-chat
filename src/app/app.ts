@@ -2,103 +2,67 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
+  ElementRef,
   effect,
   HostListener,
   inject,
   signal,
   ViewChild,
 } from '@angular/core';
-import { ChatFacade } from './core/chat.facade';
-import { MucFacade } from './core/muc.facade';
-import { FileFacade } from './core/file.facade';
+import { ChatFacade } from './core/facades/chat.facade';
+import { AppSessionCoordinator } from './core/coordinators/app-session.coordinator';
+import type { LoginDraft } from './core/coordinators/app-session.coordinator';
+import { MucFacade } from './core/facades/muc.facade';
+import { FileFacade } from './core/facades/file.facade';
 import {
-  CertificateTrustDecision,
-  AppError,
-  AppErrorCode,
-  BroadcastMode,
-  BroadcastRecipientResult,
-  ChatImageRecord,
-  ChatFileHistoryRecord,
   Contact,
-  FileTransfer,
+  CredentialStorageStatus,
   HistoryTimelineItem,
   Message,
   MessageSearchHit,
   Preferences,
-  RoomState,
   RoomMessage,
-  XmppTransport,
 } from './core/domain';
-import { BroadcastFacade, bareBroadcastJid } from './core/broadcast.facade';
-import { createOpaqueId } from './core/ids';
-import { CertificateDialogComponent } from './certificate-dialog.component';
+import { BroadcastFacade } from './core/facades/broadcast.facade';
+import { BroadcastCoordinator } from './core/coordinators/broadcast.coordinator';
+import { CertificateDialogComponent } from './features/session/certificate-dialog.component';
 import {
-  ConversationTimelineItem,
   ConversationViewComponent,
   OlderMessagesRequest,
-} from './conversation-view.component';
-import { WorkspaceConversationItem } from './conversation-list.component';
-import { LoginPanelComponent } from './login-panel.component';
-import {
-  ConnectionSettingsDialogComponent,
-  ConnectionSettingsDraft,
-} from './connection-settings-dialog.component';
-import { MucViewComponent } from './muc-view.component';
-import { SidebarComponent, SidebarModel } from './sidebar.component';
-import { PresenceOption } from './sidebar.models';
-import { ActiveConversationStore } from './core/active-conversation.store';
-import { WindowFocusStore } from './core/window-focus.store';
-import { ConversationVisibilityStore } from './core/conversation-visibility.store';
+} from './features/conversation/conversation-view.component';
+import { LoginPanelComponent } from './features/session/login-panel.component';
+import { ConnectionSettingsDialogComponent } from './features/settings/connection-settings-dialog.component';
+import type { ConnectionSettingsDraft } from './features/settings/connection-settings-dialog.component';
+import { MucViewComponent } from './features/muc/muc-view.component';
+import { SidebarComponent } from './features/navigation/sidebar.component';
+import { PresenceOption } from './features/navigation/sidebar.models';
+import { ActiveConversationStore } from './core/stores/active-conversation.store';
+import { WindowFocusStore } from './core/stores/window-focus.store';
+import { ConversationVisibilityStore } from './core/stores/conversation-visibility.store';
 import { ThemeService } from './core/theme.service';
-import { NewMessageDialogComponent, NewMessageDialogModel } from './new-message-dialog.component';
+import { NewMessageDialogComponent } from './features/navigation/new-message-dialog.component';
+import { PreferencesDialogComponent } from './features/settings/preferences-dialog.component';
+import { BroadcastDialogComponent } from './features/broadcast/broadcast-dialog.component';
+import { StickerMessageFacade } from './core/facades/sticker-message.facade';
+import { UpdateFacade } from './core/facades/update.facade';
+import { PreferencesCoordinator } from './core/coordinators/preferences.coordinator';
+import { NewMessageCoordinator } from './core/coordinators/new-message.coordinator';
+import { ConversationTimelineCoordinator } from './core/coordinators/conversation-timeline.coordinator';
+import { WorkspaceCoordinator } from './core/coordinators/workspace.coordinator';
+import { WorkspaceConversationViewCoordinator } from './features/navigation/workspace-conversation-view.coordinator';
+import { SidebarViewCoordinator } from './features/navigation/sidebar-view.coordinator';
+import { bareJid } from './core/identity';
+import { VersionUpdateComponent } from './features/session/version-update.component';
+
 import {
-  PreferencesDialogComponent,
-  PreferencesDialogModel,
-  PreferencesSaveState,
-} from './preferences-dialog.component';
-import { BroadcastDialogComponent, BroadcastDialogModel } from './broadcast-dialog.component';
-import { StickerMessageFacade } from './core/sticker-message.facade';
-import { UpdateFacade } from './core/update.facade';
-import { VersionUpdateComponent } from './version-update.component';
-
-export const STICKER_SENDING_DISABLED_MESSAGE =
-  'El envío de stickers está temporalmente deshabilitado';
-
-const STICKER_SEND_ERROR_MESSAGES: Readonly<Partial<Record<AppErrorCode, string>>> = {
-  INVALID_INPUT: 'La solicitud del sticker no es válida.',
-  UNAUTHORIZED: 'La ventana o la cuenta ya no están autorizadas para enviar este sticker.',
-  NOT_CONNECTED: 'La cuenta ya no está conectada al servidor XMPP.',
-  TIMEOUT: 'El envío del sticker excedió el tiempo de espera.',
-  UNSUPPORTED: 'El servidor no ofrece XEP-0363/HTTP Upload; requiere configuración del servidor.',
-  TRANSPORT_FAILED: 'Falló HTTP Upload o el transporte XMPP durante el envío.',
-  MEDIA_PREVIEW_UNAVAILABLE: 'La fuente local del sticker ya no está disponible.',
-  MEDIA_TYPE_UNSUPPORTED: 'El sticker debe ser una imagen PNG o JPEG estática.',
-  MEDIA_SIZE_EXCEEDED: 'El sticker supera el tamaño máximo permitido por el servidor.',
-  MEDIA_DIMENSIONS_INVALID: 'Las dimensiones del sticker no están permitidas.',
-  MEDIA_DECODE_FAILED: 'El sticker no pudo validarse de forma segura.',
-  STORAGE_FAILED: 'No fue posible leer o guardar el sticker localmente.',
-  RESOURCE_CONSTRAINT: 'Se alcanzó el límite local de stickers o almacenamiento.',
-  CONFLICT: 'El envío entra en conflicto con otra operación del mismo mensaje.',
-  SEND_IN_PROGRESS: 'El envío del sticker sigue pendiente; no se repetirá automáticamente.',
-  SEND_RESULT_UNKNOWN:
-    'El servidor no confirmó si el sticker fue enviado; no se repetirá automáticamente.',
-  INTERNAL: 'No fue posible completar el envío del sticker.',
-};
-
-export function stickerSendErrorMessage(error: Pick<AppError, 'code' | 'message'>): string {
-  if (error.code === 'UNSUPPORTED' && error.message === STICKER_SENDING_DISABLED_MESSAGE)
-    return STICKER_SENDING_DISABLED_MESSAGE;
-  return (
-    STICKER_SEND_ERROR_MESSAGES[error.code] || 'No fue posible completar el envío del sticker.'
-  );
-}
-
-type ConversationSelection =
-  | { kind: 'none'; accountId: string }
-  | { kind: 'direct'; accountId: string; jid: string }
-  | { kind: 'muc'; accountId: string; roomJid: string };
-
-type BroadcastAttempt = Readonly<{ mode: BroadcastMode; body: string }>;
+  STICKER_SENDING_DISABLED_MESSAGE,
+  stickerSendErrorMessage,
+} from './features/stickers/sticker-send-error-message';
+export {
+  STICKER_SENDING_DISABLED_MESSAGE,
+  stickerSendErrorMessage,
+} from './features/stickers/sticker-send-error-message';
 
 @Component({
   selector: 'app-root',
@@ -120,500 +84,194 @@ type BroadcastAttempt = Readonly<{ mode: BroadcastMode; body: string }>;
 })
 export class App {
   protected readonly chat = inject(ChatFacade);
+  private readonly session = inject(AppSessionCoordinator);
   protected readonly muc = inject(MucFacade);
+  private readonly workspace = inject(WorkspaceCoordinator);
   private readonly activeConversation = inject(ActiveConversationStore);
   private readonly conversationVisibility = inject(ConversationVisibilityStore);
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly stickerMessages = inject(StickerMessageFacade);
   protected readonly updates = inject(UpdateFacade);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly stickerSendingDisabled = true;
   protected readonly theme = inject(ThemeService);
+  private readonly preferencesCoordinator = new PreferencesCoordinator({
+    chat: this.chat,
+    updates: this.updates,
+    resetTheme: () => this.theme.resetPreferences(),
+  });
+  private readonly newMessageCoordinator = new NewMessageCoordinator({
+    chat: this.chat,
+    muc: this.muc,
+    isJoinedRoom: (accountId, roomJid) =>
+      this.workspace.joinedRoom(roomJid)?.accountId === accountId,
+    selectJoinedRoom: (roomJid) => this.selectJoinedRoom(roomJid),
+    joinedRooms: this.workspace.joinedRooms,
+  });
+  private readonly conversationTimelineCoordinator = new ConversationTimelineCoordinator({
+    chat: this.chat,
+    files: this.files,
+    selectedJid: () => this.selectedJid(),
+    contactsByBareJid: () => this.contactsByBareJid(),
+  });
+  private readonly workspaceConversationViewCoordinator = new WorkspaceConversationViewCoordinator({
+    conversationSummaries: this.chat.conversationSummaries,
+    joinedRooms: this.workspace.joinedRooms,
+    search: this.workspace.search,
+    roomActivity: this.muc.roomActivity,
+    contactsByBareJid: this.workspace.contactsByBareJid,
+    isHidden: (accountId, kind, jid) => this.conversationVisibility.isHidden(accountId, kind, jid),
+  });
+  private readonly sidebarViewCoordinator = new SidebarViewCoordinator({
+    connection: this.chat.connection,
+    accountId: this.chat.accountId,
+    presence: this.chat.presence,
+    search: this.workspace.search,
+    unreadCounts: this.chat.unreadCounts,
+    nickname: this.newMessageCoordinator.nickname,
+    discovering: this.newMessageCoordinator.discovering,
+    mucError: this.muc.error,
+    services: this.muc.services,
+    mucStates: this.muc.states,
+    selectedRoomJid: this.muc.selectedRoomJid,
+    activeRoomState: this.workspace.activeRoomState,
+    joinedRooms: this.workspace.joinedRooms,
+    filteredContacts: this.workspace.filteredContacts,
+    workspaceContacts: this.workspace.workspaceContacts,
+    workspaceItems: this.workspaceConversationViewCoordinator.items,
+    selectedJid: this.workspace.selectedJid,
+  });
   private readonly broadcast = inject(BroadcastFacade);
+  private readonly broadcastCoordinator = new BroadcastCoordinator({
+    sender: this.broadcast,
+    accountId: () => this.chat.accountId(),
+    isConnected: () => this.chat.isConnected(),
+    contacts: () => this.chat.contacts(),
+  });
   protected readonly fileActionPending = (transferId: string): boolean =>
     this.files.isLocalActionPending(transferId);
   protected readonly draft = signal('');
-  protected readonly replyingTo = signal<{ readonly id: string; readonly author: string; readonly quote: string } | undefined>(undefined);
-  protected readonly login = signal({
-    accountId: '',
-    domain: '',
-    password: '',
-    host: '',
-    port: 5222,
-    transport: 'starttls' as XmppTransport,
-    automatic: true,
-    remember: false,
-    autoLogin: false,
-    autoLoginExplicit: false,
-  });
-  protected readonly loginBusy = signal(false);
-  protected readonly profileActionBusy = signal(false);
-  protected readonly selectedProfileId = signal('');
-  protected readonly loginProfiles = computed(() => this.chat.profiles?.() ?? []);
-  protected readonly search = signal('');
+  protected readonly replyingTo = signal<
+    { readonly id: string; readonly author: string; readonly quote: string } | undefined
+  >(undefined);
+  protected readonly login = this.session.login;
+  protected readonly loginBusy = this.session.loginBusy;
+  protected readonly profileActionBusy = this.session.profileActionBusy;
+  protected readonly selectedProfileId = this.session.selectedProfileId;
+  protected readonly loginProfiles = this.session.loginProfiles;
+  protected readonly credentialStorageStatus = computed<CredentialStorageStatus>(
+    () =>
+      this.loginProfiles().find((profile) => profile.accountId === this.selectedProfileId())
+        ?.credentialStorageStatus || 'available',
+  );
+  protected readonly search = this.workspace.search;
   protected readonly messageSearchQuery = signal('');
   protected readonly messageSearchScope = signal<'all' | 'conversation'>('conversation');
-  protected readonly messageSearchConversationNames = computed<ReadonlyMap<string, string>>(
-    () =>
-      new Map(
-        this.chat
-          .contacts()
-          .map((contact) => {
-            const name = contact.name?.trim();
-            return name ? ([this.bareJid(contact.jid), name] as const) : null;
-          })
-          .filter((entry): entry is readonly [string, string] => entry !== null),
-      ),
-  );
+  protected readonly messageSearchConversationNames = this.workspace.messageSearchConversationNames;
   private messageSearchTimer: ReturnType<typeof setTimeout> | undefined;
-  protected readonly newMessageOpen = signal(false);
-  protected readonly newMessageSearch = signal('');
-  protected readonly newMessageJoiningRoom = signal<string | null>(null);
-  protected readonly newMessageLocalError = signal<string | null>(null);
-  protected readonly preferencesOpen = signal(false);
-  protected readonly broadcastOpen = signal(false);
-  protected readonly broadcastBody = signal('');
-  protected readonly broadcastMode = signal<BroadcastMode>('normal');
-  protected readonly broadcastHideOffline = signal(false);
-  protected readonly broadcastSelectedJids = signal<ReadonlySet<string>>(new Set<string>());
-  protected readonly broadcastBusy = signal(false);
-  protected readonly broadcastError = signal<string | null>(null);
-  protected readonly broadcastResult = signal<ReadonlyArray<BroadcastRecipientResult> | null>(null);
-  private broadcastAttempt: BroadcastAttempt | null = null;
-  private broadcastRun = 0;
-  protected readonly preferencesSaveState = signal<PreferencesSaveState>('idle');
-  protected readonly preferencesError = signal<string | null>(null);
-  protected readonly downloadDirectorySelecting = signal(false);
+  private messageSearchNavigationGeneration = 0;
+  private destroyed = false;
+  private uiTaskGeneration = 0;
+  private newMessageFocusFrame: number | undefined;
+  protected readonly newMessageOpen = this.newMessageCoordinator.open;
+  protected readonly newMessageSearch = this.newMessageCoordinator.search;
+  protected readonly newMessageJoiningRoom = this.newMessageCoordinator.joiningRoom;
+  protected readonly newMessageLocalError = this.newMessageCoordinator.localError;
+  protected readonly preferencesOpen = this.preferencesCoordinator.open;
+  protected readonly broadcastOpen = this.broadcastCoordinator.open;
+  protected readonly broadcastBody = this.broadcastCoordinator.body;
+  protected readonly broadcastMode = this.broadcastCoordinator.mode;
+  protected readonly broadcastHideOffline = this.broadcastCoordinator.hideOffline;
+  protected readonly broadcastSelectedJids = this.broadcastCoordinator.selectedJids;
+  protected readonly broadcastBusy = this.broadcastCoordinator.busy;
+  protected readonly broadcastError = this.broadcastCoordinator.error;
+  protected readonly broadcastResult = this.broadcastCoordinator.result;
+  protected readonly preferencesSaveState = this.preferencesCoordinator.saveState;
+  protected readonly preferencesError = this.preferencesCoordinator.error;
+  protected readonly downloadDirectorySelecting =
+    this.preferencesCoordinator.downloadDirectorySelecting;
   protected readonly totalUnread = computed(() => this.chat.unreadTotal?.() ?? 0);
   protected readonly conversationError = computed(() => this.files.error() || this.chat.error());
-  protected readonly conversationSelection = signal<ConversationSelection>({
-    kind: 'none',
-    accountId: '',
-  });
-  protected readonly selectedContact = signal<Contact | undefined>(undefined);
-  protected readonly settingsOpen = signal(false);
-  protected readonly settingsSaving = signal(false);
-  protected readonly settingsError = signal<string | null>(null);
-  protected readonly settingsDraft = computed<ConnectionSettingsDraft>(() => {
-    const value = this.login();
-    return {
-      automatic: value.automatic,
-      host: value.host,
-      port: value.port,
-      transport: value.transport,
-    };
-  });
-  protected readonly certificateRequest = computed(() => this.chat.certificateRequest?.() ?? null);
-  protected readonly presenceOpen = signal(false);
-  protected readonly presenceStatus = signal('');
-  protected readonly mucNickname = signal('');
+  protected readonly conversationSelection = this.workspace.conversationSelection;
+  protected readonly selectedContact = this.workspace.selectedContact;
+  protected readonly settingsOpen = this.session.settingsOpen;
+  protected readonly settingsSaving = this.session.settingsSaving;
+  protected readonly settingsError = this.session.settingsError;
+  protected readonly settingsDraft = this.session.settingsDraft;
+  protected readonly certificateRequest = this.session.certificateRequest;
+  protected readonly presenceOpen = this.sidebarViewCoordinator.presenceOpen;
+  protected readonly presenceStatus = this.sidebarViewCoordinator.presenceStatus;
+  protected readonly mucNickname = this.newMessageCoordinator.nickname;
   protected readonly mucDraft = signal('');
-  protected readonly mucDiscovering = signal(false);
-  protected readonly newMessageContacts = computed(() => {
-    const term = this.newMessageSearch().trim().toLowerCase();
-    return this.chat
-      .contacts()
-      .filter(
-        (contact) =>
-          !term ||
-          contact.jid.toLowerCase().includes(term) ||
-          contact.name?.toLowerCase().includes(term),
-      );
-  });
-  protected readonly newMessageServices = computed(() => {
-    const term = this.newMessageSearch().trim().toLowerCase();
-    return this.muc
-      .services()
-      .filter(
-        (room) =>
-          !term ||
-          room.jid.toLowerCase().includes(term) ||
-          room.room.toLowerCase().includes(term) ||
-          room.service.toLowerCase().includes(term),
-      );
-  });
-  protected readonly newMessageDialogModel = computed<NewMessageDialogModel>(() => ({
-    search: this.newMessageSearch(),
-    contacts: this.newMessageContacts(),
-    joinedRooms: this.joinedRooms(),
-    services: this.newMessageServices(),
-    nickname: this.mucNickname(),
-    discovering: this.mucDiscovering(),
-    joiningRoomJid: this.newMessageJoiningRoom(),
-    error: this.newMessageLocalError() || this.muc.error(),
-  }));
-  protected readonly preferencesDialogModel = computed<PreferencesDialogModel>(() => ({
-    preferences: this.chat.preferences(),
-    downloadDirectorySelecting: this.downloadDirectorySelecting(),
-    saveState: this.preferencesSaveState(),
-    error: this.preferencesError(),
-    updateStatus: this.updates.status(),
-    updateBusy: this.updates.busy(),
-    updateError: this.updates.error(),
-  }));
-  protected readonly broadcastContacts = computed<ReadonlyArray<Contact>>(() => {
-    const accountJid = bareBroadcastJid(this.chat.accountId());
-    const contactsByJid = new Map<string, Contact>();
-    for (const contact of this.chat.contacts()) {
-      const jid = bareBroadcastJid(contact.jid);
-      if (!jid || jid === accountJid || contact.source === 'conversation') continue;
-      const previous = contactsByJid.get(jid);
-      if (!previous) {
-        contactsByJid.set(jid, { ...contact, jid, groups: [...contact.groups] });
-        continue;
-      }
-      contactsByJid.set(jid, {
-        ...previous,
-        name: previous.name || contact.name,
-        groups: [...new Set([...previous.groups, ...contact.groups])],
-        presence: previous.presence || contact.presence,
-      });
-    }
-    const contacts = [...contactsByJid.values()];
-    return contacts.sort((left, right) =>
-      (left.name || left.jid).localeCompare(right.name || right.jid),
-    );
-  });
-  protected readonly broadcastGroups = computed<ReadonlyArray<string>>(() =>
-    [
-      ...new Set(
-        this.broadcastContacts().flatMap((contact) =>
-          contact.groups.map((group) => group.trim()).filter(Boolean),
-        ),
-      ),
-    ].sort((left, right) => left.localeCompare(right)),
-  );
-  protected readonly broadcastDialogModel = computed<BroadcastDialogModel>(() => ({
-    contacts: this.broadcastContacts(),
-    groups: this.broadcastGroups(),
-    selectedJids: this.broadcastSelectedJids(),
-    body: this.broadcastBody(),
-    mode: this.broadcastMode(),
-    hideOffline: this.broadcastHideOffline(),
-    busy: this.broadcastBusy(),
-    error: this.broadcastError(),
-    result: this.broadcastResult(),
-  }));
-  protected readonly activeSelection = computed<ConversationSelection>(() => {
-    const selection = this.conversationSelection();
-    const accountId = this.chat.accountId();
-    if (!accountId || !this.chat.isConnected() || selection.accountId !== accountId)
-      return { kind: 'none', accountId };
-    if (selection.kind === 'muc' && !this.joinedRoom(selection.roomJid))
-      return { kind: 'none', accountId };
-    return selection;
-  });
-  protected readonly selectedJid = computed(() => {
-    const selection = this.activeSelection();
-    return selection.kind === 'direct' ? selection.jid : '';
-  });
-  protected readonly joinedRooms = computed(() => {
-    const activity = this.muc.roomActivity?.() ?? new Map<string, number>();
-    return this.muc
-      .states()
-      .filter((state) => state.accountId === this.chat.accountId() && state.status === 'joined')
-      .slice()
-      .sort(
-        (left, right) =>
-          (activity.get(right.room.jid.toLowerCase()) || 0) -
-            (activity.get(left.room.jid.toLowerCase()) || 0) ||
-          left.room.jid.localeCompare(right.room.jid),
-      );
-  });
-  protected readonly workspaceContacts = computed(() => {
-    const term = this.search().trim().toLowerCase();
-    const summariesSignal = this.chat.conversationSummaries;
-    if (!summariesSignal) return undefined;
-    const summaries = summariesSignal();
-    return summaries
-      .slice()
-      .sort(
-        (left, right) =>
-          (right.lastMessageAt || 0) - (left.lastMessageAt || 0) ||
-          left.jid.localeCompare(right.jid),
-      )
-      .filter(
-        (summary) =>
-          !term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term),
-      )
-      .filter(
-        (summary) =>
-          !this.conversationVisibility.isHidden(summary.accountId, 'direct', summary.jid),
-      )
-      .map(
-        (summary) =>
-          this.chat
-            .contacts()
-            .find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
-          ({
-            jid: summary.jid,
-            name: summary.title,
-            groups: [],
-            source: 'conversation',
-          } satisfies Contact),
-      );
-  });
-  protected readonly workspaceItems = computed<
-    ReadonlyArray<WorkspaceConversationItem> | undefined
-  >(() => {
-    const summariesSignal = this.chat.conversationSummaries;
-    if (!summariesSignal) return undefined;
-    const term = this.search().trim().toLowerCase();
-    const activity = this.muc.roomActivity?.() ?? new Map<string, number>();
-    const directItems: WorkspaceConversationItem[] = summariesSignal()
-      .filter(
-        (summary) =>
-          !this.conversationVisibility.isHidden(summary.accountId, 'direct', summary.jid) &&
-          (!term || summary.jid.includes(term) || summary.title.toLowerCase().includes(term)),
-      )
-      .map((summary) => ({
-        kind: 'direct' as const,
-        contact:
-          this.chat
-            .contacts()
-            .find((contact) => this.bareJid(contact.jid) === this.bareJid(summary.jid)) ||
-          ({
-            jid: summary.jid,
-            name: summary.title,
-            groups: [],
-            source: 'conversation',
-          } satisfies Contact),
-        lastActivity: summary.lastMessageAt || 0,
-      }));
-    const roomItems: WorkspaceConversationItem[] = this.joinedRooms()
-      .filter(
-        (state) =>
-          !this.conversationVisibility.isHidden(state.accountId, 'muc', state.room.jid) &&
-          (!term ||
-            state.room.jid.toLowerCase().includes(term) ||
-            state.room.room.toLowerCase().includes(term) ||
-            state.room.service.toLowerCase().includes(term)),
-      )
-      .map((roomState) => ({
-        kind: 'muc' as const,
-        roomState,
-        lastActivity: activity.get(roomState.room.jid.toLowerCase()) || 0,
-      }));
-    return [...directItems, ...roomItems].sort(
-      (left, right) =>
-        right.lastActivity - left.lastActivity ||
-        `${left.kind}:${left.kind === 'muc' ? left.roomState.room.jid : left.contact.jid}`.localeCompare(
-          `${right.kind}:${right.kind === 'muc' ? right.roomState.room.jid : right.contact.jid}`,
-        ),
-    );
-  });
-  protected readonly activeRoomState = computed(() => {
-    const selection = this.activeSelection();
-    return selection.kind === 'muc' ? this.joinedRoom(selection.roomJid) : undefined;
-  });
-  protected readonly filteredContacts = computed(() => {
-    const term = this.search().trim().toLowerCase();
-    const accountId = this.chat.accountId();
-    return this.chat
-      .contacts()
-      .filter(
-        (contact) =>
-          !this.conversationVisibility.isHidden(accountId, 'direct', contact.jid) &&
-          (!term ||
-            contact.jid.toLowerCase().includes(term) ||
-            contact.name?.toLowerCase().includes(term)),
-      );
-  });
-  protected readonly visibleMessages = computed(() => {
-    const jid = this.bareJid(this.selectedJid());
-    if (!jid) return [];
-    const accountId = this.chat.accountId();
-    return this.chat
-      .messages()
-      .filter(
-        (message) =>
-          message.accountId === accountId &&
-          (this.bareJid(message.conversationId) === jid || this.bareJid(message.senderJid) === jid),
-      );
-  });
+  protected readonly mucDiscovering = this.newMessageCoordinator.discovering;
+  protected readonly newMessageContacts = this.newMessageCoordinator.contacts;
+  protected readonly newMessageServices = this.newMessageCoordinator.services;
+  protected readonly newMessageDialogModel = this.newMessageCoordinator.dialogModel;
+  protected readonly preferencesDialogModel = this.preferencesCoordinator.dialogModel;
+  protected readonly broadcastContacts = this.broadcastCoordinator.contacts;
+  protected readonly broadcastGroups = this.broadcastCoordinator.groups;
+  protected readonly broadcastDialogModel = this.broadcastCoordinator.dialogModel;
+  protected readonly activeSelection = this.workspace.activeSelection;
+  protected readonly selectedJid = this.workspace.selectedJid;
+  protected readonly joinedRooms = this.workspace.joinedRooms;
+  private readonly contactsByBareJid = this.workspace.contactsByBareJid;
+  protected readonly workspaceContacts = this.workspace.workspaceContacts;
+  protected readonly workspaceItems = this.workspaceConversationViewCoordinator.items;
+  protected readonly activeRoomState = this.workspace.activeRoomState;
+  protected readonly filteredContacts = this.workspace.filteredContacts;
+  protected readonly visibleMessages = this.conversationTimelineCoordinator.visibleMessages;
+  protected readonly initialTimelineReady =
+    this.conversationTimelineCoordinator.initialTimelineReady;
   protected readonly typingContact = computed(() => {
-    const jid = this.bareJid(this.selectedJid());
-    return Boolean(jid && this.chat.chatStates?.().get(jid) === 'composing');
+    const jid = bareJid(this.selectedJid());
+    if (!jid || this.chat.chatStates?.().get(jid) !== 'composing') return '';
+    const contactName = this.contactsByBareJid().get(jid)?.name?.trim();
+    if (contactName) return contactName;
+    const localPart = jid.split('@')[0]?.trim();
+    return localPart
+      ? `${localPart.charAt(0).toLocaleUpperCase()}${localPart.slice(1)}`
+      : 'Contacto';
   });
-  protected readonly conversationTimeline = computed<ReadonlyArray<ConversationTimelineItem>>(
-    () => {
-      const messages: ConversationTimelineItem[] = this.visibleMessages().map((message) => ({
-        kind: 'text',
-        id: `text:${message.clientMessageId || message.id}`,
-        sortAt: message.createdAt,
-        message,
-        senderLabel: this.directSenderLabel(message),
-        outgoing: this.isOutgoing(message),
-      }));
-      const files = this.files
-        .forConversation(this.chat.accountId(), this.selectedJid())
-        .map((transfer) => ({
-          kind: 'file' as const,
-          id: `file:${transfer.offer.transferId}`,
-          sortAt: transfer.offer.offeredAt,
-          transfer,
-          media: this.files.mediaForTransfer(this.chat.accountId(), transfer.offer.transferId),
-          senderLabel: transfer.direction === 'outgoing' ? 'Tú' : transfer.offer.senderJid,
-          outgoing: transfer.direction === 'outgoing',
-          label: this.files.label(transfer.state, transfer.endReason, transfer.direction),
-          progressLabel: this.files.label(transfer.state, transfer.endReason, transfer.direction),
-        }));
-      const activeTransferIds = new Set(files.map((item) => item.transfer.offer.transferId));
-      const timelineMedia = this.chat
-        .timelineItems()
-        .filter(
-          (item): item is Extract<HistoryTimelineItem, { kind: 'image' }> => item.kind === 'image',
-        )
-        .map((item) => item.media);
-      const persistedImages = this.chat.timelineSupported() ? timelineMedia : [];
-      const liveMedia = this.files.liveMedia();
-      const historicalImages: ConversationTimelineItem[] = [...persistedImages, ...liveMedia]
-        .filter(
-          (media, index, all) =>
-            all.findIndex((candidate) => candidate.mediaId === media.mediaId) === index,
-        )
-        .filter(
-          (media) =>
-            media.accountId === this.chat.accountId() &&
-            this.bareJid(media.conversationId) === this.bareJid(this.selectedJid()) &&
-            !activeTransferIds.has(media.transferId),
-        )
-        .map((media) => ({
-          kind: 'file' as const,
-          id: `media:${media.mediaId}`,
-          sortAt: media.createdAt,
-          transfer: this.mediaAsTransfer(media),
-          media,
-          senderLabel: media.direction === 'outgoing' ? 'Tú' : media.senderJid,
-          outgoing: media.direction === 'outgoing',
-          label: 'Imagen guardada',
-          progressLabel: 'Imagen guardada',
-        }));
-      const historicalFiles: ConversationTimelineItem[] = this.chat
-        .timelineItems()
-        .filter(
-          (item): item is Extract<HistoryTimelineItem, { kind: 'file' }> => item.kind === 'file',
-        )
-        .map((item) => item.file)
-        .filter(
-          (file) =>
-            file.accountId === this.chat.accountId() &&
-            this.bareJid(file.conversationId) === this.bareJid(this.selectedJid()) &&
-            !activeTransferIds.has(file.transferId),
-        )
-        .map((file) => ({
-          kind: 'file' as const,
-          id: `history:${file.fileId}`,
-          sortAt: file.createdAt,
-          transfer: this.fileHistoryAsTransfer(file),
-          history: file,
-          senderLabel: file.direction === 'outgoing' ? 'Tú' : file.senderJid,
-          outgoing: file.direction === 'outgoing',
-          label: this.fileHistoryLabel(file),
-          progressLabel: this.fileHistoryLabel(file),
-        }));
-      const stickers: ConversationTimelineItem[] = this.chat
-        .timelineItems()
-        .filter(
-          (item): item is Extract<HistoryTimelineItem, { kind: 'sticker' }> =>
-            item.kind === 'sticker',
-        )
-        .map((item) => item.sticker)
-        .filter(
-          (sticker) =>
-            sticker.accountId === this.chat.accountId() &&
-            this.bareJid(sticker.conversationId) === this.bareJid(this.selectedJid()),
-        )
-        .map((sticker) => ({
-          kind: 'sticker' as const,
-          id: `sticker:${sticker.refId}`,
-          sortAt: sticker.createdAt,
-          sticker,
-          senderLabel: sticker.direction === 'outgoing' ? 'Tú' : sticker.senderJid,
-          outgoing: sticker.direction === 'outgoing',
-        }));
-      return [...messages, ...files, ...historicalImages, ...historicalFiles, ...stickers].sort(
-        (left, right) => left.sortAt.localeCompare(right.sortAt) || left.id.localeCompare(right.id),
-      );
-    },
-  );
+  protected readonly conversationTimeline = this.conversationTimelineCoordinator.timeline;
   protected readonly activeContact = computed(() => {
-    const jid = this.bareJid(this.selectedJid());
-    return this.chat.contacts().find((contact) => this.bareJid(contact.jid) === jid);
+    const jid = bareJid(this.selectedJid());
+    return this.contactsByBareJid().get(jid);
   });
-  protected readonly presenceOptions: ReadonlyArray<PresenceOption> = [
-    { id: 'chat', mode: 'chat', label: 'Libre para chatear', dot: 'chat' },
-    { id: 'online', mode: undefined, label: 'En línea', dot: 'online' },
-    { id: 'away', mode: 'away', label: 'Ausente', dot: 'away' },
-    { id: 'phone', mode: 'away', label: 'Al teléfono', dot: 'phone' },
-    { id: 'xa', mode: 'xa', label: 'Ausencia extendida', dot: 'xa' },
-    { id: 'dnd', mode: 'dnd', label: 'No molestar', dot: 'dnd' },
-  ];
-  protected readonly sidebarModel = computed<SidebarModel>(() => ({
-    operator: {
-      displayName: this.chat.connection().displayName,
-      accountId: this.chat.accountId(),
-      connectionLabel: this.connectionLabel(),
-      presenceLabel: this.presenceLabel(),
-      presenceDot: this.presenceDot(),
-      presenceOpen: this.presenceOpen(),
-      presenceOptions: this.presenceOptions,
-      presenceOptionId: this.selectedPresenceOption().id,
-      presenceStatus: this.presenceStatus(),
-    },
-    muc: {
-      nickname: this.mucNickname(),
-      discovering: this.mucDiscovering(),
-      error: this.muc.error(),
-      services: this.muc.services().filter((room) => {
-        const term = this.search().trim().toLowerCase();
-        return (
-          !term ||
-          room.jid.toLowerCase().includes(term) ||
-          room.room.toLowerCase().includes(term) ||
-          room.service.toLowerCase().includes(term)
-        );
-      }),
-      states: this.muc.states(),
-      selectedRoomJid: this.muc.selectedRoomJid(),
-      activeRoomState: this.activeRoomState(),
-    },
-    conversations: {
-      search: this.search(),
-      accountId: this.chat.accountId(),
-      joinedRooms: this.joinedRooms(),
-      filteredContacts: this.filteredContacts(),
-      workspaceContacts: this.workspaceContacts(),
-      workspaceItems: this.workspaceItems(),
-      muc: {
-        nickname: this.mucNickname(),
-        discovering: this.mucDiscovering(),
-        error: this.muc.error(),
-        services: this.muc.services().filter((room) => {
-          const term = this.search().trim().toLowerCase();
-          return (
-            !term ||
-            room.jid.toLowerCase().includes(term) ||
-            room.room.toLowerCase().includes(term) ||
-            room.service.toLowerCase().includes(term)
-          );
-        }),
-        states: this.muc.states(),
-        selectedRoomJid: this.muc.selectedRoomJid(),
-        activeRoomState: this.activeRoomState(),
-      },
-      unreadCounts: this.chat.unreadCounts?.() ?? new Map(),
-      selectedJid: this.selectedJid(),
-      selectedRoomJid: this.muc.selectedRoomJid(),
-    },
-  }));
+  protected readonly presenceOptions = this.sidebarViewCoordinator.presenceOptions;
+  protected readonly sidebarModel = this.sidebarViewCoordinator.model;
   @ViewChild(LoginPanelComponent) private loginPanel?: LoginPanelComponent;
   @ViewChild(ConversationViewComponent) private conversationView?: ConversationViewComponent;
+  @ViewChild(MucViewComponent) private mucView?: MucViewComponent;
   @ViewChild(NewMessageDialogComponent) private newMessageDialog?: NewMessageDialogComponent;
+  @ViewChild('preferencesFallbackClose')
+  private set preferencesFallbackClose(button: ElementRef<HTMLButtonElement> | undefined) {
+    if (!button) return;
+    this.scheduleUiMicrotask(() => {
+      if (this.preferencesOpen() && button.nativeElement.isConnected) button.nativeElement.focus();
+    });
+  }
+  @ViewChild('broadcastFallbackClose')
+  private set broadcastFallbackClose(button: ElementRef<HTMLButtonElement> | undefined) {
+    if (!button) return;
+    this.scheduleUiMicrotask(() => {
+      if (this.broadcastOpen() && button.nativeElement.isConnected) button.nativeElement.focus();
+    });
+  }
   @ViewChild(SidebarComponent) private sidebar?: SidebarComponent;
 
   constructor() {
-    void this.chat.tryAutoLogin();
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      this.uiTaskGeneration += 1;
+      if (this.messageSearchTimer) clearTimeout(this.messageSearchTimer);
+      this.messageSearchTimer = undefined;
+      this.cancelNewMessageFocus();
+      this.broadcastCoordinator.destroy();
+      this.preferencesCoordinator.destroy();
+      this.newMessageCoordinator.destroy();
+    });
+    void this.session.tryAutoLogin();
     effect(() => {
       const selection = this.activeSelection();
       this.activeConversation.set(
@@ -647,217 +305,72 @@ export class App {
   }
 
   protected setLoginAccount(accountId: string): void {
-    if (accountId !== this.login().accountId && this.selectedProfileId()) {
-      this.selectedProfileId.set('');
-      this.login.update((value) => ({
-        ...value,
-        accountId,
-        password: '',
-        remember: false,
-        autoLogin: false,
-        autoLoginExplicit: false,
-      }));
-      return;
-    }
-    this.login.update((value) => ({ ...value, accountId }));
+    this.session.setLoginAccount(accountId);
   }
   protected setLoginDomain(domain: string): void {
-    const selected = this.loginProfiles().find(
-      (profile) => profile.accountId === this.selectedProfileId(),
-    );
-    if (selected?.accountId.includes('@') && domain !== this.login().domain) {
-      this.selectedProfileId.set('');
-      this.login.update((value) => ({
-        ...value,
-        password: '',
-        remember: false,
-        autoLogin: false,
-        autoLoginExplicit: false,
-      }));
-    }
-    this.login.update((value) => ({ ...value, domain }));
+    this.session.setLoginDomain(domain);
   }
   protected setLoginPassword(password: string): void {
-    this.login.update((value) => ({ ...value, password }));
+    this.session.setLoginPassword(password);
   }
   protected setLoginHost(host: string): void {
-    this.login.update((value) => ({ ...value, host }));
+    this.session.setLoginHost(host);
   }
   protected setLoginPort(port: number): void {
-    this.login.update((value) => ({ ...value, port }));
+    this.session.setLoginPort(port);
   }
-  protected setLoginTransport(transport: XmppTransport): void {
-    this.login.update((value) => ({
-      ...value,
-      transport,
-      port:
-        value.port === (transport === 'direct-tls' ? 5222 : 5223)
-          ? transport === 'direct-tls'
-            ? 5223
-            : 5222
-          : value.port,
-    }));
+  protected setLoginTransport(transport: LoginDraft['transport']): void {
+    this.session.setLoginTransport(transport);
   }
   protected setLoginAutomatic(automatic: boolean): void {
-    this.login.update((value) => ({ ...value, automatic }));
+    this.session.setLoginAutomatic(automatic);
   }
   protected setLoginRemember(remember: boolean): void {
-    this.login.update((value) => ({
-      ...value,
-      remember,
-      autoLogin: remember ? value.autoLogin : false,
-      autoLoginExplicit: true,
-    }));
+    this.session.setLoginRemember(remember);
   }
   protected setLoginAutoLogin(autoLogin: boolean): void {
-    this.login.update((value) => ({ ...value, autoLogin, autoLoginExplicit: true }));
+    this.session.setLoginAutoLogin(autoLogin);
   }
   protected async selectLoginProfile(accountId: string): Promise<void> {
-    this.selectedProfileId.set(accountId);
-    const profile = this.loginProfiles().find((item) => item.accountId === accountId);
-    if (!profile) {
-      this.resetLoginForNewAccount();
-      return;
-    }
-    const at = profile.accountId.lastIndexOf('@');
-    this.login.update((value) => ({
-      ...value,
-      accountId: at > 0 ? profile.accountId.slice(0, at) : profile.accountId,
-      domain: profile.domain,
-      host: profile.manualEndpoint?.host || '',
-      port: profile.manualEndpoint?.port || 5222,
-      transport: profile.manualEndpoint?.transport || 'starttls',
-      automatic: profile.mode === 'automatic',
-      password: '',
-      remember: profile.hasPersistentCredential === true,
-      autoLogin: false,
-      autoLoginExplicit: false,
-    }));
-    const preferences = await this.chat.getProfilePreferences(profile.accountId);
-    if (this.selectedProfileId() !== profile.accountId) return;
-    this.login.update((value) => ({
-      ...value,
-      autoLogin: profile.hasPersistentCredential === true && Boolean(preferences?.autoLogin),
-    }));
+    await this.session.selectLoginProfile(accountId);
   }
   protected async forgetLoginSecret(): Promise<void> {
+    await this.session.forgetLoginSecret();
+  }
+  protected async recoverSecretStorage(): Promise<void> {
     const accountId = this.selectedProfileId();
-    if (!accountId || this.profileActionBusy()) return;
-    this.profileActionBusy.set(true);
-    try {
-      if (await this.chat.forgetSecret(accountId))
-        this.login.update((value) => ({ ...value, autoLogin: false, remember: false }));
-    } finally {
-      this.profileActionBusy.set(false);
-    }
+    if (!accountId) return;
+    await this.session.recoverSecretStorage(accountId);
+  }
+  protected async resetSecretStorage(): Promise<void> {
+    const accountId = this.selectedProfileId();
+    if (!accountId) return;
+    await this.session.resetSecretStorage(accountId);
   }
   protected async deleteLoginProfile(): Promise<void> {
-    const accountId = this.selectedProfileId();
-    if (!accountId || this.profileActionBusy()) return;
-    this.profileActionBusy.set(true);
-    try {
-      if (await this.chat.deleteProfile(accountId)) {
-        this.selectedProfileId.set('');
-        this.resetLoginForNewAccount();
-      }
-    } finally {
-      this.profileActionBusy.set(false);
-    }
-  }
-  private resetLoginForNewAccount(): void {
-    this.login.set({
-      accountId: '',
-      domain: '',
-      password: '',
-      host: '',
-      port: 5222,
-      transport: 'starttls',
-      automatic: true,
-      remember: false,
-      autoLogin: false,
-      autoLoginExplicit: false,
-    });
+    await this.session.deleteLoginProfile();
   }
   protected openAdvancedSettings(): void {
-    this.settingsError.set(null);
-    this.settingsOpen.set(true);
+    this.session.openAdvancedSettings();
   }
   protected cancelAdvancedSettings(): void {
-    this.settingsError.set(null);
-    this.settingsOpen.set(false);
-    queueMicrotask(() => this.loginPanel?.focusAdvancedSettings());
+    this.session.cancelAdvancedSettings();
+    this.scheduleUiMicrotask(() => this.loginPanel?.focusAdvancedSettings());
   }
-  protected async saveAdvancedSettings(settings: ConnectionSettingsDraft): Promise<void> {
-    if (!settings.automatic && (!settings.host.trim() || !Number.isInteger(settings.port))) {
-      this.settingsError.set('Indica un host y un puerto entero entre 1 y 65535.');
-      return;
-    }
-    if (!settings.automatic && (settings.port < 1 || settings.port > 65535)) {
-      this.settingsError.set('El puerto debe estar entre 1 y 65535.');
-      return;
-    }
-    this.settingsSaving.set(true);
-    this.settingsError.set(null);
-    try {
-      const selected = this.loginProfiles().find(
-        (profile) => profile.accountId === this.selectedProfileId(),
-      );
-      if (selected) {
-        const domain = selected.accountId.includes('@')
-          ? selected.domain
-          : this.login().domain.trim();
-        if (!domain) {
-          this.settingsError.set('Indica el dominio XMPP de la cuenta heredada antes de guardar.');
-          return;
-        }
-        const saved = await this.chat.saveProfile({
-          ...selected,
-          domain,
-          mode: settings.automatic ? 'automatic' : 'manual',
-          ...(settings.automatic
-            ? { manualEndpoint: undefined }
-            : {
-                manualEndpoint: {
-                  host: settings.host.trim(),
-                  port: settings.port,
-                  transport: settings.transport,
-                },
-              }),
-          updatedAt: new Date().toISOString(),
-        });
-        if (!saved?.ok) {
-          this.settingsError.set(saved?.error.message || 'No fue posible guardar el perfil.');
-          return;
-        }
-      }
-      this.login.update((value) => ({
-        ...value,
-        automatic: settings.automatic,
-        host: settings.host.trim(),
-        port: settings.port,
-        transport: settings.transport,
-      }));
-      this.cancelAdvancedSettings();
-    } finally {
-      this.settingsSaving.set(false);
-    }
+  protected saveAdvancedSettings(settings: ConnectionSettingsDraft): Promise<void> {
+    return this.session.saveAdvancedSettings(settings).then(() => {
+      if (!this.settingsOpen())
+        this.scheduleUiMicrotask(() => this.loginPanel?.focusAdvancedSettings());
+    });
   }
   protected connectionLabel(): string {
-    const labels: Record<string, string> = {
-      idle: 'Desconectado',
-      connecting: 'Conectando',
-      authenticating: 'Autenticando',
-      connected: 'Conectado',
-      disconnecting: 'Desconectando',
-      failed: 'Falló',
-    };
-    return labels[this.chat.connection().status] || this.chat.connection().status;
+    return this.sidebarViewCoordinator.connectionLabel();
   }
   protected presenceLabel(): string {
-    return this.selectedPresenceOption().label;
+    return this.sidebarViewCoordinator.presenceLabel();
   }
   protected presenceDot(): string {
-    return this.selectedPresenceOption().dot;
+    return this.sidebarViewCoordinator.presenceDot();
   }
   protected async choosePresence(option: PresenceOption): Promise<void> {
     const status =
@@ -866,83 +379,27 @@ export class App {
     this.presenceOpen.set(false);
   }
   protected async connect(): Promise<void> {
-    const login = this.login() as typeof this.login extends () => infer Value
-      ? Value &
-          Partial<{
-            domain: string;
-            host: string;
-            port: number;
-            transport: XmppTransport;
-            automatic: boolean;
-            remember: boolean;
-            autoLogin: boolean;
-          }>
-      : never;
-    const rawUser = login.accountId.trim();
-    const suppliedDomain = (login.domain || '').trim().toLowerCase().replace(/\.$/, '');
-    const at = rawUser.indexOf('@');
-    if (
-      at >= 0 &&
-      (at !== rawUser.lastIndexOf('@') || !rawUser.slice(0, at) || !rawUser.slice(at + 1))
-    ) {
-      this.chat.error.set('Introduce un usuario XMPP o un JID completo válido.');
-      return;
-    }
-    const localpart = at >= 0 ? rawUser.slice(0, at) : rawUser;
-    const domain = at >= 0 ? rawUser.slice(at + 1).toLowerCase() : suppliedDomain;
-    if (!localpart || /[\s/@]/.test(localpart) || !domain || /[\s/@]/.test(domain)) {
-      this.chat.error.set('El usuario y el dominio XMPP son obligatorios.');
-      return;
-    }
-    const selectedProfile = this.loginProfiles().find(
-      (profile) => profile.accountId === this.selectedProfileId(),
-    );
-    const legacyProfile =
-      selectedProfile && !selectedProfile.accountId.includes('@') ? selectedProfile : undefined;
-    const accountId = legacyProfile ? legacyProfile.accountId : `${localpart}@${domain}`;
     this.resetConversationSelection();
-    this.muc.setAccount(accountId);
-    this.loginBusy.set(true);
-    const connected = await this.chat.connect(accountId, login.password, {
-      ...(legacyProfile ? { profile: legacyProfile } : {}),
-      domain,
-      mode: login.automatic !== false ? 'automatic' : 'manual',
-      manualEndpoint: {
-        host: (login.host || '').trim(),
-        port: login.port || 5222,
-        transport: login.transport || 'starttls',
-      },
-      remember: login.remember === true,
-      autoLogin: login.autoLogin === true,
-      autoLoginExplicit: login.autoLoginExplicit === true,
-    });
-    this.loginBusy.set(false);
-    if (connected) {
-      this.login.update((value) => ({ ...value, password: '' }));
-      await this.files.setAccount(this.chat.accountId());
-    }
+    await this.session.connect();
   }
   protected async disconnect(): Promise<void> {
     this.cancelBroadcastForAccount();
     this.resetConversationSelection();
-    await this.chat.disconnect();
-    await this.files.setAccount('');
+    await this.session.disconnect();
   }
-  protected async decideCertificate(decision: CertificateTrustDecision): Promise<void> {
-    await this.chat.decideCertificate(decision);
+  protected decideCertificate(
+    decision: Parameters<AppSessionCoordinator['decideCertificate']>[0],
+  ): Promise<void> {
+    return this.session.decideCertificate(decision);
   }
   protected selectContact(contact: Contact): void {
+    this.messageSearchNavigationGeneration += 1;
     this.closeNewMessageDialog();
+    if (this.isSelectedDirectConversation(contact.jid)) return;
     this.followLatest();
     this.draft.set('');
     this.mucDraft.set('');
-    this.selectedContact.set(contact);
-    this.conversationVisibility.reveal(this.chat.accountId(), 'direct', contact.jid);
-    this.conversationSelection.set({
-      kind: 'direct',
-      accountId: this.chat.accountId(),
-      jid: this.bareJid(contact.jid),
-    });
+    this.workspace.selectDirect(contact.jid, contact);
     this.refreshMessageSearchForSelection();
     void this.scrollAfterConversationLoad(contact.jid);
   }
@@ -955,14 +412,14 @@ export class App {
       at < jidInput.length - 1 &&
       !/[\s/]/.test(jidInput)
     ) {
-      this.followLatest();
-      const jid = this.bareJid(jidInput);
+      this.messageSearchNavigationGeneration += 1;
+      const jid = bareJid(jidInput);
       this.closeNewMessageDialog();
+      if (this.isSelectedDirectConversation(jid)) return;
+      this.followLatest();
       this.draft.set('');
       this.mucDraft.set('');
-      this.selectedContact.set(undefined);
-      this.conversationVisibility.reveal(this.chat.accountId(), 'direct', jid);
-      this.conversationSelection.set({ kind: 'direct', accountId: this.chat.accountId(), jid });
+      this.workspace.selectDirect(jid);
       this.refreshMessageSearchForSelection();
       void this.scrollAfterConversationLoad(jid);
     } else if (jidInput.includes('@')) {
@@ -970,18 +427,15 @@ export class App {
     }
   }
   protected selectJoinedRoom(roomJid: string): void {
-    if (!this.joinedRoom(roomJid)) return;
-    this.muc.select(roomJid);
+    if (!this.workspace.selectJoinedRoom(roomJid)) return;
+    this.messageSearchNavigationGeneration += 1;
     this.closeNewMessageDialog();
     this.draft.set('');
     this.mucDraft.set('');
-    this.selectedContact.set(undefined);
-    this.conversationVisibility.reveal(this.chat.accountId(), 'muc', roomJid);
-    this.conversationSelection.set({ kind: 'muc', accountId: this.chat.accountId(), roomJid });
     this.followLatest();
   }
   protected selectRoomFromCatalog(roomJid: string): void {
-    const room = this.joinedRoom(roomJid);
+    const room = this.workspace.joinedRoom(roomJid);
     if (room) {
       this.selectJoinedRoom(roomJid);
       return;
@@ -1049,118 +503,39 @@ export class App {
   }
 
   protected openBroadcast(): void {
-    this.broadcastBody.set('');
-    this.broadcastMode.set('normal');
-    this.broadcastHideOffline.set(false);
-    this.broadcastSelectedJids.set(new Set<string>());
-    this.broadcastBusy.set(false);
-    this.broadcastError.set(null);
-    this.broadcastResult.set(null);
-    this.broadcastAttempt = null;
-    this.broadcastOpen.set(true);
+    this.broadcastCoordinator.openDialog();
   }
 
   protected closeBroadcast(): void {
-    if (this.broadcastBusy()) return;
-    this.broadcastOpen.set(false);
-    this.broadcastError.set(null);
-    queueMicrotask(() => this.sidebar?.focusBroadcastTrigger());
+    if (this.broadcastCoordinator.closeDialog()) this.focusBroadcastTrigger();
   }
 
   protected toggleBroadcastContact(jid: string): void {
-    const selected = new Set(this.broadcastSelectedJids());
-    if (selected.has(jid)) selected.delete(jid);
-    else selected.add(jid);
-    this.broadcastSelectedJids.set(selected);
-    this.broadcastError.set(null);
+    this.broadcastCoordinator.toggleContact(jid);
   }
 
   protected toggleBroadcastGroup(group: string): void {
-    const groupJids = this.broadcastContacts()
-      .filter((contact) => contact.groups.includes(group))
-      .map((contact) => bareBroadcastJid(contact.jid));
-    const selected = new Set(this.broadcastSelectedJids());
-    const allSelected = groupJids.length > 0 && groupJids.every((jid) => selected.has(jid));
-    groupJids.forEach((jid) => (allSelected ? selected.delete(jid) : selected.add(jid)));
-    this.broadcastSelectedJids.set(selected);
-    this.broadcastError.set(null);
+    this.broadcastCoordinator.toggleGroup(group);
   }
 
   protected toggleAllBroadcastContacts(): void {
-    const allJids = this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid));
-    const selected = this.broadcastSelectedJids();
-    const allSelected = allJids.length > 0 && allJids.every((jid) => selected.has(jid));
-    this.broadcastSelectedJids.set(allSelected ? new Set<string>() : new Set(allJids));
-    this.broadcastError.set(null);
+    this.broadcastCoordinator.toggleAll();
   }
 
-  protected async submitBroadcast(retryAttempt?: BroadcastAttempt): Promise<void> {
-    if (this.broadcastBusy()) return;
-    const mode = retryAttempt?.mode ?? this.broadcastMode();
-    const body = (retryAttempt?.body ?? this.broadcastBody()).trim();
-    const currentJids = new Set(
-      this.broadcastContacts().map((contact) => bareBroadcastJid(contact.jid)),
-    );
-    const recipientJids = [...this.broadcastSelectedJids()].filter((jid) => currentJids.has(jid));
-    if (!body) {
-      this.broadcastError.set('Escribe un mensaje antes de difundirlo.');
-      return;
-    }
-    if (!recipientJids.length) {
-      this.broadcastError.set('Selecciona al menos un destinatario válido.');
-      return;
-    }
-    if (!this.chat.isConnected() || !this.chat.accountId()) {
-      this.broadcastError.set('La cuenta no está conectada.');
-      return;
-    }
-    const run = ++this.broadcastRun;
-    this.broadcastAttempt = { mode, body };
-    this.broadcastBusy.set(true);
-    this.broadcastError.set(null);
-    this.broadcastResult.set(null);
-    try {
-      const result = await this.broadcast.send({
-        broadcastId: createOpaqueId('broadcast'),
-        accountId: this.chat.accountId(),
-        mode,
-        body,
-        recipientJids,
-      });
-      if (run !== this.broadcastRun) return;
-      this.broadcastResult.set(result.recipients);
-      if (result.recipients.every((item) => item.status === 'submitted')) {
-        this.broadcastBusy.set(false);
-        this.broadcastOpen.set(false);
-        queueMicrotask(() => this.sidebar?.focusBroadcastTrigger());
-      }
-    } catch {
-      if (run === this.broadcastRun)
-        this.broadcastError.set('No fue posible completar la difusión.');
-    } finally {
-      if (run === this.broadcastRun) this.broadcastBusy.set(false);
-    }
+  protected async submitBroadcast(): Promise<void> {
+    if (await this.broadcastCoordinator.submit()) this.focusBroadcastTrigger();
   }
 
-  protected retryFailedBroadcast(): void {
-    const failed = this.broadcastResult()
-      ?.filter((item) => item.status === 'failed')
-      .map((item) => item.recipientJid);
-    if (!failed?.length) return;
-    const attempt = this.broadcastAttempt;
-    if (!attempt) return;
-    this.broadcastMode.set(attempt.mode);
-    this.broadcastBody.set(attempt.body);
-    this.broadcastSelectedJids.set(new Set(failed));
-    this.broadcastResult.set(null);
-    this.broadcastError.set(null);
-    void this.submitBroadcast(attempt);
+  protected async retryFailedBroadcast(): Promise<void> {
+    if (await this.broadcastCoordinator.retryFailed()) this.focusBroadcastTrigger();
   }
 
   private cancelBroadcastForAccount(): void {
-    this.broadcastRun++;
-    this.broadcastBusy.set(false);
-    this.broadcastOpen.set(false);
+    this.broadcastCoordinator.cancelForAccount();
+  }
+
+  private focusBroadcastTrigger(): void {
+    this.scheduleUiMicrotask(() => this.sidebar?.focusBroadcastTrigger());
   }
   protected draftChanged(value: string): void {
     this.draft.set(value);
@@ -1170,6 +545,7 @@ export class App {
     this.messageSearchQuery.set(query);
     if (this.messageSearchTimer) clearTimeout(this.messageSearchTimer);
     this.messageSearchTimer = setTimeout(() => {
+      this.messageSearchTimer = undefined;
       void this.runMessageSearch();
     }, 180);
   }
@@ -1186,30 +562,38 @@ export class App {
   }
   protected async selectMessageSearchHit(hit: MessageSearchHit): Promise<void> {
     if (hit.accountId !== this.chat.accountId()) return;
+    const navigationGeneration = ++this.messageSearchNavigationGeneration;
+    this.conversationView?.beginSearchNavigation({
+      accountId: hit.accountId,
+      conversation: hit.conversationId,
+    });
     const contact = this.chat
       .contacts()
-      .find((item) => this.bareJid(item.jid) === this.bareJid(hit.conversationId)) || {
+      .find((item) => bareJid(item.jid) === bareJid(hit.conversationId)) || {
       jid: hit.conversationId,
       name: hit.conversationId,
       groups: [],
       source: 'conversation' as const,
     };
-    this.selectedContact.set(contact);
-    this.conversationVisibility.reveal(this.chat.accountId(), 'direct', hit.conversationId);
-    this.conversationSelection.set({
-      kind: 'direct',
-      accountId: hit.accountId,
-      jid: this.bareJid(hit.conversationId),
-    });
+    this.workspace.selectDirect(hit.conversationId, contact);
     this.refreshMessageSearchForSelection();
     await this.chat.revealSearchHit(hit);
+    const selection = this.activeSelection();
+    if (
+      navigationGeneration !== this.messageSearchNavigationGeneration ||
+      hit.accountId !== this.chat.accountId() ||
+      selection.kind !== 'direct' ||
+      selection.accountId !== hit.accountId ||
+      bareJid(selection.jid) !== bareJid(hit.conversationId)
+    )
+      return;
     this.conversationView?.scrollToMessage(hit.messageId);
   }
   private currentMessageSearchScope():
     { readonly kind: 'all' } | { readonly kind: 'conversation'; readonly conversationId: string } {
     return this.messageSearchScope() === 'all' || !this.selectedJid()
       ? { kind: 'all' }
-      : { kind: 'conversation', conversationId: this.bareJid(this.selectedJid()) };
+      : { kind: 'conversation', conversationId: bareJid(this.selectedJid()) };
   }
   private runMessageSearch(): Promise<void> {
     return this.chat.searchMessages(this.messageSearchQuery(), this.currentMessageSearchScope());
@@ -1260,39 +644,19 @@ export class App {
     event.preventDefault();
   }
   protected async discoverRooms(): Promise<void> {
-    this.mucDiscovering.set(true);
-    try {
-      await this.muc.discover(this.chat.accountId());
-    } finally {
-      this.mucDiscovering.set(false);
-    }
+    await this.newMessageCoordinator.discoverRooms();
   }
   protected async joinRoom(roomJid: string): Promise<void> {
-    const accountId = this.chat.accountId();
-    const nickname = this.mucNickname().trim() || accountId.split('@')[0] || 'operator';
-    this.newMessageJoiningRoom.set(roomJid);
-    try {
-      await this.muc.join(accountId, roomJid, nickname);
-      if (this.joinedRoom(roomJid)?.accountId === accountId) this.selectJoinedRoom(roomJid);
-    } finally {
-      this.newMessageJoiningRoom.set(null);
-    }
+    await this.newMessageCoordinator.joinRoom(roomJid);
   }
   protected async leaveRoom(): Promise<void> {
     const selection = this.activeSelection();
     if (selection.kind !== 'muc') return;
     await this.muc.leave(selection.accountId, selection.roomJid);
-    if (!this.joinedRoom(selection.roomJid)) this.resetConversationSelection();
+    if (!this.workspace.joinedRoom(selection.roomJid)) this.resetConversationSelection();
   }
   protected dismissConversationByUser(): void {
-    const selection = this.activeSelection();
-    if (selection.kind !== 'none' && this.chat.preferences().hideClosedConversations) {
-      const jid = selection.kind === 'direct' ? selection.jid : selection.roomJid;
-      this.conversationVisibility.hide(selection.accountId, selection.kind, jid);
-    }
-    if (selection.kind === 'muc') this.muc.clearSelection();
-    this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() });
-    this.selectedContact.set(undefined);
+    this.workspace.dismissConversation(this.chat.preferences().hideClosedConversations);
     this.draft.set('');
     this.mucDraft.set('');
   }
@@ -1315,21 +679,53 @@ export class App {
   protected startReply(message: Message | RoomMessage, muc: boolean): void {
     if (muc) {
       if ('roomJid' in message) {
-        const roomStanzaId = message.stanzaIds?.find((item) => item.by.toLowerCase() === message.roomJid.toLowerCase())?.id;
-        if (roomStanzaId) this.replyingTo.set({ id: roomStanzaId, author: this.mucLabel(message), quote: this.replyQuote(message.body.text) });
+        const roomStanzaId = message.stanzaIds?.find(
+          (item) => item.by.toLowerCase() === message.roomJid.toLowerCase(),
+        )?.id;
+        if (roomStanzaId) {
+          this.replyingTo.set({
+            id: roomStanzaId,
+            author: this.mucLabel(message),
+            quote: this.replyQuote(message.body.text),
+          });
+          this.focusReplyComposer(true);
+        }
       }
       return;
     }
     if ('conversationId' in message) {
       const targetId = message.originId || message.messageId || message.stanzaIds?.[0]?.id;
-      if (targetId) this.replyingTo.set({ id: targetId, author: this.directSenderLabel(message), quote: this.replyQuote(message.body.text) });
+      if (targetId) {
+        this.replyingTo.set({
+          id: targetId,
+          author: this.conversationTimelineCoordinator.directSenderLabel(message),
+          quote: this.replyQuote(message.body.text),
+        });
+        this.focusReplyComposer(false);
+      }
     }
   }
-  protected cancelReply(): void { this.replyingTo.set(undefined); }
-  protected async changeReaction(messageId: string, emojis: ReadonlyArray<string>, muc: boolean): Promise<void> {
+  protected cancelReply(): void {
+    this.replyingTo.set(undefined);
+  }
+
+  private focusReplyComposer(muc: boolean): void {
+    this.scheduleUiMicrotask(() => {
+      if (muc) this.mucView?.focusComposer();
+      else this.conversationView?.focusComposer();
+    });
+  }
+
+  protected async changeReaction(
+    messageId: string,
+    emojis: ReadonlyArray<string>,
+    muc: boolean,
+  ): Promise<void> {
     const selection = this.activeSelection();
-    if (muc && selection.kind === 'muc') await this.muc.sendReaction(selection.accountId, selection.roomJid, messageId, emojis);
-    if (!muc && selection.kind === 'direct') await this.chat.sendReaction(selection.jid, messageId, emojis);
+    if (muc && selection.kind === 'muc')
+      await this.muc.sendReaction(selection.accountId, selection.roomJid, messageId, emojis);
+    if (!muc && selection.kind === 'direct')
+      await this.chat.sendReaction(selection.jid, messageId, emojis);
   }
   private mucLabel(message: import('./core/domain').RoomMessage): string {
     return message.occupantJid.split('/').slice(1).join('/') || message.occupantJid;
@@ -1342,78 +738,51 @@ export class App {
     void this.chat.updatePreferences(changes);
   }
   protected async resetPreferences(): Promise<void> {
-    this.preferencesSaveState.set('saving');
-    this.preferencesError.set(null);
-    const saved = await this.chat.resetPreferences();
-    if (saved) {
-      this.theme.resetPreferences();
-      this.preferencesSaveState.set('saved');
-    } else {
-      this.preferencesSaveState.set('error');
-      this.preferencesError.set(
-        this.chat.error() || 'No fue posible restablecer las preferencias.',
-      );
-    }
+    await this.preferencesCoordinator.reset();
   }
   protected openNewMessageDialog(): void {
-    this.newMessageSearch.set('');
-    this.newMessageLocalError.set(null);
-    this.newMessageOpen.set(true);
-    queueMicrotask(() => requestAnimationFrame(() => this.newMessageDialog?.focusSearch()));
+    this.cancelNewMessageFocus();
+    this.newMessageCoordinator.openDialog();
+    const generation = this.uiTaskGeneration;
+    this.scheduleUiMicrotask(() => {
+      if (!this.newMessageOpen() || generation !== this.uiTaskGeneration) return;
+      this.newMessageFocusFrame = requestAnimationFrame(() => {
+        this.newMessageFocusFrame = undefined;
+        if (this.destroyed || generation !== this.uiTaskGeneration || !this.newMessageOpen())
+          return;
+        this.newMessageDialog?.focusSearch();
+      });
+    });
   }
   protected closeNewMessageDialog(): void {
-    this.newMessageOpen.set(false);
-    this.newMessageJoiningRoom.set(null);
-    queueMicrotask(() => this.sidebar?.focusNewMessageTrigger());
+    this.cancelNewMessageFocus();
+    this.newMessageCoordinator.closeDialog();
+    this.scheduleUiMicrotask(() => this.sidebar?.focusNewMessageTrigger());
   }
   protected setNewMessageSearch(value: string): void {
-    this.newMessageSearch.set(value);
-    this.newMessageLocalError.set(null);
+    this.newMessageCoordinator.setSearch(value);
   }
   protected openPreferences(): void {
-    this.preferencesError.set(null);
-    this.preferencesSaveState.set('idle');
-    this.preferencesOpen.set(true);
+    this.preferencesCoordinator.openDialog();
   }
   protected checkForUpdates(): void {
-    void this.updates.check();
+    this.preferencesCoordinator.checkForUpdates();
   }
   protected downloadUpdate(): void {
-    void this.updates.download();
+    this.preferencesCoordinator.downloadUpdate();
   }
   protected installUpdate(): void {
-    void this.updates.install();
+    this.preferencesCoordinator.installUpdate();
   }
   protected closePreferences(): void {
-    this.preferencesOpen.set(false);
-    this.preferencesSaveState.set('idle');
-    queueMicrotask(() => this.sidebar?.focusPreferencesTrigger());
+    this.preferencesCoordinator.closeDialog();
+    this.scheduleUiMicrotask(() => this.sidebar?.focusPreferencesTrigger());
   }
   protected async savePreferenceChange(changes: Partial<Preferences>): Promise<void> {
-    this.preferencesSaveState.set('saving');
-    this.preferencesError.set(null);
-    const saved = await this.chat.updatePreferences(changes);
-    if (saved) this.preferencesSaveState.set('saved');
-    else {
-      this.preferencesSaveState.set('error');
-      this.preferencesError.set(this.chat.error() || 'No fue posible guardar la preferencia.');
-    }
+    await this.preferencesCoordinator.save(changes);
   }
   protected async selectDownloadDirectory(): Promise<void> {
-    if (this.downloadDirectorySelecting()) return;
-    this.downloadDirectorySelecting.set(true);
-    this.preferencesError.set(null);
-    try {
-      const result = await this.chat.selectDownloadDirectory();
-      if (!result.ok) {
-        this.preferencesSaveState.set('error');
-        this.preferencesError.set(result.error.message);
-      } else if (result.value) {
-        await this.savePreferenceChange({ downloadDirectory: result.value });
-      }
-    } finally {
-      this.downloadDirectorySelecting.set(false);
-    }
+    await this.preferencesCoordinator.selectDownloadDirectory();
   }
   protected onUserScrollIntent(): void {
     this.conversationView?.onUserScrollIntent();
@@ -1428,86 +797,28 @@ export class App {
 
   private async scrollAfterConversationLoad(jid: string): Promise<void> {
     await this.chat.loadConversation(jid);
-    if (this.bareJid(this.selectedJid()) !== this.bareJid(jid)) return;
+    if (bareJid(this.selectedJid()) !== bareJid(jid)) return;
     this.conversationView?.scrollToLatest(jid);
   }
   protected async loadOlderMessages(request: OlderMessagesRequest): Promise<void> {
-    await this.chat.loadOlderMessages(request.conversation);
-    this.conversationView?.restoreScrollAfterPrepend(request);
+    try {
+      await this.chat.loadOlderMessages(request.conversation);
+    } finally {
+      this.conversationView?.restoreScrollAfterPrepend(request);
+    }
   }
   protected async loadNewerMessages(conversation: string): Promise<void> {
     await this.chat.loadNewerMessages(conversation);
   }
   private selectedPresenceOption(): PresenceOption {
-    return (
-      this.presenceOptions.find((option) => {
-        const current = this.chat.presence();
-        return (
-          option.mode === current.mode &&
-          (option.id !== 'phone' || current.status === 'Al teléfono') &&
-          (option.id !== 'away' || current.status !== 'Al teléfono')
-        );
-      }) || this.presenceOptions[1]
-    );
-  }
-  private directSenderLabel(message: Message): string {
-    if (message.accountId !== this.chat.accountId()) return 'Remitente desconocido';
-    if (this.isOutgoing(message)) return 'Tú';
-    const senderJid = this.bareJid(message.senderJid);
-    if (!senderJid) return 'Remitente desconocido';
-    const contact = this.chat.contacts().find((item) => this.bareJid(item.jid) === senderJid);
-    return contact?.name?.trim() || senderJid;
-  }
-  private isOutgoing(message: Message): boolean {
-    const sender = this.bareJid(message.senderJid);
-    const account = this.chat.accountId().toLowerCase();
-    return sender === account || sender.startsWith(`${account}@`);
-  }
-  private bareJid(jid: string): string {
-    return jid.split('/')[0].toLowerCase();
+    return this.sidebarViewCoordinator.selectedPresenceOption();
   }
 
-  private mediaAsTransfer(media: ChatImageRecord): FileTransfer {
-    return {
-      offer: {
-        transferId: media.transferId,
-        accountId: media.accountId,
-        conversationId: media.conversationId,
-        senderJid: media.senderJid,
-        name: media.originalName,
-        sizeBytes: media.sizeBytes,
-        mimeType: media.mimeType,
-        transport: 'ibb',
-        offeredAt: media.createdAt,
-      },
-      direction: media.direction,
-      state: 'completed',
-      bytesTransferred: media.sizeBytes,
-      updatedAt: media.createdAt,
-    };
+  private isSelectedDirectConversation(jid: string): boolean {
+    const selection = this.activeSelection();
+    return selection.kind === 'direct' && bareJid(selection.jid) === bareJid(jid);
   }
-  private fileHistoryAsTransfer(file: ChatFileHistoryRecord): FileTransfer {
-    return {
-      offer: {
-        transferId: file.transferId,
-        accountId: file.accountId,
-        conversationId: file.conversationId,
-        senderJid: file.senderJid,
-        name: file.originalName,
-        sizeBytes: file.sizeBytes,
-        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        transport: 'ibb',
-        offeredAt: file.createdAt,
-      },
-      direction: file.direction,
-      state: 'completed',
-      bytesTransferred: file.sizeBytes,
-      updatedAt: file.createdAt,
-    };
-  }
-  private fileHistoryLabel(file: ChatFileHistoryRecord): string {
-    return file.availability === 'available' ? '' : 'Archivo no disponible';
-  }
+
   private isFileDrag(event: DragEvent): boolean {
     return event.dataTransfer?.types.includes('Files') ?? false;
   }
@@ -1515,25 +826,28 @@ export class App {
     const target = event.target;
     return target instanceof Element && Boolean(target.closest('.conversation-surface'));
   }
-  private joinedRoom(roomJid: string): RoomState | undefined {
-    return this.muc
-      .states()
-      .find(
-        (state) =>
-          state.room.jid === roomJid &&
-          state.accountId === this.chat.accountId() &&
-          state.status === 'joined',
-      );
-  }
   private followLatest(): void {
     this.conversationView?.scrollToLatest(this.selectedJid());
   }
   private resetConversationSelection(): void {
-    if (this.activeSelection().kind === 'muc') this.muc.clearSelection();
-    this.conversationSelection.set({ kind: 'none', accountId: this.chat.accountId() });
-    this.selectedContact.set(undefined);
+    this.messageSearchNavigationGeneration += 1;
+    this.workspace.resetSelection();
     this.draft.set('');
     this.mucDraft.set('');
+  }
+
+  private scheduleUiMicrotask(task: () => void): void {
+    const generation = this.uiTaskGeneration;
+    queueMicrotask(() => {
+      if (this.destroyed || generation !== this.uiTaskGeneration) return;
+      task();
+    });
+  }
+
+  private cancelNewMessageFocus(): void {
+    if (this.newMessageFocusFrame === undefined) return;
+    cancelAnimationFrame(this.newMessageFocusFrame);
+    this.newMessageFocusFrame = undefined;
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -1558,9 +872,23 @@ export class App {
       return;
     }
     if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+    if (document.querySelector('.file-preview-overlay')) {
+      event.preventDefault();
+      return;
+    }
     if (this.theme.editorOpen()) {
       event.preventDefault();
       this.theme.cancelStudio();
+      return;
+    }
+    if (this.preferencesOpen()) {
+      event.preventDefault();
+      this.closePreferences();
+      return;
+    }
+    if (this.broadcastOpen()) {
+      event.preventDefault();
+      if (!this.broadcastBusy()) this.closeBroadcast();
       return;
     }
     if (this.certificateRequest() || this.presenceOpen()) return;

@@ -5,14 +5,14 @@ const os = require('node:os');
 const path = require('node:path');
 const tls = require('node:tls');
 const EventEmitter = require('node:events');
-const { resolveXmppEndpoints } = require('../electron/xmpp-discovery.cjs');
-const { PersistenceStore } = require('../electron/storage.cjs');
-const { SecretStore } = require('../electron/secrets.cjs');
+const { resolveXmppEndpoints } = require('../electron/xmpp/xmpp-discovery.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
+const { SecretStore } = require('../electron/security/secrets.cjs');
 const {
   registerConnectionProfileHandlers,
-} = require('../electron/ipc-connection-profile-handlers.cjs');
-const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
-const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
+} = require('../electron/ipc/ipc-connection-profile-handlers.cjs');
+const { createIpcHelpers } = require('../electron/ipc/ipc-helpers.cjs');
+const { XmppAdapter } = require('../electron/xmpp/xmpp-adapter.cjs');
 
 function resolver(recordsByService, errorByService = {}) {
   return async (service) => {
@@ -96,7 +96,7 @@ test('DNS SRV rejects explicit service denial, invalid records, and transient er
   );
 });
 
-test('direct TLS probes TCP at the SRV host but sends SNI for the logical XMPP domain', async () => {
+test('direct TLS probes TCP at the SRV host, sends SNI, and requires an explicit decision for identity mismatch', async () => {
   const certificate = {
     raw: Buffer.from('synthetic-certificate'),
     fingerprint256: 'AA:BB:CC:DD',
@@ -135,19 +135,24 @@ test('direct TLS probes TCP at the SRV host but sends SNI for the logical XMPP d
       authorized: true,
       authorizationError: undefined,
     });
-    await assert.rejects(
-      () =>
-        adapter.resolveTlsOptions(
-          {
-            requestId: 'tls-domain',
-            accountId: 'juan@empresa.com',
-            endpoint: { host: 'srv.empresa.com', domain: 'empresa.com', port: 5223 },
-          },
-          1,
-          { transport: 'direct-tls' },
-        ),
-      (error) => error.code === 'CERTIFICATE_INVALID',
+    const pending = adapter.resolveTlsOptions(
+      {
+        requestId: 'tls-domain',
+        accountId: 'juan@empresa.com',
+        endpoint: { host: 'srv.empresa.com', domain: 'empresa.com', port: 5223 },
+      },
+      1,
+      { transport: 'direct-tls' },
     );
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(adapter.pendingDecisions.has('tls-domain'), true);
+    adapter.decideCertificateTrust(1, {
+      requestId: 'tls-domain',
+      accountId: 'juan@empresa.com',
+      fingerprintSha256: 'AA:BB:CC:DD',
+      decision: 'cancel',
+    });
+    await assert.rejects(pending, (error) => error.code === 'CERTIFICATE_REJECTED');
   } finally {
     tls.connect = originalConnect;
   }
@@ -235,7 +240,7 @@ test('legacy account identity remains stable while an explicit XMPP domain is su
     completeConnection: () => undefined,
     finishConnection: () => undefined,
   };
-  const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+  const { registerAccountHandlers } = require('../electron/ipc/ipc-account-handlers.cjs');
   const options = {
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     assertSender: () => undefined,
@@ -351,7 +356,7 @@ test('modern profiles reject a profileDomain override that changes the persisted
       historySecurity,
     }),
   };
-  const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+  const { registerAccountHandlers } = require('../electron/ipc/ipc-account-handlers.cjs');
   registerAccountHandlers(options);
   const result = await handlers.get('account.connect')(
     { sender: { id: 1 } },
@@ -426,8 +431,8 @@ test('legacy profiles persist advanced settings without changing identity or cre
   };
   const {
     registerConnectionProfileHandlers,
-  } = require('../electron/ipc-connection-profile-handlers.cjs');
-  const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
+  } = require('../electron/ipc/ipc-connection-profile-handlers.cjs');
+  const { registerAccountHandlers } = require('../electron/ipc/ipc-account-handlers.cjs');
   registerConnectionProfileHandlers(registerOptions);
   const saved = handlers.get('connectionProfiles.save')(
     { sender: { id: 1 } },
@@ -519,6 +524,7 @@ test('temporary secrets never reach disk and remember false revokes a prior pers
 test('profile IPC validates sender, account identity, and secret revocation without returning secrets', () => {
   const handlers = new Map();
   let authorized = true;
+  let secretStatus = 'recovery_available';
   const profiles = new Map();
   const calls = [];
   const runtime = {
@@ -535,6 +541,15 @@ test('profile IPC validates sender, account identity, and secret revocation with
     secrets: {
       delete: (reference) => calls.push(['delete', reference]),
       hasPersistent: (reference) => reference === `account:${profile.accountId}`,
+      getStatus: () => secretStatus,
+      recover: () => {
+        secretStatus = 'available';
+        calls.push(['recover']);
+      },
+      reset: () => {
+        secretStatus = 'available';
+        calls.push(['reset']);
+      },
     },
   };
   const options = {
@@ -576,6 +591,11 @@ test('profile IPC validates sender, account identity, and secret revocation with
     true,
   );
   assert.equal(
+    handlers.get('connectionProfiles.list')(event, { version: 1, requestId: 'list-1c' }).value[0]
+      .credentialStorageStatus,
+    'recovery_available',
+  );
+  assert.equal(
     handlers.get('account.forgetSecret')(event, {
       version: 1,
       requestId: 'forget-1',
@@ -584,6 +604,24 @@ test('profile IPC validates sender, account identity, and secret revocation with
     true,
   );
   assert.deepEqual(calls[0], ['delete', `account:${profile.accountId}`]);
+  assert.equal(
+    handlers.get('account.recoverSecretStorage')(event, {
+      version: 1,
+      requestId: 'recover-1',
+      accountId: profile.accountId,
+    }).ok,
+    true,
+  );
+  assert.equal(secretStatus, 'available');
+  assert.equal(
+    handlers.get('account.resetSecretStorage')(event, {
+      version: 1,
+      requestId: 'reset-1',
+      accountId: profile.accountId,
+    }).ok,
+    true,
+  );
+  assert.deepEqual(calls.slice(-2), [['recover'], ['reset']]);
   assert.throws(
     () =>
       handlers.get('account.forgetSecret')(event, {

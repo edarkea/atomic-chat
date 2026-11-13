@@ -1,0 +1,73 @@
+<form class="composer" (ngSubmit)="submitMessage()">
+  @if (replyPreview(); as reply) {
+    <div class="reply-preview" role="status">
+      <span class="reply-preview-copy">
+        <strong class="reply-preview-author">{{ reply.author }}</strong>
+        <small class="reply-preview-quote">{{ reply.quote }}</small>
+      </span>
+      <button type="button" aria-label="Cancelar respuesta" (click)="replyCancel.emit()">×</button>
+    </div>
+  }
+  <div class="composer-input-row">
+    @if (showAttach()) {
+      <button
+        class="composer-icon"
+        type="button"
+        aria-label="Adjuntar"
+        (click)="attach.emit()"
+        [disabled]="disabled()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-attach" />
+        </svg>
+      </button>
+    }
+    <textarea
+      #messageInput
+      [attr.name]="inputName()"
+      [ngModel]="draft()"
+      [ngModelOptions]="{ standalone: true }"
+      (ngModelChange)="draftChange.emit($event)"
+      (focus)="inputFocus.emit()"
+      (blur)="inputBlur.emit()"
+      [placeholder]="placeholder()"
+      autocomplete="off"
+      [disabled]="disabled()"
+      rows="1"
+      (keydown)="onKeydown($event)"
+      (select)="saveSelection()"
+      (keyup)="saveSelection()"
+      (input)="resizeInput()"
+    ></textarea>
+    @if (showEmoji()) {
+      <button
+        class="composer-icon"
+        type="button"
+        aria-label="Insertar emoji"
+        title="Insertar emoji"
+        [disabled]="disabled()"
+        (mousedown)="$event.preventDefault()"
+        (click)="toggleEmoji()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-emoji" />
+        </svg>
+      </button>
+    }
+    <button
+      class="send"
+      type="submit"
+      aria-label="Enviar"
+      [disabled]="disabled() || !draft().trim()"
+    >
+      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+        <use href="#ac-send" />
+      </svg>
+    </button>
+  </div>
+  @if (emojiOpen()) {
+    <div class="emoji-popover">
+      <app-emoji-picker (emojiSelected)="insertEmoji($event)" (closed)="closeEmoji()" />
+    </div>
+  }
+</form>

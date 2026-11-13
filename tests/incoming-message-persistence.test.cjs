@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createIncomingMessageProcessor } = require('../electron/incoming-message-persistence.cjs');
+const {
+  createIncomingMessageProcessor,
+} = require('../electron/application/incoming-message-persistence.cjs');
 
 const message = {
   id: 'message-1',

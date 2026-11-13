@@ -2,14 +2,68 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { App } from './app';
-import { ChatFacade } from './core/chat.facade';
-import { CertificateTrustRequest, Message, RoomMessage, RoomRef, RoomState } from './core/domain';
-import { MucFacade } from './core/muc.facade';
-import { corePortProviders } from './core/port-providers';
+import { ChatFacade } from './core/facades/chat.facade';
+import type { InitialHistoryState } from './core/facades/chat.facade';
+import {
+  CertificateTrustRequest,
+  Contact,
+  HistoryTimelineItem,
+  Message,
+  MessageSearchHit,
+  RoomMessage,
+  RoomRef,
+  RoomState,
+  FileTransfer,
+  TypedDomainEvent,
+} from './core/domain';
+import { MucFacade } from './core/facades/muc.facade';
+import { FileFacade } from './core/facades/file.facade';
+import { corePortProviders } from './core/ports/port-providers';
 import { BROADCAST_PORT, FILE_TRANSFER_PORT } from './core/ports';
-import { UnavailableFileTransferPort } from './core/unavailable.ports';
+import { UnavailableFileTransferPort } from './core/ports/unavailable.ports';
+import type { LoginDraft } from './core/coordinators/app-session.coordinator';
+import type { ConversationSelection } from './core/coordinators/workspace.coordinator';
+import type { ConnectionSettingsDraft } from './features/settings/connection-settings-dialog.component';
+
+interface AppTestSurface {
+  readonly conversationSelection: WritableSignal<ConversationSelection>;
+  readonly selectedJid: () => string;
+  readonly newMessageSearch: WritableSignal<string>;
+  readonly login: WritableSignal<LoginDraft>;
+  readonly mucDraft: WritableSignal<string>;
+  readonly draft: WritableSignal<string>;
+  readonly activeContact: () => Contact | undefined;
+  readonly contactsByBareJid: () => ReadonlyMap<string, Contact>;
+  readonly stickerMessages: {
+    send(accountId: string, conversationId: string, stickerId: string): Promise<unknown>;
+  };
+  dismissConversationByUser(): void;
+  connect(): Promise<void>;
+  sendSticker(stickerId: string): Promise<void>;
+  closeActiveConversation(): void;
+  onUserScrollIntent(): void;
+  onChatScroll(): void;
+  selectedProfileId(): string;
+  selectLoginProfile(accountId: string): Promise<void>;
+  setLoginPassword(password: string): void;
+  setLoginAccount(accountId: string): void;
+  forgetLoginSecret(): Promise<void>;
+  deleteLoginProfile(): Promise<void>;
+  setLoginDomain(domain: string): void;
+  saveAdvancedSettings(settings: ConnectionSettingsDraft): Promise<void>;
+}
+
+function appSurface(fixture: ComponentFixture<App>): AppTestSurface {
+  return fixture.componentInstance as unknown as AppTestSurface;
+}
 
 function fakeFacade() {
+  const initialHistory = signal<InitialHistoryState>({
+    accountId: 'a@example.invalid',
+    conversationId: 'contact@example.invalid',
+    generation: 1,
+    status: 'ready' as const,
+  });
   return {
     accountId: signal('a@example.invalid'),
     connection: signal({
@@ -20,8 +74,16 @@ function fakeFacade() {
     }),
     contacts: signal([]),
     messages: signal([]),
-    timelineItems: vi.fn(() => []),
-    timelineSupported: vi.fn(() => true),
+    reactions: signal(new Map()),
+    initialHistory,
+    messageSearchResults: signal([]),
+    messageSearchLoading: signal(false),
+    messageSearchError: signal<string | null>(null),
+    messageSearchHasMore: signal(false),
+    searchMessages: vi.fn(async () => undefined),
+    revealSearchHit: vi.fn(async () => undefined),
+    timelineItems: signal<ReadonlyArray<HistoryTimelineItem>>([]),
+    timelineSupported: signal(true),
     presence: signal({ jid: 'a@example.invalid', availability: 'available' }),
     preferences: signal({
       theme: 'atomic',
@@ -43,7 +105,18 @@ function fakeFacade() {
     hasNewerMessages: signal(false),
     connect: vi.fn(async () => true),
     send: vi.fn(async () => true),
-    loadConversation: vi.fn(async () => undefined),
+    sendMessageWithReply: vi.fn(async () => true),
+    updateTypingState: vi.fn(async () => undefined),
+    setTypingActivity: vi.fn(async () => undefined),
+    loadConversation: vi.fn(async (conversationId: string) => {
+      initialHistory.set({
+        accountId: 'a@example.invalid',
+        conversationId: conversationId.split('/')[0].toLowerCase(),
+        generation: initialHistory().generation + 1,
+        status: 'loading',
+      });
+      initialHistory.update((current) => ({ ...current, status: 'ready' }));
+    }),
     loadOlderMessages: vi.fn(async () => undefined),
     loadNewerMessages: vi.fn(async () => undefined),
     setAvailability: vi.fn(),
@@ -87,6 +160,7 @@ function fakeMucFacade() {
     hasMoreParticipants: signal(false),
     participantPage: signal(0),
     messages,
+    reactions: signal(new Map()),
     error: signal<string | null>(null),
     visibleNotices: signal([]),
     discover: vi.fn(async () => undefined),
@@ -106,7 +180,7 @@ describe('App composer integration', () => {
   let facade: ReturnType<typeof fakeFacade>;
   let muc: ReturnType<typeof fakeMucFacade>;
   let broadcastSend: ReturnType<typeof vi.fn>;
-  const chatMessage = (text: string, clientMessageId: string) => ({
+  const chatMessage = (text: string, clientMessageId: string): Message => ({
     id: clientMessageId,
     accountId: 'a@example.invalid',
     conversationId: 'contact@example.invalid',
@@ -174,7 +248,7 @@ describe('App composer integration', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    (fixture.componentInstance as any).conversationSelection.set({
+    appSurface(fixture).conversationSelection.set({
       kind: 'direct',
       accountId: 'a@example.invalid',
       jid: 'contact@example.invalid',
@@ -182,12 +256,167 @@ describe('App composer integration', () => {
     fixture.detectChanges();
   });
 
+  it('loads Preferences on demand and restores focus when the dialog closes', async () => {
+    const root = fixture.nativeElement as HTMLElement;
+    const trigger = root.querySelector<HTMLButtonElement>('button[aria-label="Preferencias"]');
+    expect(trigger).not.toBeNull();
+    expect(root.querySelector('.preferences-dialog')).toBeNull();
+
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const dialog = root.querySelector<HTMLElement>('.preferences-dialog');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+    expect(dialog?.contains(document.activeElement)).toBe(true);
+
+    dialog?.querySelector<HTMLButtonElement>('[data-tab="notifications"]')?.click();
+    fixture.detectChanges();
+    // NgModel updates the checkbox control asynchronously after the tab is rendered.
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(facade.preferences().notifications).toBe(true);
+    const toggle = dialog?.querySelector<HTMLInputElement>(
+      '#preferences-panel-notifications input[type="checkbox"]',
+    );
+    expect(toggle?.checked).toBe(true);
+    toggle?.click();
+    expect(facade.updatePreferences).toHaveBeenCalledWith({ notifications: false });
+
+    dialog?.querySelector<HTMLButtonElement>('[aria-label="Cerrar Preferencias"]')?.click();
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(root.querySelector('.preferences-dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('cancels the delayed message search when the app is destroyed', async () => {
+    vi.useFakeTimers();
+    try {
+      const searchMessages = facade.searchMessages as ReturnType<typeof vi.fn>;
+      (
+        fixture.componentInstance as unknown as { searchMessages: (query: string) => void }
+      ).searchMessages('late query');
+      fixture.destroy();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(searchMessages).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps global search navigation targeted after selecting another conversation', async () => {
+    const app = fixture.componentInstance as unknown as {
+      selectMessageSearchHit(hit: MessageSearchHit): Promise<void>;
+      conversationView?: { scrollToMessage(messageId: string): void };
+    };
+    const scrollToMessage = vi.spyOn(app.conversationView!, 'scrollToMessage');
+    const hit: MessageSearchHit = {
+      messageId: 'message-b',
+      accountId: 'a@example.invalid',
+      conversationId: 'b@example.invalid',
+      senderJid: 'b@example.invalid',
+      bodyPreview: 'resultado B',
+      createdAt: '2026-11-11T00:00:00.000Z',
+    };
+
+    await app.selectMessageSearchHit(hit);
+
+    expect(facade.revealSearchHit).toHaveBeenCalledWith(hit);
+    expect(scrollToMessage).toHaveBeenCalledOnce();
+    expect(scrollToMessage).toHaveBeenCalledWith('message-b');
+  });
+
+  it('ignores an obsolete global search result after a newer selection', async () => {
+    const app = fixture.componentInstance as unknown as {
+      selectMessageSearchHit(hit: MessageSearchHit): Promise<void>;
+      selectContact(contact: Contact): void;
+      conversationView?: { scrollToMessage(messageId: string): void };
+    };
+    const scrollToMessage = vi.spyOn(app.conversationView!, 'scrollToMessage');
+    const releases = new Map<string, () => void>();
+    facade.revealSearchHit = vi.fn(
+      (hit: MessageSearchHit) =>
+        new Promise<void>((resolve) => {
+          releases.set(hit.messageId, resolve);
+        }),
+    );
+    const first: MessageSearchHit = {
+      messageId: 'message-b',
+      accountId: 'a@example.invalid',
+      conversationId: 'b@example.invalid',
+      senderJid: 'b@example.invalid',
+      bodyPreview: 'resultado B',
+      createdAt: '2026-11-11T00:00:00.000Z',
+    };
+    const second: MessageSearchHit = {
+      messageId: 'message-c',
+      accountId: 'a@example.invalid',
+      conversationId: 'c@example.invalid',
+      senderJid: 'c@example.invalid',
+      bodyPreview: 'resultado C',
+      createdAt: '2026-11-11T00:01:00.000Z',
+    };
+
+    const firstNavigation = app.selectMessageSearchHit(first);
+    const secondNavigation = app.selectMessageSearchHit(second);
+    releases.get('message-b')?.();
+    await firstNavigation;
+
+    expect(scrollToMessage).not.toHaveBeenCalled();
+
+    releases.get('message-c')?.();
+    await secondNavigation;
+    expect(scrollToMessage).toHaveBeenCalledOnce();
+    expect(scrollToMessage).toHaveBeenCalledWith('message-c');
+
+    const manualContact: Contact = {
+      jid: 'manual@example.invalid',
+      name: 'Manual',
+      groups: [],
+      source: 'conversation',
+    };
+    const abandoned = app.selectMessageSearchHit(first);
+    app.selectContact(manualContact);
+    releases.get('message-b')?.();
+    await abandoned;
+    expect(scrollToMessage).toHaveBeenCalledOnce();
+  });
+
+  it('does not dismiss a conversation when Escape cancels a pending Preferences open', async () => {
+    const root = fixture.nativeElement as HTMLElement;
+    const trigger = root.querySelector<HTMLButtonElement>('button[aria-label="Preferencias"]');
+    expect(trigger).not.toBeNull();
+
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    trigger?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    expect(
+      (fixture.componentInstance as App & { preferencesOpen: () => boolean }).preferencesOpen(),
+    ).toBe(false);
+    expect((fixture.componentInstance as App & { selectedJid: () => string }).selectedJid()).toBe(
+      'contact@example.invalid',
+    );
+    expect(root.querySelector('.preferences-dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it('renders one unique local SVG sprite with declared icon references', () => {
     const root = fixture.nativeElement as HTMLElement;
     const symbols = root.querySelectorAll<SVGSymbolElement>('svg.ac-icon-sprite symbol[id^="ac-"]');
     const ids = new Set(Array.from(symbols, (symbol) => symbol.id));
 
-    expect(symbols).toHaveLength(23);
+    expect(symbols).toHaveLength(26);
     expect(ids.size).toBe(symbols.length);
 
     const uses = root.querySelectorAll<SVGUseElement>('svg.ac-icon use');
@@ -204,6 +433,130 @@ describe('App composer integration', () => {
     }
   });
 
+  it('publishes precached image records with their history page, never as an isolated early timeline', () => {
+    const media = {
+      mediaId: 'media-cached',
+      transferId: 'transfer-cached',
+      accountId: 'a@example.invalid',
+      conversationId: 'contact@example.invalid',
+      direction: 'incoming' as const,
+      senderJid: 'contact@example.invalid',
+      originalName: 'cached.jpg',
+      mimeType: 'image/jpeg' as const,
+      sizeBytes: '128',
+      width: 320,
+      height: 240,
+      createdAt: '2026-11-01T10:00:00.000Z',
+      availability: 'available' as const,
+    };
+    const files = TestBed.inject(FileFacade);
+    (files as unknown as { onEvent(event: TypedDomainEvent): void }).onEvent({
+      version: 1,
+      eventId: 'media-event',
+      type: 'media.available',
+      payload: media,
+    });
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'contact@example.invalid',
+      generation: 2,
+      status: 'loading',
+    });
+    facade.messages.set([chatMessage('historial unificado', 'history-message')]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.file-message')).toHaveLength(0);
+    expect(fixture.nativeElement.textContent).toContain('Cargando conversación');
+
+    facade.timelineItems.set([
+      {
+        kind: 'text',
+        id: 'history-message',
+        sortAt: '2026-11-01T09:00:00.000Z',
+        message: chatMessage('historial unificado', 'history-message'),
+      },
+      { kind: 'image', id: 'media-cached', sortAt: media.createdAt, media },
+    ]);
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'contact@example.invalid',
+      generation: 2,
+      status: 'ready',
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('historial unificado');
+    expect(fixture.nativeElement.querySelectorAll('.file-message')).toHaveLength(1);
+  });
+
+  it('hides only cancelled outgoing images while retaining their internal transfer record', async () => {
+    const files = TestBed.inject(FileFacade);
+    await fixture.whenStable();
+    const createTransfer = (transferId: string, changes: Partial<FileTransfer>): FileTransfer => ({
+      offer: {
+        transferId,
+        accountId: 'a@example.invalid',
+        conversationId: 'contact@example.invalid',
+        senderJid: 'a@example.invalid',
+        name: `${transferId}.jpg`,
+        mimeType: 'image/jpeg',
+        sizeBytes: '12',
+        transport: 'ibb',
+        offeredAt: `2026-11-01T10:00:0${transferId.length}.000Z`,
+      },
+      direction: 'outgoing',
+      state: 'transferring',
+      bytesTransferred: '4',
+      updatedAt: '2026-11-01T10:00:00.000Z',
+      ...changes,
+    });
+    const emit = (transfer: FileTransfer): void => {
+      (files as unknown as { onEvent(event: TypedDomainEvent): void }).onEvent({
+        version: 1,
+        eventId: transfer.offer.transferId,
+        type: 'file.stateChanged',
+        payload: transfer,
+      });
+    };
+    const cancelledImage = createTransfer('cancelled-image', {
+      state: 'cancelled',
+      endReason: 'cancelled_by_sender',
+      bytesTransferred: '0',
+    });
+    emit(cancelledImage);
+    emit(createTransfer('active-image', { state: 'transferring' }));
+    emit(
+      createTransfer('completed-image', {
+        state: 'completed',
+        bytesTransferred: '12',
+      }),
+    );
+    emit({
+      ...createTransfer('cancelled-document', {
+        state: 'cancelled',
+        endReason: 'cancelled_by_sender',
+      }),
+      offer: {
+        ...createTransfer('cancelled-document', {}).offer,
+        name: 'cancelled-document.pdf',
+        mimeType: 'application/pdf',
+      },
+    });
+    fixture.detectChanges();
+
+    expect(files.transfers()).toContainEqual(cancelledImage);
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente cancelled-image.jpg"]'),
+    ).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente active-image.jpg"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente completed-image.jpg"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Archivo saliente cancelled-document.pdf"]'),
+    ).not.toBeNull();
+  });
+
   it('opens an accessible Nuevo mensaje dialog with discovery and nickname controls', () => {
     (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -216,7 +569,57 @@ describe('App composer integration', () => {
     expect(panel.querySelector('input[placeholder="Ej. operador"]')).toBeTruthy();
     expect(panel.textContent).toContain('No hay salas descubiertas todavía.');
   });
-  it('opens the broadcast dialog with roster contacts instead of sample data', () => {
+  it('loads Difusión on demand and returns keyboard focus to its sidebar trigger', async () => {
+    const root = fixture.nativeElement as HTMLElement;
+    const trigger = root.querySelector<HTMLButtonElement>('.broadcast-toggle');
+    expect(trigger).not.toBeNull();
+    expect(root.querySelector('.broadcast-dialog')).toBeNull();
+
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const dialog = root.querySelector<HTMLElement>('.broadcast-dialog');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+    expect(dialog?.contains(document.activeElement)).toBe(true);
+    expect(dialog?.querySelector('textarea[name="broadcast-message"]')).not.toBeNull();
+
+    dialog?.querySelector<HTMLButtonElement>('[aria-label="Cerrar Difundir mensaje"]')?.click();
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(root.querySelector('.broadcast-dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('cancels a pending Difusión open on Escape without closing the active conversation', async () => {
+    const root = fixture.nativeElement as HTMLElement;
+    const trigger = root.querySelector<HTMLButtonElement>('.broadcast-toggle');
+    expect(trigger).not.toBeNull();
+
+    trigger?.focus();
+    trigger?.click();
+    fixture.detectChanges();
+    trigger?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const state = fixture.componentInstance as App & {
+      broadcastOpen: () => boolean;
+      selectedJid: () => string;
+    };
+    expect(state.broadcastOpen()).toBe(false);
+    expect(state.selectedJid()).toBe('contact@example.invalid');
+    expect(root.querySelector('.broadcast-dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('opens the broadcast dialog with roster contacts instead of sample data', async () => {
     facade.contacts.set([
       {
         jid: 'one@example.invalid',
@@ -244,6 +647,8 @@ describe('App composer integration', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.broadcast-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
     const panel = fixture.nativeElement.querySelector('.broadcast-dialog') as HTMLElement;
     expect(panel.getAttribute('role')).toBe('dialog');
     expect(panel.querySelector('textarea[name="broadcast-message"]')).toBeTruthy();
@@ -257,6 +662,8 @@ describe('App composer integration', () => {
     ]);
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.broadcast-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
     fixture.detectChanges();
     const panel = fixture.nativeElement.querySelector('.broadcast-dialog') as HTMLElement;
     const state = fixture.componentInstance as unknown as {
@@ -305,17 +712,50 @@ describe('App composer integration', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.new-message-result') as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect((fixture.componentInstance as any).selectedJid()).toBe(contact.jid);
+    expect(appSurface(fixture).selectedJid()).toBe(contact.jid);
     expect(fixture.nativeElement.querySelector('.new-message-dialog')).toBeNull();
 
     (fixture.nativeElement.querySelector('.directory-toggle') as HTMLButtonElement).click();
-    (fixture.componentInstance as any).newMessageSearch.set('new@example.invalid');
+    appSurface(fixture).newMessageSearch.set('new@example.invalid');
     fixture.detectChanges();
     (
       fixture.nativeElement.querySelector('.new-message-search button') as HTMLButtonElement
     ).click();
     fixture.detectChanges();
-    expect((fixture.componentInstance as any).selectedJid()).toBe('new@example.invalid');
+    expect(appSurface(fixture).selectedJid()).toBe('new@example.invalid');
+  });
+  it('does not reload the conversation when selecting the already active contact', () => {
+    const app = fixture.componentInstance as unknown as {
+      selectContact(contact: Contact): void;
+    };
+    const activeContact: Contact = {
+      jid: 'contact@example.invalid/resource',
+      name: 'Contacto activo',
+      groups: [],
+      source: 'conversation',
+    };
+
+    app.selectContact(activeContact);
+
+    expect(facade.loadConversation).not.toHaveBeenCalled();
+    expect(appSurface(fixture).selectedJid()).toBe('contact@example.invalid');
+  });
+  it('focuses the composer after starting a direct reply', async () => {
+    const app = fixture.componentInstance as unknown as {
+      startReply(message: Message, muc: boolean): void;
+    };
+    const message = {
+      ...chatMessage('mensaje citado', 'reply-message'),
+      messageId: 'reply-message',
+    };
+
+    app.startReply(message, false);
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(
+      fixture.nativeElement.querySelector('.composer-input-row textarea'),
+    );
   });
   it('keeps the dialog open on failed room join and closes after confirmation', async () => {
     const room = {
@@ -362,7 +802,7 @@ describe('App composer integration', () => {
       downloadDirectory: '',
     });
     fixture.detectChanges();
-    (fixture.componentInstance as any).dismissConversationByUser();
+    appSurface(fixture).dismissConversationByUser();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).not.toContain('Contacto');
     expect(facade.contacts()).toContain(contact);
@@ -530,14 +970,22 @@ describe('App composer integration', () => {
     (fixture.nativeElement.querySelector('.muc-conversation-item') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.muc-room-view')).toBeTruthy();
-    (fixture.componentInstance as any).login.set({ accountId: 'b@example.invalid', password: '' });
-    await (fixture.componentInstance as any).connect();
+    appSurface(fixture).login.update((value) => ({
+      ...value,
+      accountId: 'b@example.invalid',
+      password: '',
+    }));
+    await appSurface(fixture).connect();
     facade.accountId.set('b@example.invalid');
     muc.states.set([]);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.muc-room-view')).toBeNull();
-    (fixture.componentInstance as any).login.set({ accountId: 'a@example.invalid', password: '' });
-    await (fixture.componentInstance as any).connect();
+    appSurface(fixture).login.update((value) => ({
+      ...value,
+      accountId: 'a@example.invalid',
+      password: '',
+    }));
+    await appSurface(fixture).connect();
     facade.accountId.set('a@example.invalid');
     muc.states.set([joinedRoom(room)]);
     fixture.detectChanges();
@@ -558,20 +1006,29 @@ describe('App composer integration', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.muc-conversation-item') as HTMLButtonElement).click();
     fixture.detectChanges();
-    (fixture.componentInstance as any).mucDraft.set('mensaje de sala');
+    appSurface(fixture).mucDraft.set('mensaje de sala');
     fixture.detectChanges();
     await fixture.nativeElement.querySelector('.muc-room-view form.composer').requestSubmit();
-    expect(muc.send).toHaveBeenCalledWith('a@example.invalid', room.jid, 'mensaje de sala');
+    expect(muc.send).toHaveBeenCalledWith(
+      'a@example.invalid',
+      room.jid,
+      'mensaje de sala',
+      undefined,
+    );
     (
       fixture.nativeElement.querySelector(
         '.conversation-item:not(.muc-conversation-item)',
       ) as HTMLButtonElement
     ).click();
     fixture.detectChanges();
-    (fixture.componentInstance as any).draft.set('mensaje directo');
+    appSurface(fixture).draft.set('mensaje directo');
     fixture.detectChanges();
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
-    expect(facade.send).toHaveBeenCalledWith('mensaje directo', 'luis@example.invalid');
+    expect(facade.sendMessageWithReply).toHaveBeenCalledWith(
+      'mensaje directo',
+      'luis@example.invalid',
+      undefined,
+    );
   });
   it('renders every MUC sender from the message occupant and preserves labels after departure', () => {
     const room = {
@@ -640,6 +1097,33 @@ describe('App composer integration', () => {
       'Participante desconocido',
     );
   });
+  it('reactively indexes roster contacts without changing the active contact identity', () => {
+    const active = {
+      jid: 'Contact@Example.invalid/mobile',
+      name: 'Contact display name',
+      groups: ['friends'],
+      source: 'roster' as const,
+    };
+    const second = {
+      jid: 'CONTACT@example.invalid/desktop',
+      name: 'Second resource',
+      groups: [],
+      source: 'roster' as const,
+    };
+    facade.contacts.set([active, second]);
+    fixture.detectChanges();
+
+    const root = appSurface(fixture);
+    expect(root.activeContact()).toBe(active);
+    expect(root.contactsByBareJid().size).toBe(1);
+
+    const refreshed = { ...active, jid: 'contact@example.invalid', name: 'Updated contact' };
+    facade.contacts.set([refreshed]);
+    fixture.detectChanges();
+    expect(root.activeContact()).toBe(refreshed);
+    expect(root.contactsByBareJid().get('contact@example.invalid')).toBe(refreshed);
+  });
+
   it('renders direct aliases, bare JIDs, and the local sender without account mixing', () => {
     facade.contacts.set([
       { jid: 'luis@example.invalid', name: 'Luis Pasteur', groups: [], source: 'roster' },
@@ -662,23 +1146,28 @@ describe('App composer integration', () => {
     expect(fixture.nativeElement.querySelectorAll('.chat-content .message')).toHaveLength(3);
   });
   it('clears only after local acceptance', async () => {
-    const input = fixture.nativeElement.querySelector('input[name="message"]');
+    const input = fixture.nativeElement.querySelector('textarea[name="message"]');
     input.value = 'hola';
     input.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
     fixture.detectChanges();
-    expect((fixture.componentInstance as any).draft()).toBe('');
+    expect(facade.sendMessageWithReply).toHaveBeenCalledWith(
+      'hola',
+      'contact@example.invalid',
+      undefined,
+    );
+    expect(appSurface(fixture).draft()).toBe('');
   });
   it('does not invoke the sticker service while sticker sending is disabled', async () => {
     const stickerSend = vi.fn();
-    (fixture.componentInstance as any).stickerMessages.send = stickerSend;
-    await (fixture.componentInstance as any).sendSticker('s1');
+    appSurface(fixture).stickerMessages.send = stickerSend;
+    await appSurface(fixture).sendSticker('s1');
     expect(stickerSend).not.toHaveBeenCalled();
     expect(facade.error()).toBe('El envío de stickers está temporalmente deshabilitado');
   });
   it('closes the active conversation without leaving a MUC or preserving its draft', () => {
-    const app = fixture.componentInstance as any;
+    const app = appSurface(fixture);
     app.draft.set('borrador directo');
     app.closeActiveConversation();
     fixture.detectChanges();
@@ -687,13 +1176,40 @@ describe('App composer integration', () => {
     expect(app.mucDraft()).toBe('');
     expect(muc.leave).not.toHaveBeenCalled();
   });
+  it('leaves the conversation panel blank when there is no active selection', () => {
+    appSurface(fixture).conversationSelection.set({
+      kind: 'none',
+      accountId: 'a@example.invalid',
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-conversation-view')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-muc-view')).toBeNull();
+  });
+  it('offers a new conversation from the empty workspace', () => {
+    appSurface(fixture).conversationSelection.set({
+      kind: 'none',
+      accountId: 'a@example.invalid',
+    });
+    fixture.detectChanges();
+
+    const startButton = fixture.nativeElement.querySelector(
+      '.workspace-empty button.primary',
+    ) as HTMLButtonElement;
+    expect(startButton?.textContent).toContain('Iniciar nueva conversación');
+
+    startButton.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-new-message-dialog')).not.toBeNull();
+  });
   it('closes the active conversation on Escape and leaves modal priority intact', () => {
     const close = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     document.dispatchEvent(close);
     fixture.detectChanges();
-    expect((fixture.componentInstance as any).selectedJid()).toBe('');
+    expect(appSurface(fixture).selectedJid()).toBe('');
 
-    (fixture.componentInstance as any).conversationSelection.set({
+    appSurface(fixture).conversationSelection.set({
       kind: 'direct',
       accountId: 'a@example.invalid',
       jid: 'contact@example.invalid',
@@ -722,7 +1238,19 @@ describe('App composer integration', () => {
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
     );
     fixture.detectChanges();
-    expect((fixture.componentInstance as any).selectedJid()).toBe('contact@example.invalid');
+    expect(appSurface(fixture).selectedJid()).toBe('contact@example.invalid');
+  });
+  it('does not close the conversation while an image preview overlay is open', () => {
+    const overlay = document.createElement('div');
+    overlay.className = 'file-preview-overlay';
+    document.body.append(overlay);
+
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(appSurface(fixture).selectedJid()).toBe('contact@example.invalid');
+    } finally {
+      overlay.remove();
+    }
   });
   it('prevents file navigation outside the conversation without intercepting text drops', () => {
     const fileDrop = new Event('drop', { bubbles: true, cancelable: true });
@@ -770,79 +1298,102 @@ describe('App composer integration', () => {
     expect(fixture.nativeElement.querySelectorAll('.certificate-actions button').length).toBe(3);
   });
   it('preserves the draft after a failed result or exception', async () => {
-    const send = facade.send as any;
+    const send = vi.mocked(facade.sendMessageWithReply);
     send.mockResolvedValueOnce(false);
-    const input = fixture.nativeElement.querySelector('input[name="message"]');
+    const input = fixture.nativeElement.querySelector('textarea[name="message"]');
     input.value = 'reintentar';
     input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
-    expect((fixture.componentInstance as any).draft()).toBe('reintentar');
+    expect(appSurface(fixture).draft()).toBe('reintentar');
     send.mockRejectedValueOnce(new Error('ipc'));
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
-    expect((fixture.componentInstance as any).draft()).toBe('reintentar');
+    expect(appSurface(fixture).draft()).toBe('reintentar');
   });
   it('preserves newer content while an earlier send is pending', async () => {
     let resolve!: (value: boolean) => void;
-    const send = facade.send as any;
+    const send = vi.mocked(facade.sendMessageWithReply);
     send.mockImplementationOnce(
       () =>
         new Promise<boolean>((done) => {
           resolve = done;
         }),
     );
-    const input = fixture.nativeElement.querySelector('input[name="message"]');
+    const input = fixture.nativeElement.querySelector('textarea[name="message"]');
     input.value = 'viejo';
     input.dispatchEvent(new Event('input'));
-    const pending = fixture.nativeElement.querySelector('form.composer').requestSubmit();
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('form.composer').requestSubmit();
+    expect(send).toHaveBeenCalledOnce();
     input.value = 'nuevo';
     input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
     resolve(true);
-    await pending;
-    expect((fixture.componentInstance as any).draft()).toBe('nuevo');
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(appSurface(fixture).draft()).toBe('nuevo');
   });
   it('preserves text when the account is disconnected', async () => {
-    const send = facade.send as any;
+    const send = vi.mocked(facade.sendMessageWithReply);
     send.mockResolvedValueOnce(false);
-    const input = fixture.nativeElement.querySelector('input[name="message"]');
+    const input = fixture.nativeElement.querySelector('textarea[name="message"]');
     input.value = 'sin conexión';
     input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
-    expect((fixture.componentInstance as any).draft()).toBe('sin conexión');
+    expect(send).toHaveBeenCalledWith('sin conexión', 'contact@example.invalid', undefined);
+    expect(appSurface(fixture).draft()).toBe('sin conexión');
   });
   it('shows an accessible error after an IPC exception', async () => {
-    const send = facade.send as any;
+    const send = vi.mocked(facade.sendMessageWithReply);
     send.mockRejectedValueOnce(new Error('ipc'));
-    const input = fixture.nativeElement.querySelector('input[name="message"]');
+    const input = fixture.nativeElement.querySelector('textarea[name="message"]');
     input.value = 'error';
     input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
     await fixture.nativeElement.querySelector('form.composer').requestSubmit();
     fixture.detectChanges();
-    expect((fixture.componentInstance as any).draft()).toBe('error');
+    expect(send).toHaveBeenCalledWith('error', 'contact@example.invalid', undefined);
+    expect(appSurface(fixture).draft()).toBe('error');
     expect(fixture.nativeElement.textContent).toContain('No fue posible enviar el mensaje.');
   });
   it('does not clear a draft after the conversation context changes', async () => {
     let resolve!: (value: boolean) => void;
-    const send = facade.send as any;
+    const send = vi.mocked(facade.sendMessageWithReply);
     send.mockImplementationOnce(
       () =>
         new Promise<boolean>((done) => {
           resolve = done;
         }),
     );
-    const input = fixture.nativeElement.querySelector('input[name="message"]');
+    const input = fixture.nativeElement.querySelector('textarea[name="message"]');
     input.value = 'cuenta A';
     input.dispatchEvent(new Event('input'));
-    const pending = fixture.nativeElement.querySelector('form.composer').requestSubmit();
-    (fixture.componentInstance as any).conversationSelection.set({
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('form.composer').requestSubmit();
+    expect(send).toHaveBeenCalledOnce();
+    appSurface(fixture).conversationSelection.set({
       kind: 'direct',
       accountId: 'a@example.invalid',
       jid: 'other@example.invalid',
     });
-    input.value = 'cuenta B';
-    input.dispatchEvent(new Event('input'));
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'other@example.invalid',
+      generation: 2,
+      status: 'ready',
+    });
+    fixture.detectChanges();
+    const nextInput = fixture.nativeElement.querySelector(
+      'textarea[name="message"]',
+    ) as HTMLTextAreaElement;
+    nextInput.value = 'cuenta B';
+    nextInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
     resolve(true);
-    await pending;
-    expect((fixture.componentInstance as any).draft()).toBe('cuenta B');
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(appSurface(fixture).draft()).toBe('cuenta B');
   });
   it('follows an incoming message, preserves old-message reading, and resumes at the end', async () => {
     const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement;
@@ -851,28 +1402,28 @@ describe('App composer integration', () => {
       scrollHeight: { configurable: true, get: () => height },
       clientHeight: { configurable: true, value: 300 },
     });
-    facade.messages.set([chatMessage('inicio', 'm1')] as any);
+    facade.messages.set([chatMessage('inicio', 'm1')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(700);
     height = 1050;
-    facade.messages.set([...facade.messages(), chatMessage('😀 recibido', 'm2')] as any);
+    facade.messages.set([...facade.messages(), chatMessage('😀 recibido', 'm2')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(750);
     area.scrollTop = 120;
-    (fixture.componentInstance as any).onUserScrollIntent();
+    appSurface(fixture).onUserScrollIntent();
     await Promise.resolve();
     height = 1100;
-    facade.messages.set([...facade.messages(), chatMessage('antiguo', 'm3')] as any);
+    facade.messages.set([...facade.messages(), chatMessage('antiguo', 'm3')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(120);
     area.scrollTop = 800;
-    (fixture.componentInstance as any).onUserScrollIntent();
+    appSurface(fixture).onUserScrollIntent();
     await Promise.resolve();
     height = 1150;
-    facade.messages.set([...facade.messages(), chatMessage('vuelve', 'm4')] as any);
+    facade.messages.set([...facade.messages(), chatMessage('vuelve', 'm4')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(850);
@@ -884,16 +1435,16 @@ describe('App composer integration', () => {
       scrollHeight: { configurable: true, get: () => height },
       clientHeight: { configurable: true, value: 300 },
     });
-    facade.messages.set([chatMessage('uno', 'm1')] as any);
+    facade.messages.set([chatMessage('uno', 'm1')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     height = 1050;
-    facade.messages.set([...facade.messages(), chatMessage('dos', 'm2')] as any);
+    facade.messages.set([...facade.messages(), chatMessage('dos', 'm2')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(750);
     height = 1100;
-    facade.messages.set([...facade.messages(), chatMessage('tres', 'm3')] as any);
+    facade.messages.set([...facade.messages(), chatMessage('tres', 'm3')]);
     fixture.detectChanges();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(800);
@@ -904,14 +1455,22 @@ describe('App composer integration', () => {
       scrollHeight: { configurable: true, value: 1200 },
       clientHeight: { configurable: true, value: 300 },
     });
-    facade.messages.set([chatMessage('último B', 'b1')] as any);
+    facade.messages.set([chatMessage('último B', 'b1')]);
     fixture.detectChanges();
-    (fixture.componentInstance as any).conversationSelection.set({
+    appSurface(fixture).conversationSelection.set({
       kind: 'direct',
       accountId: 'a@example.invalid',
       jid: 'other@example.invalid',
     });
+    facade.initialHistory.set({
+      accountId: 'a@example.invalid',
+      conversationId: 'other@example.invalid',
+      generation: 2,
+      status: 'ready',
+    });
     fixture.detectChanges();
+    await fixture.whenStable();
+    await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(900);
   });
@@ -924,15 +1483,68 @@ describe('App composer integration', () => {
     });
     await new Promise(requestAnimationFrame);
     facade.hasOlderMessages.set(true);
-    (facade.loadOlderMessages as any).mockImplementationOnce(async () => {
+    vi.mocked(facade.loadOlderMessages).mockImplementationOnce(async () => {
       height = 1200;
     });
     area.scrollTop = 0;
-    (fixture.componentInstance as any).onChatScroll();
+    appSurface(fixture).onChatScroll();
     await Promise.resolve();
     await new Promise(requestAnimationFrame);
     expect(area.scrollTop).toBe(200);
     expect(facade.loadOlderMessages).toHaveBeenCalledTimes(1);
+  });
+  it('anchors the first visible message when a capped older page keeps the same total height', async () => {
+    const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement;
+    Object.defineProperties(area, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ top: 0, bottom: 300, left: 0, right: 500, width: 500, height: 300 }),
+      },
+    });
+    facade.messages.set([chatMessage('visible', 'm1'), chatMessage('latest', 'm2')]);
+    fixture.detectChanges();
+    await new Promise(requestAnimationFrame);
+
+    const visible = area.querySelector<HTMLElement>('[data-timeline-id="text:m1"]');
+    expect(visible).toBeTruthy();
+    let anchorTop = 80;
+    Object.defineProperty(visible!, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        top: anchorTop,
+        bottom: anchorTop + 50,
+        left: 0,
+        right: 400,
+        width: 400,
+        height: 50,
+      }),
+    });
+
+    let release!: () => void;
+    vi.mocked(facade.loadOlderMessages).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    facade.hasOlderMessages.set(true);
+    area.scrollTop = 0;
+    appSurface(fixture).onChatScroll();
+    appSurface(fixture).onChatScroll();
+    expect(facade.loadOlderMessages).toHaveBeenCalledTimes(1);
+
+    facade.messages.set([chatMessage('older', 'm0'), facade.messages()[0]]);
+    anchorTop = 260;
+    fixture.detectChanges();
+    release();
+    await Promise.resolve();
+    await new Promise(requestAnimationFrame);
+
+    expect(area.scrollHeight).toBe(1000);
+    expect(area.scrollTop).toBe(180);
+    expect(area.querySelector<HTMLElement>('[data-timeline-id="text:m1"]')).toBe(visible);
   });
   it('does not repeat an older-page request while one is loading', async () => {
     const area = fixture.nativeElement.querySelector('.chat-content') as HTMLElement;
@@ -943,7 +1555,7 @@ describe('App composer integration', () => {
     facade.hasOlderMessages.set(true);
     facade.historyLoading.set(true);
     area.scrollTop = 0;
-    (fixture.componentInstance as any).onChatScroll();
+    appSurface(fixture).onChatScroll();
     expect(facade.loadOlderMessages).not.toHaveBeenCalled();
   });
   it('closes the presence popover and restores focus through the shell', async () => {
@@ -972,7 +1584,7 @@ describe('App composer integration', () => {
     ]);
     (facade.isConnected as unknown as { set: (value: boolean) => void }).set(false);
     fixture.detectChanges();
-    const app = fixture.componentInstance as any;
+    const app = appSurface(fixture);
     await app.selectLoginProfile('a@example.invalid');
     app.setLoginPassword('password-a');
     (
@@ -1024,7 +1636,7 @@ describe('App composer integration', () => {
     ]);
     (facade.isConnected as unknown as { set: (value: boolean) => void }).set(false);
     fixture.detectChanges();
-    const app = fixture.componentInstance as any;
+    const app = appSurface(fixture);
     await app.selectLoginProfile('juan');
     app.setLoginDomain('localhost');
     await app.saveAdvancedSettings({

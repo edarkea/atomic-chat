@@ -1,98 +1,1167 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
+const { XmppAdapter } = require('../electron/xmpp/xmpp-adapter.cjs');
 const { xml } = require('@xmpp/client');
 
 const account = 'operator@example.invalid';
 const service = 'conference.example.invalid';
 const room = `${'lobby'}@${service}`;
-const connected = (adapter, session) => { if (!session.iqCaller) session.iqCaller = { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) }; adapter.sessions.set(account, session); adapter.states.set(account, { accountId: account, status: 'connected', retryable: false, since: new Date().toISOString() }); adapter.sessionDomains.set(account, 'example.invalid'); adapter.sessionEndpoints.set(account, { host: 'localhost', port: 5222, transport: 'starttls' }); adapter.sessionGenerations.set(account, 1); };
-const discovery = (adapter) => adapter.mucDiscoveries.set(account, new Map([[room, { service, room: 'lobby', jid: room, discoveryGeneration: 1, discoveryDomain: 'example.invalid', discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }]]));
-const ownPresence = (from = `${room}/operator`) => xml('presence', { from }, xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('item', { affiliation: 'member', role: 'participant' }), xml('status', { code: '110' })));
+const connected = (adapter, session) => {
+  if (!session.iqCaller)
+    session.iqCaller = {
+      request: async () =>
+        xml(
+          'iq',
+          { type: 'result' },
+          xml(
+            'query',
+            { xmlns: 'http://jabber.org/protocol/disco#info' },
+            xml('identity', { category: 'conference', type: 'text' }),
+          ),
+        ),
+    };
+  adapter.sessions.set(account, session);
+  adapter.states.set(account, {
+    accountId: account,
+    status: 'connected',
+    retryable: false,
+    since: new Date().toISOString(),
+  });
+  adapter.sessionDomains.set(account, 'example.invalid');
+  adapter.sessionEndpoints.set(account, { host: 'localhost', port: 5222, transport: 'starttls' });
+  adapter.sessionGenerations.set(account, 1);
+};
+const discovery = (adapter) =>
+  adapter.mucDiscoveries.set(
+    account,
+    new Map([
+      [
+        room,
+        {
+          service,
+          room: 'lobby',
+          jid: room,
+          discoveryGeneration: 1,
+          discoveryDomain: 'example.invalid',
+          discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+        },
+      ],
+    ]),
+  );
+const ownPresence = (from = `${room}/operator`) =>
+  xml(
+    'presence',
+    { from },
+    xml(
+      'x',
+      { xmlns: 'http://jabber.org/protocol/muc#user' },
+      xml('item', { affiliation: 'member', role: 'participant' }),
+      xml('status', { code: '110' }),
+    ),
+  );
 
 test('MUC discovery queries disco items, validates conference/text + muc, and preserves empty rooms', async () => {
   const calls = [];
-  const session = { iqCaller: { request: async (stanza) => { calls.push(stanza.attrs.to); if (stanza.attrs.to === 'example.invalid') return xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }, xml('item', { jid: service }))); if (stanza.attrs.to === service && stanza.getChild('query').attrs.xmlns === 'http://jabber.org/protocol/disco#info') return xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }), xml('feature', { var: 'http://jabber.org/protocol/muc' }))); return xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' })); } } };
-  const adapter = new XmppAdapter(); connected(adapter, session);
-  const result = await adapter.discoverMuc({ version: 1, requestId: 'discover-1', accountId: account });
-  assert.deepEqual(result, []); assert.deepEqual(calls, ['example.invalid', service, service]);
+  const session = {
+    iqCaller: {
+      request: async (stanza) => {
+        calls.push(stanza.attrs.to);
+        if (stanza.attrs.to === 'example.invalid')
+          return xml(
+            'iq',
+            { type: 'result' },
+            xml(
+              'query',
+              { xmlns: 'http://jabber.org/protocol/disco#items' },
+              xml('item', { jid: service }),
+            ),
+          );
+        if (
+          stanza.attrs.to === service &&
+          stanza.getChild('query').attrs.xmlns === 'http://jabber.org/protocol/disco#info'
+        )
+          return xml(
+            'iq',
+            { type: 'result' },
+            xml(
+              'query',
+              { xmlns: 'http://jabber.org/protocol/disco#info' },
+              xml('identity', { category: 'conference', type: 'text' }),
+              xml('feature', { var: 'http://jabber.org/protocol/muc' }),
+            ),
+          );
+        return xml(
+          'iq',
+          { type: 'result' },
+          xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }),
+        );
+      },
+    },
+  };
+  const adapter = new XmppAdapter();
+  connected(adapter, session);
+  const result = await adapter.discoverMuc({
+    version: 1,
+    requestId: 'discover-1',
+    accountId: account,
+  });
+  assert.deepEqual(result, []);
+  assert.deepEqual(calls, ['example.invalid', service, service]);
 });
 
-test('join remains blocked without operator evidence and does not send presence', async () => {
-  let sent = 0; const session = { send: async () => { sent += 1; } }; const adapter = new XmppAdapter(); connected(adapter, session); discovery(adapter);
-  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-blocked', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_POLICY_MISSING'); assert.equal(sent, 0);
+test('joining while away includes the existing profile in room presence and preserves the nickname', async () => {
+  const adapter = new XmppAdapter();
+  const sent = [];
+  const session = {
+    send: async (stanza) => {
+      sent.push(stanza);
+      if (stanza.attrs.to?.startsWith(`${room}/`))
+        queueMicrotask(() => adapter.handleStanza(account, ownPresence()));
+    },
+  };
+  connected(adapter, session);
+  discovery(adapter);
+  await adapter.setPresence(account, {
+    availability: 'available',
+    mode: 'away',
+    status: 'En descanso',
+  });
+  const state = await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-away',
+    accountId: account,
+    roomJid: room,
+    nickname: 'operator',
+  });
+  assert.equal(state.status, 'joined');
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].attrs.to, `${room}/operator`);
+  assert.equal(sent[1].getChildText('show'), 'away');
+  assert.equal(sent[1].getChildText('status'), 'En descanso');
+  assert.ok(sent[1].getChild('x', 'http://jabber.org/protocol/muc'));
+});
+
+test('an authenticated user can join an existing discovered room without an optional operator policy', async () => {
+  const sent = [];
+  let adapter;
+  const session = {
+    send: async (stanza) => {
+      sent.push(stanza);
+      queueMicrotask(() => adapter.handleStanza(account, ownPresence()));
+    },
+  };
+  adapter = new XmppAdapter();
+  connected(adapter, session);
+  discovery(adapter);
+
+  const joined = await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-existing-room',
+    accountId: account,
+    roomJid: room,
+    nickname: 'operator',
+  });
+  assert.equal(joined.status, 'joined');
+  assert.equal(joined.selfOccupantJid, `${room}/operator`);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].attrs.to, `${room}/operator`);
+  assert.ok(sent[0].getChild('x', 'http://jabber.org/protocol/muc'));
+});
+
+test('configured operator policies still block unaccredited accounts without sending presence', async () => {
+  let sent = 0;
+  const session = {
+    send: async () => {
+      sent += 1;
+    },
+  };
+  const adapter = new XmppAdapter(false, null, [
+    {
+      accountId: 'other@example.invalid',
+      service,
+      canCreate: false,
+      source: 'operator',
+      evidence: 'approved for a different account',
+      endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+    },
+  ]);
+  connected(adapter, session);
+  discovery(adapter);
+
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-blocked',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'MUC_POLICY_MISSING',
+  );
+  assert.equal(sent, 0);
+});
+
+test('malformed configured MUC policies remain fail-closed, not treated as disabled', async () => {
+  const {
+    loadMucPolicies,
+    hasMucOperatorConfiguration,
+  } = require('../electron/application/runtime.cjs');
+  const environment = { ATOMIC_XMPP_MUC_POLICY_JSON: '{invalid-json' };
+  assert.deepEqual(loadMucPolicies(environment), []);
+  assert.equal(hasMucOperatorConfiguration(environment), true);
+  assert.equal(hasMucOperatorConfiguration({}), false);
+  assert.equal(hasMucOperatorConfiguration({ ATOMIC_XMPP_MUC_POLICY_JSON: '   ' }), false);
+
+  let sent = 0;
+  const session = {
+    send: async () => {
+      sent += 1;
+    },
+  };
+  const adapter = new XmppAdapter(
+    false,
+    null,
+    [],
+    null,
+    null,
+    null,
+    null,
+    hasMucOperatorConfiguration(environment),
+  );
+  connected(adapter, session);
+  discovery(adapter);
+
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-bad-policy',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'MUC_POLICY_MISSING',
+  );
+  assert.equal(sent, 0);
 });
 
 test('stale discovery is rejected before any room presence is sent', async () => {
-  let sent = 0; const session = { send: async () => { sent += 1; } }; const adapter = new XmppAdapter(); connected(adapter, session);
-  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-stale-discovery', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_DISCOVERY_STALE'); assert.equal(sent, 0);
+  let sent = 0;
+  const session = {
+    send: async () => {
+      sent += 1;
+    },
+  };
+  const adapter = new XmppAdapter();
+  connected(adapter, session);
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-stale-discovery',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'MUC_DISCOVERY_STALE',
+  );
+  assert.equal(sent, 0);
 });
 
 test('join registers listeners before presence, accepts own 110, and tracks occupants without real JIDs', async () => {
-  const events = []; let adapter; const session = { send: async () => { queueMicrotask(() => adapter.handleStanza(account, xml('presence', { from: `${room}/other` }, xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('item', { affiliation: 'member', role: 'participant' })) ))); queueMicrotask(() => adapter.handleStanza(account, ownPresence())); } }; adapter = new XmppAdapter(false, null, [{ accountId: account, service, canCreate: false, source: 'operator', evidence: 'Openfire administrator policy export', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }]); connected(adapter, session); discovery(adapter); adapter.onEvent((event) => events.push(event));
-  const state = await adapter.joinMuc({ version: 1, requestId: 'join-ok', accountId: account, roomJid: room, nickname: 'operator' });
-  assert.equal(state.status, 'joined'); assert.equal(state.selfOccupantJid, `${room}/operator`); assert.equal(state.participants.length, 2); assert.equal(state.participants[0].occupantJid, `${room}/other`); assert.equal(Object.hasOwn(state.participants[0], 'jid'), false); assert.ok(events.some((event) => event.type === 'muc.participantChanged')); assert.ok(events.some((event) => event.type === 'muc.stateChanged' && event.payload.status === 'joined' && event.payload.sessionGeneration === 1));
+  const events = [];
+  let adapter;
+  const session = {
+    send: async () => {
+      queueMicrotask(() =>
+        adapter.handleStanza(
+          account,
+          xml(
+            'presence',
+            { from: `${room}/other` },
+            xml(
+              'x',
+              { xmlns: 'http://jabber.org/protocol/muc#user' },
+              xml('item', { affiliation: 'member', role: 'participant' }),
+            ),
+          ),
+        ),
+      );
+      queueMicrotask(() => adapter.handleStanza(account, ownPresence()));
+    },
+  };
+  adapter = new XmppAdapter(false, null, [
+    {
+      accountId: account,
+      service,
+      canCreate: false,
+      source: 'operator',
+      evidence: 'Openfire administrator policy export',
+      endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+    },
+  ]);
+  connected(adapter, session);
+  discovery(adapter);
+  adapter.onEvent((event) => events.push(event));
+  const state = await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-ok',
+    accountId: account,
+    roomJid: room,
+    nickname: 'operator',
+  });
+  assert.equal(state.status, 'joined');
+  assert.equal(state.selfOccupantJid, `${room}/operator`);
+  assert.equal(state.participants.length, 2);
+  assert.equal(state.participants[0].occupantJid, `${room}/other`);
+  assert.equal(Object.hasOwn(state.participants[0], 'jid'), false);
+  assert.ok(events.some((event) => event.type === 'muc.participantChanged'));
+  assert.ok(
+    events.some(
+      (event) =>
+        event.type === 'muc.stateChanged' &&
+        event.payload.status === 'joined' &&
+        event.payload.sessionGeneration === 1,
+    ),
+  );
 });
 
 test('210 server nickname is used, 201 is rejected and the unexpected room is left', async () => {
-  const sent = []; let adapter; const session = { send: async (stanza) => { sent.push(stanza); if (stanza.attrs.type === 'unavailable') queueMicrotask(() => adapter.handleStanza(account, xml('presence', { from: `${room}/server-nick`, type: 'unavailable' }, xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('status', { code: '110' })) ))); else queueMicrotask(() => adapter.handleStanza(account, xml('presence', { from: `${room}/server-nick` }, xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('item', { affiliation: 'member', role: 'participant' }), xml('status', { code: '110' }), xml('status', { code: '210' })) ))); } }; adapter = new XmppAdapter(false, null, [{ accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin evidence', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }]); connected(adapter, session); discovery(adapter); const joined = await adapter.joinMuc({ version: 1, requestId: 'join-210', accountId: account, roomJid: room, nickname: 'requested' }); assert.equal(joined.selfOccupantJid, `${room}/server-nick`); await adapter.leaveMuc({ version: 1, requestId: 'leave-210', accountId: account, roomJid: room }); assert.equal(sent.at(-1).attrs.type, 'unavailable');
-  const created = 'created@conference.example.invalid'; adapter.mucDiscoveries.get(account).set(created, { service, room: 'created', jid: created, discoveryGeneration: 1, discoveryDomain: 'example.invalid', discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }); adapter.mucRooms.get(account).delete(room); const joinCreated = adapter.joinMuc({ version: 1, requestId: 'join-201', accountId: account, roomJid: created, nickname: 'requested' }); await new Promise((resolve) => setImmediate(resolve)); adapter.handleStanza(account, xml('presence', { from: `${created}/requested` }, xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('item', { affiliation: 'owner', role: 'moderator' }), xml('status', { code: '201' })))); await assert.rejects(joinCreated, (error) => error.code === 'CONFLICT'); assert.equal(sent.at(-1).attrs.type, 'unavailable');
+  const sent = [];
+  let adapter;
+  const session = {
+    send: async (stanza) => {
+      sent.push(stanza);
+      if (stanza.attrs.type === 'unavailable')
+        queueMicrotask(() =>
+          adapter.handleStanza(
+            account,
+            xml(
+              'presence',
+              { from: `${room}/server-nick`, type: 'unavailable' },
+              xml(
+                'x',
+                { xmlns: 'http://jabber.org/protocol/muc#user' },
+                xml('status', { code: '110' }),
+              ),
+            ),
+          ),
+        );
+      else
+        queueMicrotask(() =>
+          adapter.handleStanza(
+            account,
+            xml(
+              'presence',
+              { from: `${room}/server-nick` },
+              xml(
+                'x',
+                { xmlns: 'http://jabber.org/protocol/muc#user' },
+                xml('item', { affiliation: 'member', role: 'participant' }),
+                xml('status', { code: '110' }),
+                xml('status', { code: '210' }),
+              ),
+            ),
+          ),
+        );
+    },
+  };
+  adapter = new XmppAdapter(false, null, [
+    {
+      accountId: account,
+      service,
+      canCreate: false,
+      source: 'operator',
+      evidence: 'admin evidence',
+      endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+    },
+  ]);
+  connected(adapter, session);
+  discovery(adapter);
+  const joined = await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-210',
+    accountId: account,
+    roomJid: room,
+    nickname: 'requested',
+  });
+  assert.equal(joined.selfOccupantJid, `${room}/server-nick`);
+  await adapter.leaveMuc({ version: 1, requestId: 'leave-210', accountId: account, roomJid: room });
+  assert.equal(sent.at(-1).attrs.type, 'unavailable');
+  const created = 'created@conference.example.invalid';
+  adapter.mucDiscoveries.get(account).set(created, {
+    service,
+    room: 'created',
+    jid: created,
+    discoveryGeneration: 1,
+    discoveryDomain: 'example.invalid',
+    discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  });
+  adapter.mucRooms.get(account).delete(room);
+  const joinCreated = adapter.joinMuc({
+    version: 1,
+    requestId: 'join-201',
+    accountId: account,
+    roomJid: created,
+    nickname: 'requested',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  adapter.handleStanza(
+    account,
+    xml(
+      'presence',
+      { from: `${created}/requested` },
+      xml(
+        'x',
+        { xmlns: 'http://jabber.org/protocol/muc#user' },
+        xml('item', { affiliation: 'owner', role: 'moderator' }),
+        xml('status', { code: '201' }),
+      ),
+    ),
+  );
+  await assert.rejects(joinCreated, (error) => error.code === 'CONFLICT');
+  assert.equal(sent.at(-1).attrs.type, 'unavailable');
 });
 
 test('timeout and unavailable cleanup use typed errors and bounded memory', async () => {
-  const adapter = new XmppAdapter(); await assert.rejects(() => adapter.withTimeout(new Promise(() => {}), 5, 'TIMEOUT', 'timeout'), (error) => error.code === 'TIMEOUT'); const record = adapter.createMucRoom(account, { service, room: 'lobby', jid: room }, 1, 'operator'); for (let index = 0; index < 250; index += 1) record.seenMessageIds.add(`id-${index}`); assert.equal(record.seenMessageIds.size, 250); record.messageBuffer = Array.from({ length: 250 }, (_, index) => ({ id: index })); record.messageBuffer = record.messageBuffer.slice(-200); assert.equal(record.messageBuffer.length, 200);
+  const adapter = new XmppAdapter();
+  await assert.rejects(
+    () => adapter.withTimeout(new Promise(() => {}), 5, 'TIMEOUT', 'timeout'),
+    (error) => error.code === 'TIMEOUT',
+  );
+  const record = adapter.createMucRoom(
+    account,
+    { service, room: 'lobby', jid: room },
+    1,
+    'operator',
+  );
+  for (let index = 0; index < 250; index += 1) record.seenMessageIds.add(`id-${index}`);
+  assert.equal(record.seenMessageIds.size, 250);
+  record.messageBuffer = Array.from({ length: 250 }, (_, index) => ({ id: index }));
+  record.messageBuffer = record.messageBuffer.slice(-200);
+  assert.equal(record.messageBuffer.length, 200);
 });
 
 test('late own presence cannot revive a timed-out join', () => {
-  const adapter = new XmppAdapter(); const session = { send: async () => undefined }; connected(adapter, session); const record = adapter.createMucRoom(account, { service, room: 'lobby', jid: room }, 1, 'operator'); adapter.mucRooms.set(account, new Map([[room, record]])); adapter.failMucRoom(record, { code: 'TIMEOUT' }); adapter.handleStanza(account, ownPresence()); assert.equal(record.state.status, 'failed'); assert.equal(adapter.mucRooms.get(account)?.has(room), false);
+  const adapter = new XmppAdapter();
+  const session = { send: async () => undefined };
+  connected(adapter, session);
+  const record = adapter.createMucRoom(
+    account,
+    { service, room: 'lobby', jid: room },
+    1,
+    'operator',
+  );
+  adapter.mucRooms.set(account, new Map([[room, record]]));
+  adapter.failMucRoom(record, { code: 'TIMEOUT' });
+  adapter.handleStanza(account, ownPresence());
+  assert.equal(record.state.status, 'failed');
+  assert.equal(adapter.mucRooms.get(account)?.has(room), false);
 });
 
 test('stale discovery and join responses cannot update a newer session', async () => {
-  let releaseDiscovery; const session = { iqCaller: { request: async () => new Promise((resolve) => { releaseDiscovery = resolve; }) } }; const adapter = new XmppAdapter(); connected(adapter, session); const discoveryPromise = adapter.discoverMuc({ version: 1, requestId: 'discover-stale', accountId: account }); const replacement = { iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' })) } }; adapter.sessions.set(account, replacement); adapter.sessionGenerations.set(account, 2); releaseDiscovery(xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }))); await assert.rejects(discoveryPromise, (error) => error.code === 'NOT_CONNECTED'); assert.equal(adapter.mucDiscoveries.has(account), false);
+  let releaseDiscovery;
+  const session = {
+    iqCaller: {
+      request: async () =>
+        new Promise((resolve) => {
+          releaseDiscovery = resolve;
+        }),
+    },
+  };
+  const adapter = new XmppAdapter();
+  connected(adapter, session);
+  const discoveryPromise = adapter.discoverMuc({
+    version: 1,
+    requestId: 'discover-stale',
+    accountId: account,
+  });
+  const replacement = {
+    iqCaller: {
+      request: async () =>
+        xml(
+          'iq',
+          { type: 'result' },
+          xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }),
+        ),
+    },
+  };
+  adapter.sessions.set(account, replacement);
+  adapter.sessionGenerations.set(account, 2);
+  releaseDiscovery(
+    xml(
+      'iq',
+      { type: 'result' },
+      xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }),
+    ),
+  );
+  await assert.rejects(discoveryPromise, (error) => error.code === 'NOT_CONNECTED');
+  assert.equal(adapter.mucDiscoveries.has(account), false);
 
-  let releaseInfo; let sent = 0; const current = { iqCaller: { request: async (stanza) => stanza.attrs.to === room ? new Promise((resolve) => { releaseInfo = resolve; }) : xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) }, send: async () => { sent += 1; } }; connected(adapter, current); adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }); discovery(adapter); const joinPromise = adapter.joinMuc({ version: 1, requestId: 'join-stale', accountId: account, roomJid: room, nickname: 'operator' }); await new Promise((resolve) => setImmediate(resolve)); adapter.sessions.set(account, replacement); adapter.sessionGenerations.set(account, 3); releaseInfo(xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' })))); await assert.rejects(joinPromise, (error) => error.code === 'NOT_CONNECTED'); assert.equal(sent, 0);
+  let releaseInfo;
+  let sent = 0;
+  const current = {
+    iqCaller: {
+      request: async (stanza) =>
+        stanza.attrs.to === room
+          ? new Promise((resolve) => {
+              releaseInfo = resolve;
+            })
+          : xml(
+              'iq',
+              { type: 'result' },
+              xml(
+                'query',
+                { xmlns: 'http://jabber.org/protocol/disco#info' },
+                xml('identity', { category: 'conference', type: 'text' }),
+              ),
+            ),
+    },
+    send: async () => {
+      sent += 1;
+    },
+  };
+  connected(adapter, current);
+  adapter.setMucPolicy({
+    accountId: account,
+    service,
+    canCreate: false,
+    source: 'operator',
+    evidence: 'admin',
+    endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  });
+  discovery(adapter);
+  const joinPromise = adapter.joinMuc({
+    version: 1,
+    requestId: 'join-stale',
+    accountId: account,
+    roomJid: room,
+    nickname: 'operator',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  adapter.sessions.set(account, replacement);
+  adapter.sessionGenerations.set(account, 3);
+  releaseInfo(
+    xml(
+      'iq',
+      { type: 'result' },
+      xml(
+        'query',
+        { xmlns: 'http://jabber.org/protocol/disco#info' },
+        xml('identity', { category: 'conference', type: 'text' }),
+      ),
+    ),
+  );
+  await assert.rejects(joinPromise, (error) => error.code === 'NOT_CONNECTED');
+  assert.equal(sent, 0);
 });
 
 test('endpoint-bound and malformed operator policy cannot authorize a join', async () => {
-  let sent = 0; const session = { send: async () => { sent += 1; }, iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) } }; const adapter = new XmppAdapter(); connected(adapter, session); discovery(adapter); assert.equal(adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'wrong endpoint', endpoint: { host: 'other.invalid', port: 5222, transport: 'starttls' } }), true); assert.equal(adapter.setMucPolicy({ accountId: account, service, canCreate: false, source: 'operator', evidence: 'malformed' }), false); await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-policy', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_POLICY_MISMATCH'); assert.equal(sent, 0);
+  let sent = 0;
+  const session = {
+    send: async () => {
+      sent += 1;
+    },
+    iqCaller: {
+      request: async () =>
+        xml(
+          'iq',
+          { type: 'result' },
+          xml(
+            'query',
+            { xmlns: 'http://jabber.org/protocol/disco#info' },
+            xml('identity', { category: 'conference', type: 'text' }),
+          ),
+        ),
+    },
+  };
+  const adapter = new XmppAdapter();
+  connected(adapter, session);
+  discovery(adapter);
+  assert.equal(
+    adapter.setMucPolicy({
+      accountId: account,
+      service,
+      canCreate: false,
+      source: 'operator',
+      evidence: 'wrong endpoint',
+      endpoint: { host: 'other.invalid', port: 5222, transport: 'starttls' },
+    }),
+    true,
+  );
+  assert.equal(
+    adapter.setMucPolicy({
+      accountId: account,
+      service,
+      canCreate: false,
+      source: 'operator',
+      evidence: 'malformed',
+    }),
+    false,
+  );
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-policy',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'MUC_POLICY_MISMATCH',
+  );
+  assert.equal(sent, 0);
 });
 
 test('server MUC rejection is distinguished from local policy rejection', async () => {
-  let adapter; const session = {
-    iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) },
-    send: async () => queueMicrotask(() => adapter.handleStanza(account, xml('presence', { from: `${room}/operator`, type: 'error' }, xml('error', {}, xml('forbidden', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })))))
+  let adapter;
+  const session = {
+    iqCaller: {
+      request: async () =>
+        xml(
+          'iq',
+          { type: 'result' },
+          xml(
+            'query',
+            { xmlns: 'http://jabber.org/protocol/disco#info' },
+            xml('identity', { category: 'conference', type: 'text' }),
+          ),
+        ),
+    },
+    send: async () =>
+      queueMicrotask(() =>
+        adapter.handleStanza(
+          account,
+          xml(
+            'presence',
+            { from: `${room}/operator`, type: 'error' },
+            xml('error', {}, xml('forbidden', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' })),
+          ),
+        ),
+      ),
   };
-  const policy = { accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin evidence', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } };
-  adapter = new XmppAdapter(false, null, [policy]); connected(adapter, session); discovery(adapter);
-  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-server-rejected', accountId: account, roomJid: room, nickname: 'operator' }), (error) => error.code === 'MUC_SERVER_REJECTED');
+  const policy = {
+    accountId: account,
+    service,
+    canCreate: false,
+    source: 'operator',
+    evidence: 'admin evidence',
+    endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  };
+  adapter = new XmppAdapter(false, null, [policy]);
+  connected(adapter, session);
+  discovery(adapter);
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-server-rejected',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'MUC_SERVER_REJECTED',
+  );
+});
+
+test('an existing room can reject a non-member without a local policy override', async () => {
+  let adapter;
+  const session = {
+    send: async () =>
+      queueMicrotask(() =>
+        adapter.handleStanza(
+          account,
+          xml(
+            'presence',
+            { from: `${room}/operator`, type: 'error' },
+            xml(
+              'error',
+              { type: 'auth' },
+              xml('registration-required', { xmlns: 'urn:ietf:params:xml:ns:xmpp-stanzas' }),
+            ),
+          ),
+        ),
+      ),
+  };
+  adapter = new XmppAdapter();
+  connected(adapter, session);
+  discovery(adapter);
+
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-not-member',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'MUC_SERVER_REJECTED',
+  );
+  assert.equal(adapter.mucRooms.get(account)?.has(room), false);
+});
+
+test('newly created rooms are rejected without an operator policy and immediately left', async () => {
+  const sent = [];
+  let adapter;
+  const session = {
+    send: async (stanza) => {
+      sent.push(stanza);
+      if (stanza.attrs.type !== 'unavailable')
+        queueMicrotask(() =>
+          adapter.handleStanza(
+            account,
+            xml(
+              'presence',
+              { from: `${room}/operator` },
+              xml(
+                'x',
+                { xmlns: 'http://jabber.org/protocol/muc#user' },
+                xml('item', { affiliation: 'owner', role: 'moderator' }),
+                xml('status', { code: '110' }),
+                xml('status', { code: '201' }),
+              ),
+            ),
+          ),
+        );
+    },
+  };
+  adapter = new XmppAdapter();
+  connected(adapter, session);
+  discovery(adapter);
+
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-no-creation',
+        accountId: account,
+        roomJid: room,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'CONFLICT',
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].attrs.type, 'unavailable');
+  assert.equal(adapter.mucRooms.get(account)?.has(room), false);
 });
 
 test('leave timeout remains honest and duplicate leave is rejected', async () => {
-  const adapter = new XmppAdapter(); const session = { send: async () => undefined }; connected(adapter, session); const record = adapter.createMucRoom(account, { service, room: 'lobby', jid: room }, 1, 'operator'); record.state = { ...record.state, status: 'joined', selfOccupantJid: `${room}/operator` }; adapter.mucRooms.set(account, new Map([[room, record]])); adapter.withTimeout = async () => { throw Object.assign(new Error('timeout'), { code: 'TIMEOUT' }); };
-  await assert.rejects(() => adapter.leaveMuc({ version: 1, requestId: 'leave-timeout', accountId: account, roomJid: room }), (error) => error.code === 'TIMEOUT'); assert.equal(record.state.status, 'leaving'); await assert.rejects(() => adapter.leaveMuc({ version: 1, requestId: 'leave-duplicate', accountId: account, roomJid: room }), (error) => error.code === 'CONFLICT');
+  const adapter = new XmppAdapter();
+  const session = { send: async () => undefined };
+  connected(adapter, session);
+  const record = adapter.createMucRoom(
+    account,
+    { service, room: 'lobby', jid: room },
+    1,
+    'operator',
+  );
+  record.state = { ...record.state, status: 'joined', selfOccupantJid: `${room}/operator` };
+  adapter.mucRooms.set(account, new Map([[room, record]]));
+  adapter.withTimeout = async () => {
+    throw Object.assign(new Error('timeout'), { code: 'TIMEOUT' });
+  };
+  await assert.rejects(
+    () =>
+      adapter.leaveMuc({
+        version: 1,
+        requestId: 'leave-timeout',
+        accountId: account,
+        roomJid: room,
+      }),
+    (error) => error.code === 'TIMEOUT',
+  );
+  assert.equal(record.state.status, 'leaving');
+  await assert.rejects(
+    () =>
+      adapter.leaveMuc({
+        version: 1,
+        requestId: 'leave-duplicate',
+        accountId: account,
+        roomJid: room,
+      }),
+    (error) => error.code === 'CONFLICT',
+  );
 });
 
 test('leaving without confirmation keeps the fifth-room slot occupied', async () => {
-  const sent = []; let adapter; const sixth = 'sixth@conference.example.invalid'; const session = { iqCaller: { request: async () => xml('iq', { type: 'result' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#info' }, xml('identity', { category: 'conference', type: 'text' }))) }, send: async (stanza) => { sent.push(stanza); if (stanza.attrs.type !== 'unavailable') queueMicrotask(() => adapter.handleStanza(account, ownPresence(`${sixth}/operator`))); } }; const policy = { accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }; adapter = new XmppAdapter(false, null, [policy]); connected(adapter, session); const rooms = new Map(); const discoveries = new Map();
-  for (let index = 1; index <= 5; index += 1) { const jid = `room${index}@${service}`; const record = adapter.createMucRoom(account, { service, room: `room${index}`, jid }, 1, 'operator'); record.state = { ...record.state, status: index === 5 ? 'leaving' : 'joined', selfOccupantJid: `${jid}/operator` }; rooms.set(jid, record); discoveries.set(jid, { service, room: `room${index}`, jid, discoveryGeneration: 1, discoveryDomain: 'example.invalid', discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }); } discoveries.set(sixth, { service, room: 'sixth', jid: sixth, discoveryGeneration: 1, discoveryDomain: 'example.invalid', discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }); adapter.mucRooms.set(account, rooms); adapter.mucDiscoveries.set(account, discoveries);
-  await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-sixth-blocked', accountId: account, roomJid: sixth, nickname: 'operator' }), (error) => error.code === 'CONFLICT'); assert.equal(sent.length, 0); adapter.handleMucPresence(account, xml('presence', { from: 'room5@conference.example.invalid/operator', type: 'unavailable' }, xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('status', { code: '110' })))); await adapter.joinMuc({ version: 1, requestId: 'join-sixth-allowed', accountId: account, roomJid: sixth, nickname: 'operator' }); assert.equal(sent.length, 1);
+  const sent = [];
+  let adapter;
+  const sixth = 'sixth@conference.example.invalid';
+  const session = {
+    iqCaller: {
+      request: async () =>
+        xml(
+          'iq',
+          { type: 'result' },
+          xml(
+            'query',
+            { xmlns: 'http://jabber.org/protocol/disco#info' },
+            xml('identity', { category: 'conference', type: 'text' }),
+          ),
+        ),
+    },
+    send: async (stanza) => {
+      sent.push(stanza);
+      if (stanza.attrs.type !== 'unavailable')
+        queueMicrotask(() => adapter.handleStanza(account, ownPresence(`${sixth}/operator`)));
+    },
+  };
+  const policy = {
+    accountId: account,
+    service,
+    canCreate: false,
+    source: 'operator',
+    evidence: 'admin',
+    endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  };
+  adapter = new XmppAdapter(false, null, [policy]);
+  connected(adapter, session);
+  const rooms = new Map();
+  const discoveries = new Map();
+  for (let index = 1; index <= 5; index += 1) {
+    const jid = `room${index}@${service}`;
+    const record = adapter.createMucRoom(
+      account,
+      { service, room: `room${index}`, jid },
+      1,
+      'operator',
+    );
+    record.state = {
+      ...record.state,
+      status: index === 5 ? 'leaving' : 'joined',
+      selfOccupantJid: `${jid}/operator`,
+    };
+    rooms.set(jid, record);
+    discoveries.set(jid, {
+      service,
+      room: `room${index}`,
+      jid,
+      discoveryGeneration: 1,
+      discoveryDomain: 'example.invalid',
+      discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+    });
+  }
+  discoveries.set(sixth, {
+    service,
+    room: 'sixth',
+    jid: sixth,
+    discoveryGeneration: 1,
+    discoveryDomain: 'example.invalid',
+    discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  });
+  adapter.mucRooms.set(account, rooms);
+  adapter.mucDiscoveries.set(account, discoveries);
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-sixth-blocked',
+        accountId: account,
+        roomJid: sixth,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'CONFLICT',
+  );
+  assert.equal(sent.length, 0);
+  adapter.handleMucPresence(
+    account,
+    xml(
+      'presence',
+      { from: 'room5@conference.example.invalid/operator', type: 'unavailable' },
+      xml('x', { xmlns: 'http://jabber.org/protocol/muc#user' }, xml('status', { code: '110' })),
+    ),
+  );
+  await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-sixth-allowed',
+    accountId: account,
+    roomJid: sixth,
+    nickname: 'operator',
+  });
+  assert.equal(sent.length, 1);
 });
 
 test('MUC groupchat is isolated from P0 messages, deduplicated by stanza id, and history is memory-only', async () => {
-  let adapter; const session = { send: async () => queueMicrotask(() => adapter.handleStanza(account, ownPresence())) }; adapter = new XmppAdapter(false, null, [{ accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin evidence', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }]); connected(adapter, session); discovery(adapter); await adapter.joinMuc({ version: 1, requestId: 'join-msg', accountId: account, roomJid: room, nickname: 'operator' });
-  const events = []; adapter.onEvent((event) => events.push(event)); const message = (body, extra = {}, ...children) => xml('message', { type: 'groupchat', from: `${room}/other`, id: 'server-1', ...extra }, xml('body', {}, body), ...children);
-  adapter.handleStanza(account, message('hello')); adapter.handleStanza(account, message('hello')); adapter.handleStanza(account, message('old', { id: 'server-old' }, xml('delay', { xmlns: 'urn:xmpp:delay' })));
-  const mucMessages = events.filter((event) => event.type === 'muc.messageReceived'); assert.equal(mucMessages.length, 2); assert.equal(mucMessages[0].payload.source, 'live'); assert.equal(mucMessages[1].payload.source, 'server-history'); assert.equal(events.some((event) => event.type === 'message.received'), false);
+  let adapter;
+  const session = {
+    send: async () => queueMicrotask(() => adapter.handleStanza(account, ownPresence())),
+  };
+  adapter = new XmppAdapter(false, null, [
+    {
+      accountId: account,
+      service,
+      canCreate: false,
+      source: 'operator',
+      evidence: 'admin evidence',
+      endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+    },
+  ]);
+  connected(adapter, session);
+  discovery(adapter);
+  await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-msg',
+    accountId: account,
+    roomJid: room,
+    nickname: 'operator',
+  });
+  const events = [];
+  adapter.onEvent((event) => events.push(event));
+  const message = (body, stanzaId, ...children) =>
+    xml(
+      'message',
+      { type: 'groupchat', from: `${room}/other`, id: `client-${stanzaId}` },
+      xml('body', {}, body),
+      xml('stanza-id', { xmlns: 'urn:xmpp:sid:0', id: stanzaId, by: room }),
+      ...children,
+    );
+  // Room-scoped XEP-0359 stanza-id, not the sender's unscoped message @id,
+  // is the stable identity used by MUC message deduplication.
+  adapter.handleStanza(account, message('hello', 'room-1'));
+  adapter.handleStanza(account, message('hello', 'room-1'));
+  adapter.handleStanza(
+    account,
+    message('old', 'room-old', xml('delay', { xmlns: 'urn:xmpp:delay' })),
+  );
+  const mucMessages = events.filter((event) => event.type === 'muc.messageReceived');
+  assert.equal(mucMessages.length, 2);
+  assert.equal(mucMessages[0].payload.source, 'live');
+  assert.equal(mucMessages[1].payload.source, 'server-history');
+  assert.equal(mucMessages[0].payload.stanzaIds[0].by, room);
+  assert.equal(mucMessages[1].payload.stanzaIds[0].id, 'room-old');
+  assert.equal(
+    events.some((event) => event.type === 'message.received'),
+    false,
+  );
+});
+
+test('incoming MUC reactions from another occupant resolve the original room stanza-id, not the reaction event id', () => {
+  const adapter = new XmppAdapter();
+  connected(adapter, { send: async () => undefined });
+  const record = adapter.createMucRoom(
+    account,
+    { service, room: 'lobby', jid: room },
+    1,
+    'operator',
+  );
+  record.state = { ...record.state, status: 'joined', selfOccupantJid: `${room}/operator` };
+  record.participants.set(`${room}/lara`, {
+    occupantJid: `${room}/lara`,
+    nick: 'lara',
+    role: 'participant',
+    affiliation: 'member',
+    availability: 'available',
+  });
+  adapter.mucRooms.set(account, new Map([[room, record]]));
+  const events = [];
+  adapter.onEvent((event) => events.push(event));
+
+  adapter.handleStanza(
+    account,
+    xml(
+      'message',
+      {
+        type: 'groupchat',
+        from: `${room}/barbara`,
+        id: 'barbara-local-id',
+      },
+      xml('body', {}, 'Hola'),
+      xml('stanza-id', { xmlns: 'urn:xmpp:sid:0', id: 'room-original-id', by: room }),
+    ),
+  );
+
+  adapter.handleStanza(
+    account,
+    xml(
+      'message',
+      {
+        type: 'groupchat',
+        from: `${room}/lara`,
+        id: 'lara-reaction-event',
+      },
+      xml(
+        'reactions',
+        { xmlns: 'urn:xmpp:reactions:0', id: 'room-original-id' },
+        xml('reaction', {}, '😂'),
+      ),
+      xml('stanza-id', { xmlns: 'urn:xmpp:sid:0', id: 'room-reaction-event-id', by: room }),
+    ),
+  );
+
+  const messages = events.filter((event) => event.type === 'muc.messageReceived');
+  const reactions = events.filter((event) => event.type === 'reaction.changed');
+  assert.equal(messages.length, 1);
+  assert.equal(reactions.length, 1);
+  assert.equal(
+    events.some((event) => event.type === 'message.received'),
+    false,
+  );
+  assert.equal(reactions[0].payload.source, 'muc');
+  assert.equal(reactions[0].payload.targetMessageId, 'room-original-id');
+  assert.deepEqual(reactions[0].payload.target.stanzaIds, [{ id: 'room-original-id', by: room }]);
+  assert.notEqual(reactions[0].payload.target.stanzaIds[0].id, 'room-reaction-event-id');
+  assert.equal(reactions[0].payload.actorId, `${room}/lara`);
+  assert.deepEqual(
+    reactions[0].payload.reactions.map((item) => item.emoji),
+    ['😂'],
+  );
+
+  // A repeated delivery of the same event must not duplicate the reaction.
+  adapter.handleStanza(
+    account,
+    xml(
+      'message',
+      {
+        type: 'groupchat',
+        from: `${room}/lara`,
+        id: 'lara-reaction-event',
+      },
+      xml(
+        'reactions',
+        { xmlns: 'urn:xmpp:reactions:0', id: 'room-original-id' },
+        xml('reaction', {}, '😂'),
+      ),
+    ),
+  );
+  assert.equal(events.filter((event) => event.type === 'reaction.changed').length, 1);
 });
 
 test('MUC send enforces joined voice, UTF-8 limit, groupchat target and five-room cap', async () => {
-  const sent = []; let adapter; const session = { send: async (stanza) => { sent.push(stanza); if (stanza.is('presence')) queueMicrotask(() => adapter.handleStanza(account, ownPresence())); } }; const policy = { accountId: account, service, canCreate: false, source: 'operator', evidence: 'admin evidence', endpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }; adapter = new XmppAdapter(false, null, [policy]); connected(adapter, session); discovery(adapter); await adapter.joinMuc({ version: 1, requestId: 'join-send', accountId: account, roomJid: room, nickname: 'operator' });
-  const receipt = await adapter.sendMucMessage({ version: 1, requestId: 'send-1', accountId: account, roomJid: room, clientMessageId: 'client-1', body: { kind: 'text', text: 'hola' } }); assert.equal(receipt.status, 'sent'); assert.equal(sent.at(-1).attrs.type, 'groupchat'); assert.equal(sent.at(-1).attrs.to, room); assert.equal(sent.at(-1).getChildText('body'), 'hola'); await assert.rejects(() => adapter.sendMucMessage({ version: 1, requestId: 'send-big', accountId: account, roomJid: room, clientMessageId: 'client-2', body: { kind: 'text', text: '😀'.repeat(2000) } }), (error) => error.code === 'INVALID_INPUT');
-  adapter.mucRooms.get(account).get(room).participants.get(`${room}/operator`).role = 'visitor'; await assert.rejects(() => adapter.sendMucMessage({ version: 1, requestId: 'send-visitor', accountId: account, roomJid: room, clientMessageId: 'client-3', body: { kind: 'text', text: 'no voice' } }), (error) => error.code === 'UNAUTHORIZED');
-  for (let index = 1; index < 5; index += 1) { const jid = `room${index}@${service}`; adapter.mucDiscoveries.get(account).set(jid, { service, room: `room${index}`, jid, discoveryGeneration: 1, discoveryDomain: 'example.invalid', discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }); const record = adapter.createMucRoom(account, { service, room: `room${index}`, jid }, 1, 'operator'); record.state = { ...record.state, status: 'joined', selfOccupantJid: `${jid}/operator` }; record.participants.set(`${jid}/operator`, { occupantJid: `${jid}/operator`, nick: 'operator', role: 'participant', affiliation: 'member', availability: 'available' }); adapter.mucRooms.get(account).set(jid, record); }
-  const sixth = 'sixth@conference.example.invalid'; adapter.mucDiscoveries.get(account).set(sixth, { service, room: 'sixth', jid: sixth, discoveryGeneration: 1, discoveryDomain: 'example.invalid', discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' } }); await assert.rejects(() => adapter.joinMuc({ version: 1, requestId: 'join-sixth', accountId: account, roomJid: sixth, nickname: 'operator' }), (error) => error.code === 'CONFLICT');
+  const sent = [];
+  let adapter;
+  const session = {
+    send: async (stanza) => {
+      sent.push(stanza);
+      if (stanza.is('presence')) queueMicrotask(() => adapter.handleStanza(account, ownPresence()));
+    },
+  };
+  const policy = {
+    accountId: account,
+    service,
+    canCreate: false,
+    source: 'operator',
+    evidence: 'admin evidence',
+    endpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  };
+  adapter = new XmppAdapter(false, null, [policy]);
+  connected(adapter, session);
+  discovery(adapter);
+  await adapter.joinMuc({
+    version: 1,
+    requestId: 'join-send',
+    accountId: account,
+    roomJid: room,
+    nickname: 'operator',
+  });
+  const receipt = await adapter.sendMucMessage({
+    version: 1,
+    requestId: 'send-1',
+    accountId: account,
+    roomJid: room,
+    clientMessageId: 'client-1',
+    body: { kind: 'text', text: 'hola' },
+  });
+  assert.equal(receipt.status, 'sent');
+  assert.equal(sent.at(-1).attrs.type, 'groupchat');
+  assert.equal(sent.at(-1).attrs.to, room);
+  assert.equal(sent.at(-1).getChildText('body'), 'hola');
+  await assert.rejects(
+    () =>
+      adapter.sendMucMessage({
+        version: 1,
+        requestId: 'send-big',
+        accountId: account,
+        roomJid: room,
+        clientMessageId: 'client-2',
+        body: { kind: 'text', text: '😀'.repeat(2000) },
+      }),
+    (error) => error.code === 'INVALID_INPUT',
+  );
+  adapter.mucRooms.get(account).get(room).participants.get(`${room}/operator`).role = 'visitor';
+  await assert.rejects(
+    () =>
+      adapter.sendMucMessage({
+        version: 1,
+        requestId: 'send-visitor',
+        accountId: account,
+        roomJid: room,
+        clientMessageId: 'client-3',
+        body: { kind: 'text', text: 'no voice' },
+      }),
+    (error) => error.code === 'UNAUTHORIZED',
+  );
+  for (let index = 1; index < 5; index += 1) {
+    const jid = `room${index}@${service}`;
+    adapter.mucDiscoveries.get(account).set(jid, {
+      service,
+      room: `room${index}`,
+      jid,
+      discoveryGeneration: 1,
+      discoveryDomain: 'example.invalid',
+      discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+    });
+    const record = adapter.createMucRoom(
+      account,
+      { service, room: `room${index}`, jid },
+      1,
+      'operator',
+    );
+    record.state = { ...record.state, status: 'joined', selfOccupantJid: `${jid}/operator` };
+    record.participants.set(`${jid}/operator`, {
+      occupantJid: `${jid}/operator`,
+      nick: 'operator',
+      role: 'participant',
+      affiliation: 'member',
+      availability: 'available',
+    });
+    adapter.mucRooms.get(account).set(jid, record);
+  }
+  const sixth = 'sixth@conference.example.invalid';
+  adapter.mucDiscoveries.get(account).set(sixth, {
+    service,
+    room: 'sixth',
+    jid: sixth,
+    discoveryGeneration: 1,
+    discoveryDomain: 'example.invalid',
+    discoveryEndpoint: { host: 'localhost', port: 5222, transport: 'starttls' },
+  });
+  await assert.rejects(
+    () =>
+      adapter.joinMuc({
+        version: 1,
+        requestId: 'join-sixth',
+        accountId: account,
+        roomJid: sixth,
+        nickname: 'operator',
+      }),
+    (error) => error.code === 'CONFLICT',
+  );
 });
 
 test('disconnect clears MUC rooms and prevents stale session events', async () => {
-  let stopped = false; const session = { stop: async () => { stopped = true; } }; const adapter = new XmppAdapter(); connected(adapter, session); discovery(adapter); const record = adapter.createMucRoom(account, { service, room: 'lobby', jid: room }, 1, 'operator'); record.state = { ...record.state, status: 'joined' }; adapter.mucRooms.set(account, new Map([[room, record]])); await adapter.disconnect(account); assert.equal(stopped, true); assert.equal(adapter.mucRooms.has(account), false); assert.equal(adapter.mucDiscoveries.has(account), false); assert.equal(adapter.states.get(account).status, 'idle');
+  let stopped = false;
+  const session = {
+    stop: async () => {
+      stopped = true;
+    },
+  };
+  const adapter = new XmppAdapter();
+  connected(adapter, session);
+  discovery(adapter);
+  const record = adapter.createMucRoom(
+    account,
+    { service, room: 'lobby', jid: room },
+    1,
+    'operator',
+  );
+  record.state = { ...record.state, status: 'joined' };
+  adapter.mucRooms.set(account, new Map([[room, record]]));
+  await adapter.disconnect(account);
+  assert.equal(stopped, true);
+  assert.equal(adapter.mucRooms.has(account), false);
+  assert.equal(adapter.mucDiscoveries.has(account), false);
+  assert.equal(adapter.states.get(account).status, 'idle');
 });

@@ -144,6 +144,7 @@
     [remember]="login().remember"
     [autoLogin]="login().autoLogin"
     [profiles]="loginProfiles()"
+    [credentialStorageStatus]="credentialStorageStatus()"
     [selectedProfileId]="selectedProfileId()"
     [busy]="loginBusy()"
     [profileActionBusy]="profileActionBusy()"
@@ -159,6 +160,8 @@
     (autoLoginChange)="setLoginAutoLogin($event)"
     (profileSelected)="selectLoginProfile($event)"
     (forgetSecret)="forgetLoginSecret()"
+    (recoverSecretStorage)="recoverSecretStorage()"
+    (resetSecretStorage)="resetSecretStorage()"
     (deleteProfile)="deleteLoginProfile()"
     (advancedSettings)="openAdvancedSettings()"
     (submitted)="connect()"
@@ -179,8 +182,14 @@
         <svg class="ac-icon ac-icon-brand" aria-hidden="true" focusable="false">
           <use href="#ac-brand" /></svg
         ><strong>ATOMIC CHAT</strong
-        ><app-version-update [status]="updates.status()" [busy]="updates.busy()" [error]="updates.error()"
-          (download)="updates.download()" (install)="updates.install()" (check)="updates.check()" />
+        ><app-version-update
+          [status]="updates.status()"
+          [busy]="updates.busy()"
+          [error]="updates.error()"
+          (download)="updates.download()"
+          (install)="updates.install()"
+          (check)="updates.check()"
+        />
       </div>
       @if (totalUnread() > 0) {
         <span class="global-unread" aria-label="Mensajes no leídos">{{ totalUnread() }}</span>
@@ -230,12 +239,13 @@
             (replyCancel)="cancelReply()"
             (reactionChanged)="changeReaction($event.messageId, $event.emojis, true)"
           />
-        } @else {
+        } @else if (activeSelection().kind !== 'none') {
           <app-conversation-view
             [activeContact]="activeContact()"
             [selectedJid]="selectedJid()"
             [accountId]="chat.accountId()"
             [timeline]="conversationTimeline()"
+            [initialTimelineReady]="initialTimelineReady()"
             [error]="conversationError()"
             [draft]="draft()"
             [reactions]="chat.reactions()"
@@ -281,6 +291,22 @@
             (loadOlder)="loadOlderMessages($event)"
             (loadNewer)="loadNewerMessages($event)"
           />
+        } @else {
+          <section class="workspace-empty" aria-labelledby="workspace-empty-title">
+            <div class="workspace-empty-mark" aria-hidden="true">
+              <svg class="ac-icon workspace-empty-logo" focusable="false">
+                <use href="#ac-brand" />
+              </svg>
+            </div>
+            <p class="eyebrow">ATOMIC CHAT</p>
+            <h1 id="workspace-empty-title">Tu espacio de conversaciones</h1>
+            <p class="workspace-empty-copy">
+              Selecciona un contacto para empezar a conversar de forma segura y sencilla.
+            </p>
+            <button type="button" class="primary" (click)="openNewMessageDialog()">
+              Iniciar nueva conversación
+            </button>
+          </section>
         }
       </section>
     </section>
@@ -300,30 +326,110 @@
   />
 }
 @if (preferencesOpen()) {
-  <app-preferences-dialog
-    [model]="preferencesDialogModel()"
-    (preferenceChange)="savePreferenceChange($event)"
-    (selectDownloadDirectory)="selectDownloadDirectory()"
-    (reset)="resetPreferences()"
-    (checkForUpdates)="checkForUpdates()"
-    (downloadUpdate)="downloadUpdate()"
-    (installUpdate)="installUpdate()"
-    (cancelled)="closePreferences()"
-  />
+  @defer (on immediate) {
+    <app-preferences-dialog
+      [model]="preferencesDialogModel()"
+      (preferenceChange)="savePreferenceChange($event)"
+      (selectDownloadDirectory)="selectDownloadDirectory()"
+      (resetRequested)="resetPreferences()"
+      (checkForUpdates)="checkForUpdates()"
+      (downloadUpdate)="downloadUpdate()"
+      (installUpdate)="installUpdate()"
+      (cancelled)="closePreferences()"
+    />
+  } @placeholder {
+    <div class="preferences-deferred-backdrop">
+      <section
+        class="preferences-deferred-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cargando Preferencias"
+      >
+        <p role="status" aria-live="polite">Cargando Preferencias…</p>
+        <button
+          #preferencesFallbackClose
+          type="button"
+          (click)="closePreferences()"
+          (keydown.tab)="$event.preventDefault()"
+        >
+          Cancelar
+        </button>
+      </section>
+    </div>
+  } @error {
+    <div class="preferences-deferred-backdrop">
+      <section
+        class="preferences-deferred-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Error al abrir Preferencias"
+      >
+        <p role="alert">No se pudieron cargar las Preferencias.</p>
+        <button
+          #preferencesFallbackClose
+          type="button"
+          (click)="closePreferences()"
+          (keydown.tab)="$event.preventDefault()"
+        >
+          Cerrar
+        </button>
+      </section>
+    </div>
+  }
 }
 @if (broadcastOpen()) {
-  <app-broadcast-dialog
-    [model]="broadcastDialogModel()"
-    (bodyChange)="broadcastBody.set($event)"
-    (modeChange)="broadcastMode.set($event)"
-    (hideOfflineChange)="broadcastHideOffline.set($event)"
-    (toggleContact)="toggleBroadcastContact($event)"
-    (toggleGroup)="toggleBroadcastGroup($event)"
-    (toggleAll)="toggleAllBroadcastContacts()"
-    (submit)="submitBroadcast()"
-    (retryFailed)="retryFailedBroadcast()"
-    (cancelled)="closeBroadcast()"
-  />
+  @defer (on immediate) {
+    <app-broadcast-dialog
+      [model]="broadcastDialogModel()"
+      (bodyChange)="broadcastBody.set($event)"
+      (modeChange)="broadcastMode.set($event)"
+      (hideOfflineChange)="broadcastHideOffline.set($event)"
+      (toggleContact)="toggleBroadcastContact($event)"
+      (toggleGroup)="toggleBroadcastGroup($event)"
+      (toggleAll)="toggleAllBroadcastContacts()"
+      (submitted)="submitBroadcast()"
+      (retryFailed)="retryFailedBroadcast()"
+      (cancelled)="closeBroadcast()"
+    />
+  } @placeholder {
+    <div class="broadcast-deferred-backdrop">
+      <section
+        class="broadcast-deferred-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cargando Difusión"
+      >
+        <p role="status" aria-live="polite">Cargando difusión…</p>
+        <button
+          #broadcastFallbackClose
+          type="button"
+          (click)="closeBroadcast()"
+          (keydown.tab)="$event.preventDefault()"
+        >
+          Cancelar
+        </button>
+      </section>
+    </div>
+  } @error {
+    <div class="broadcast-deferred-backdrop">
+      <section
+        class="broadcast-deferred-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Error al abrir Difusión"
+      >
+        <p role="alert">No se pudo cargar la ventana de difusión. No se envió ningún mensaje.</p>
+        <button
+          #broadcastFallbackClose
+          type="button"
+          (click)="closeBroadcast()"
+          (keydown.tab)="$event.preventDefault()"
+        >
+          Cerrar
+        </button>
+      </section>
+    </div>
+  }
 }
 @if (certificateRequest(); as request) {
   <app-certificate-dialog [request]="request" (decision)="decideCertificate($event)" />

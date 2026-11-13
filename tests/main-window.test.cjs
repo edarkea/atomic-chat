@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { createMainWindow } = require('../electron/main-window.cjs');
+const { createMainWindow } = require('../electron/platform/main-window.cjs');
 
 test('cleans up the original sender exactly once without accessing destroyed Electron objects', () => {
   const contents = new EventEmitter();

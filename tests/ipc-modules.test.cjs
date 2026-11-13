@@ -1,26 +1,28 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { registerAppLifecycle } = require('../electron/app-lifecycle.cjs');
-const { registerAccountHandlers } = require('../electron/ipc-account-handlers.cjs');
-const { registerFileHandlers } = require('../electron/ipc-file-handlers.cjs');
-const { registerHistoryHandlers } = require('../electron/ipc-history-handlers.cjs');
-const { registerIpcHandlers } = require('../electron/ipc-handlers.cjs');
-const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
-const { registerMucHandlers } = require('../electron/ipc-muc-handlers.cjs');
-const { registerPreferenceHandlers } = require('../electron/ipc-preference-handlers.cjs');
+const { registerAppLifecycle } = require('../electron/platform/app-lifecycle.cjs');
+const { registerAccountHandlers } = require('../electron/ipc/ipc-account-handlers.cjs');
+const { registerFileHandlers } = require('../electron/ipc/ipc-file-handlers.cjs');
+const { registerHistoryHandlers } = require('../electron/ipc/ipc-history-handlers.cjs');
+const { registerIpcHandlers } = require('../electron/ipc/ipc-handlers.cjs');
+const { createIpcHelpers } = require('../electron/ipc/ipc-helpers.cjs');
+const { registerMucHandlers } = require('../electron/ipc/ipc-muc-handlers.cjs');
+const { registerPreferenceHandlers } = require('../electron/ipc/ipc-preference-handlers.cjs');
 const {
   registerConnectionProfileHandlers,
-} = require('../electron/ipc-connection-profile-handlers.cjs');
-const { createEventRouter } = require('../electron/event-router.cjs');
-const { registerAttentionHandlers } = require('../electron/ipc-attention-handlers.cjs');
-const { registerBroadcastHandlers } = require('../electron/ipc-broadcast-handlers.cjs');
-const { registerFileHistoryHandlers } = require('../electron/ipc-file-history-handlers.cjs');
-const { registerPreviewHandlers } = require('../electron/ipc-preview-handlers.cjs');
-const { registerStickerHandlers } = require('../electron/ipc-sticker-handlers.cjs');
-const { registerStickerPackHandlers } = require('../electron/ipc-sticker-pack-handlers.cjs');
-const { registerStickerMessageHandlers } = require('../electron/ipc-sticker-message-handlers.cjs');
-const { registerUpdateHandlers } = require('../electron/ipc-update-handlers.cjs');
-const { registerExternalLinkHandlers } = require('../electron/ipc-external-link-handlers.cjs');
+} = require('../electron/ipc/ipc-connection-profile-handlers.cjs');
+const { createEventRouter } = require('../electron/application/event-router.cjs');
+const { registerAttentionHandlers } = require('../electron/ipc/ipc-attention-handlers.cjs');
+const { registerBroadcastHandlers } = require('../electron/ipc/ipc-broadcast-handlers.cjs');
+const { registerFileHistoryHandlers } = require('../electron/ipc/ipc-file-history-handlers.cjs');
+const { registerPreviewHandlers } = require('../electron/ipc/ipc-preview-handlers.cjs');
+const { registerStickerHandlers } = require('../electron/ipc/ipc-sticker-handlers.cjs');
+const { registerStickerPackHandlers } = require('../electron/ipc/ipc-sticker-pack-handlers.cjs');
+const {
+  registerStickerMessageHandlers,
+} = require('../electron/ipc/ipc-sticker-message-handlers.cjs');
+const { registerUpdateHandlers } = require('../electron/ipc/ipc-update-handlers.cjs');
+const { registerExternalLinkHandlers } = require('../electron/ipc/ipc-external-link-handlers.cjs');
 
 const channels = [
   'contract.version',
@@ -32,12 +34,14 @@ const channels = [
   'presence.set',
   'roster.list',
   'message.send',
+  'message.react',
   'chatState.send',
   'broadcast.send',
   'muc.discover',
   'muc.join',
   'muc.leave',
   'muc.sendMessage',
+  'muc.react',
   'file.send',
   'file.sendDropped',
   'file.sendClipboard',
@@ -91,6 +95,8 @@ const channels = [
   'connectionProfiles.save',
   'connectionProfiles.delete',
   'account.forgetSecret',
+  'account.recoverSecretStorage',
+  'account.resetSecretStorage',
   'attention.request',
   'attention.clear',
   'updates.getStatus',
@@ -254,22 +260,108 @@ test('each domain registrar owns only its assigned channels', () => {
         'presence.set',
         'roster.list',
         'message.send',
+        'message.react',
         'chatState.send',
       ],
     ],
     [registerBroadcastHandlers, ['broadcast.send']],
-    [registerMucHandlers, ['muc.discover', 'muc.join', 'muc.leave', 'muc.sendMessage']],
-    [registerFileHandlers, ['file.send', 'file.sendDropped', 'file.sendClipboard', 'file.accept', 'file.reject', 'file.cancel', 'file.open', 'file.reveal', 'file.listActive']],
-    [registerPreviewHandlers, ['preview.get', 'preview.open', 'preview.read', 'preview.close', 'preview.revoke']],
+    [
+      registerMucHandlers,
+      ['muc.discover', 'muc.join', 'muc.leave', 'muc.sendMessage', 'muc.react'],
+    ],
+    [
+      registerFileHandlers,
+      [
+        'file.send',
+        'file.sendDropped',
+        'file.sendClipboard',
+        'file.accept',
+        'file.reject',
+        'file.cancel',
+        'file.open',
+        'file.reveal',
+        'file.listActive',
+      ],
+    ],
+    [
+      registerPreviewHandlers,
+      ['preview.get', 'preview.open', 'preview.read', 'preview.close', 'preview.revoke'],
+    ],
     [registerFileHistoryHandlers, ['fileHistory.open', 'fileHistory.reveal']],
-    [registerStickerHandlers, ['stickers.import', 'stickers.list', 'stickers.delete', 'stickers.preview.get', 'stickers.preview.open', 'stickers.preview.read', 'stickers.preview.close', 'stickers.preview.revoke']],
-    [registerStickerPackHandlers, ['stickerPacks.list', 'stickerPacks.get', 'stickerPacks.save', 'stickerPacks.delete', 'stickerDrafts.list', 'stickerDrafts.create', 'stickerDrafts.get', 'stickerDrafts.update', 'stickerDrafts.discard', 'stickerDrafts.commit']],
-    [registerStickerMessageHandlers, ['stickerMessages.discover', 'stickerMessages.send', 'stickerMessages.load', 'stickerMessages.save']],
-    [registerHistoryHandlers, ['messages.list', 'messages.page', 'messages.search', 'messages.around', 'timeline.page', 'conversations.list', 'media.list']],
-    [registerPreferenceHandlers, ['preferences.get', 'preferences.update', 'preferences.selectDownloadDirectory', 'preferences.reset']],
-    [registerConnectionProfileHandlers, ['connectionProfiles.list', 'connectionProfiles.save', 'connectionProfiles.delete', 'account.forgetSecret']],
+    [
+      registerStickerHandlers,
+      [
+        'stickers.import',
+        'stickers.list',
+        'stickers.delete',
+        'stickers.preview.get',
+        'stickers.preview.open',
+        'stickers.preview.read',
+        'stickers.preview.close',
+        'stickers.preview.revoke',
+      ],
+    ],
+    [
+      registerStickerPackHandlers,
+      [
+        'stickerPacks.list',
+        'stickerPacks.get',
+        'stickerPacks.save',
+        'stickerPacks.delete',
+        'stickerDrafts.list',
+        'stickerDrafts.create',
+        'stickerDrafts.get',
+        'stickerDrafts.update',
+        'stickerDrafts.discard',
+        'stickerDrafts.commit',
+      ],
+    ],
+    [
+      registerStickerMessageHandlers,
+      [
+        'stickerMessages.discover',
+        'stickerMessages.send',
+        'stickerMessages.load',
+        'stickerMessages.save',
+      ],
+    ],
+    [
+      registerHistoryHandlers,
+      [
+        'messages.list',
+        'messages.page',
+        'messages.search',
+        'messages.around',
+        'timeline.page',
+        'conversations.list',
+        'media.list',
+      ],
+    ],
+    [
+      registerPreferenceHandlers,
+      [
+        'preferences.get',
+        'preferences.update',
+        'preferences.selectDownloadDirectory',
+        'preferences.reset',
+      ],
+    ],
+    [
+      registerConnectionProfileHandlers,
+      [
+        'connectionProfiles.list',
+        'connectionProfiles.save',
+        'connectionProfiles.delete',
+        'account.forgetSecret',
+        'account.recoverSecretStorage',
+        'account.resetSecretStorage',
+      ],
+    ],
     [registerAttentionHandlers, ['attention.request', 'attention.clear']],
-    [registerUpdateHandlers, ['updates.getStatus', 'updates.check', 'updates.download', 'updates.install']],
+    [
+      registerUpdateHandlers,
+      ['updates.getStatus', 'updates.check', 'updates.download', 'updates.install'],
+    ],
     [registerExternalLinkHandlers, ['externalLinks.open']],
   ];
   for (const [registrar, expected] of groups) {
@@ -294,10 +386,10 @@ test('broadcast uses the transport without persisting sender copies', async () =
     body: { kind: 'text', text: 'hola' },
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.value.recipients.map((item) => item.recipientJid), [
-    'two@example.invalid',
-    'three@example.invalid',
-  ]);
+  assert.deepEqual(
+    result.value.recipients.map((item) => item.recipientJid),
+    ['two@example.invalid', 'three@example.invalid'],
+  );
   assert.ok(result.value.recipients.every((item) => item.status === 'submitted'));
   assert.equal(callsWith(harness.calls, 'saveMessage').length, 0);
 });
@@ -533,7 +625,11 @@ test('historical file actions use opaque ids and preserve account/window authori
 test('historical IPC action is rejected when authorization expires while pending', async () => {
   const harness = createHarness();
   let release;
-  harness.setHistoryGate(new Promise((resolve) => { release = resolve; }));
+  harness.setHistoryGate(
+    new Promise((resolve) => {
+      release = resolve;
+    }),
+  );
   const input = {
     version: 1,
     requestId: 'history-pending-1',
@@ -548,7 +644,10 @@ test('historical IPC action is rejected when authorization expires while pending
   const result = await pending;
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'UNAUTHORIZED');
-  assert.equal(harness.calls.some(([name]) => name === 'history-open'), false);
+  assert.equal(
+    harness.calls.some(([name]) => name === 'history-open'),
+    false,
+  );
 });
 
 test('preserves safe MUC diagnostics at the IPC boundary', async () => {

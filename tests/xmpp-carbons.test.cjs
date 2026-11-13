@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { xml } = require('@xmpp/client');
-const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
-const { createXmppResource } = require('../electron/xmpp-session.cjs');
-const { CARBONS_NS, DISCO_INFO_NS, FORWARD_NS } = require('../electron/xmpp-carbons.cjs');
-const { PersistenceStore } = require('../electron/storage.cjs');
+const { XmppAdapter } = require('../electron/xmpp/xmpp-adapter.cjs');
+const { createXmppResource } = require('../electron/xmpp/xmpp-session.cjs');
+const { CARBONS_NS, DISCO_INFO_NS, FORWARD_NS } = require('../electron/xmpp/xmpp-carbons.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
 
 const ACCOUNT = 'me@example.invalid';
 const CONTACT = 'friend@example.invalid';

@@ -1,0 +1,13 @@
+@if (visible()) {
+  <button
+    type="button"
+    class="scroll-to-latest"
+    aria-label="Ir al último mensaje"
+    title="Ir al último mensaje"
+    (click)="requested.emit()"
+  >
+    <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+      <use href="#ac-chevron-down" />
+    </svg>
+  </button>
+}

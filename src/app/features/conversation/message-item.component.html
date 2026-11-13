@@ -1,0 +1,255 @@
+<article
+  class="message"
+  [class.overlay-below]="overlayPlacement() === 'below'"
+  [class.outgoing]="outgoing()"
+  [class.incoming]="!outgoing()"
+  [class.has-message-actions]="!!messageId()"
+  [class.group-first]="groupPosition() === 'first'"
+  [class.group-middle]="groupPosition() === 'middle'"
+  [class.group-last]="groupPosition() === 'last'"
+  (keydown.escape)="closeOverlays()"
+  tabindex="-1"
+>
+  @if (showSender() || showTime()) {
+    <div class="message-header">
+      @if (showSender()) {
+        <p class="message-sender">{{ sender() }}</p>
+        @if (classification() === 'broadcast') {
+          <span class="broadcast-badge">DIFUSIÓN</span>
+        }
+      }
+      @if (showSender() && showTime()) {
+        <span class="message-header-separator" aria-hidden="true">·</span>
+      }
+      @if (showTime()) {
+        <time
+          class="message-time"
+          [attr.datetime]="createdAt() || null"
+          [title]="fullDate(createdAt())"
+          [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())"
+        >
+          {{ timestampLabel() || time(createdAt()) + ' · ' + date(createdAt()) }}
+        </time>
+      }
+    </div>
+  } @else {
+    <time
+      class="message-time message-time-hidden"
+      [attr.datetime]="createdAt() || null"
+      [title]="fullDate(createdAt())"
+      [attr.aria-label]="accessibleDate(createdAt(), receivedLocally())"
+    >
+      {{ time(createdAt()) }} · {{ date(createdAt()) }}
+    </time>
+  }
+  @if (replyTo(); as reply) {
+    <div
+      class="message-reply-quote"
+      role="note"
+      [class.message-reply-quote--unavailable]="!replyTargetId()"
+    >
+      @if (replyTargetId()) {
+        <button
+          type="button"
+          class="message-reply-link"
+          (click)="replyNavigation.emit(replyTargetId())"
+        >
+          <span class="message-reply-icon" aria-hidden="true"
+            ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false">
+              <use href="#ac-reply" /></svg
+          ></span>
+          <span class="message-reply-meta"
+            ><strong>{{ replyAuthor() || 'Original no disponible' }}</strong>
+            @if (replyTime()) {
+              <time>{{ replyTime() }}</time>
+            }
+          </span>
+          <span class="message-reply-fragment">{{
+            replyText() || reply.quote || 'Original no disponible'
+          }}</span>
+        </button>
+      } @else {
+        <div class="message-reply-link message-reply-link--unavailable">
+          <span class="message-reply-icon" aria-hidden="true"
+            ><svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false">
+              <use href="#ac-reply" /></svg
+          ></span>
+          <span class="message-reply-meta"
+            ><strong>{{ replyAuthor() || 'Original no disponible' }}</strong>
+            @if (replyTime()) {
+              <time>{{ replyTime() }}</time>
+            }
+          </span>
+          <span class="message-reply-fragment">{{
+            replyText() || reply.quote || 'Original no disponible'
+          }}</span>
+          @if (!replyText() && !reply.quote) {
+            <small>Original no disponible</small>
+          }
+        </div>
+      }
+    </div>
+  }
+  <p
+    class="message-body"
+    [class.emoji-only-single]="emojiCount() === 1"
+    [class.emoji-only-double]="emojiCount() === 2"
+    [class.emoji-only-triple]="emojiCount() === 3"
+  >
+    @for (segment of contentSegments(); track $index) {
+      @if (segment.kind === 'link') {
+        <a
+          class="message-link"
+          [href]="segment.href"
+          rel="noreferrer noopener"
+          (click)="openLink($event, segment.href)"
+          >{{ segment.value }}</a
+        >
+      } @else {
+        {{ segment.value }}
+      }
+    }
+  </p>
+  @if (reactions(); as reactionState) {
+    @if (reactionState.reactions.length) {
+      <div class="message-reactions" aria-label="Reacciones">
+        @for (reaction of reactionState.reactions; track reaction.emoji) {
+          <span
+            class="message-reaction-chip"
+            (mouseenter)="showReactionTooltip(reaction.emoji)"
+            (mouseleave)="hideReactionTooltip()"
+          >
+            @if (messageId()) {
+              <button
+                type="button"
+                class="message-reaction"
+                [class.message-reaction--own]="isOwnReaction(reaction.emoji)"
+                [attr.aria-pressed]="isOwnReaction(reaction.emoji)"
+                [attr.aria-describedby]="
+                  tooltipEmoji() === reaction.emoji ? reactionTooltipId(reaction.emoji) : null
+                "
+                [attr.aria-label]="
+                  reactionTooltipText(reaction) +
+                  '. ' +
+                  reaction.actors.length +
+                  ' reacciones. Pulsar para ' +
+                  (isOwnReaction(reaction.emoji) ? 'retirar' : 'añadir')
+                "
+                (click)="toggleReaction(reaction.emoji)"
+                (focus)="showReactionTooltip(reaction.emoji)"
+                (blur)="hideReactionTooltip()"
+                (keydown.escape)="hideReactionTooltip()"
+              >
+                <span>{{ reaction.emoji }}</span
+                ><small>{{ reaction.actors.length }}</small>
+              </button>
+            } @else {
+              <span
+                class="message-reaction message-reaction--unavailable"
+                [attr.title]="'Referencia no disponible; no se puede actualizar esta reacción'"
+                [attr.aria-label]="reactionTooltipText(reaction) + '. Referencia no disponible'"
+              >
+                <span>{{ reaction.emoji }}</span
+                ><small>{{ reaction.actors.length }}</small>
+              </span>
+            }
+            @if (tooltipEmoji() === reaction.emoji) {
+              <span
+                class="message-reaction-tooltip"
+                [id]="reactionTooltipId(reaction.emoji)"
+                [attr.aria-label]="reactionTooltipText(reaction)"
+                role="tooltip"
+                >{{ reactionTooltipText(reaction) }}</span
+              >
+            }
+          </span>
+        }
+      </div>
+    }
+  }
+  @if (messageId()) {
+    <div class="message-actions" aria-label="Acciones del mensaje">
+      <button
+        type="button"
+        class="message-action message-action--compact message-action--reaction"
+        data-overlay-trigger="quick"
+        (click)="toggleReactionPicker()"
+        [attr.aria-expanded]="quickReactionOpen() || reactionOpen()"
+        aria-label="Abrir reacciones"
+      >
+        <svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false">
+          <use href="#ac-smile-plus" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="message-action message-action--compact message-action--menu"
+        data-overlay-trigger="menu"
+        (click)="toggleActionMenu()"
+        [attr.aria-expanded]="actionMenuOpen()"
+        aria-label="Abrir acciones del mensaje"
+      >
+        <svg class="ac-icon ac-icon--16" aria-hidden="true" focusable="false">
+          <use href="#ac-chevron-down" />
+        </svg>
+      </button>
+    </div>
+    @if (quickReactionOpen()) {
+      <div
+        class="message-quick-reactions"
+        data-overlay-panel="quick"
+        role="toolbar"
+        aria-label="Reacciones rápidas"
+      >
+        @for (emoji of quickReactionEmojis; track emoji) {
+          <button
+            type="button"
+            class="message-action message-action--emoji"
+            (click)="toggleQuickReaction(emoji)"
+            [attr.aria-label]="'Reaccionar con ' + emoji"
+          >
+            {{ emoji }}
+          </button>
+        }
+        <button
+          type="button"
+          class="message-action"
+          (click)="openFullPicker()"
+          aria-label="Abrir selector completo de emojis"
+        >
+          +
+        </button>
+      </div>
+    }
+    @if (actionMenuOpen()) {
+      <div class="message-action-menu" data-overlay-panel="menu" role="menu">
+        <button
+          type="button"
+          role="menuitem"
+          (click)="replyRequested.emit(messageId()); closeOverlays()"
+        >
+          Responder
+        </button>
+        <button type="button" role="menuitem" (click)="openFullPicker()">Reaccionar</button>
+      </div>
+    }
+    @if (reactionOpen()) {
+      <div
+        class="message-reaction-picker"
+        data-overlay-panel="picker"
+        role="dialog"
+        aria-label="Selector de reacciones"
+      >
+        <app-emoji-picker
+          (emojiSelected)="chooseReaction($event)"
+          (closed)="closeReactionPicker()"
+        />
+      </div>
+    }
+  }
+  @if (persistenceStatus() === 'memory-only') {
+    <small class="message-persistence-warning"
+      >Mensaje no guardado; solo disponible en esta sesión.</small
+    >
+  }
+</article>

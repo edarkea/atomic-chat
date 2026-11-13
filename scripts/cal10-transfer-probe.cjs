@@ -1,8 +1,8 @@
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { FileTransferCoordinator } = require('../electron/file-transfer.cjs');
-const { OutgoingFileTransferCoordinator } = require('../electron/file-transfer-outgoing.cjs');
+const { FileTransferCoordinator } = require('../electron/files/file-transfer.cjs');
+const { OutgoingFileTransferCoordinator } = require('../electron/files/file-transfer-outgoing.cjs');
 
 const cycles = Math.max(1, Number.parseInt(process.env.ATOMIC_CAL10_TRANSFER_CYCLES || '250', 10));
 

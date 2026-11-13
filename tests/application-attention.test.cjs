@@ -1,27 +1,39 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createApplicationAttention } = require('../electron/application-attention.cjs');
+const { createApplicationAttention } = require('../electron/platform/application-attention.cjs');
 
 function harness(focused = false) {
   const calls = [];
   const window = {
     destroyed: false,
     focused,
-    isDestroyed() { return this.destroyed; },
-    isFocused() { return this.focused; },
-    flashFrame(value) { calls.push(['flash', value]); },
+    isDestroyed() {
+      return this.destroyed;
+    },
+    isFocused() {
+      return this.focused;
+    },
+    flashFrame(value) {
+      calls.push(['flash', value]);
+    },
   };
   let bounce = 0;
   const app = {
     dock: {
-      bounce: () => { calls.push(['bounce']); return ++bounce; },
+      bounce: () => {
+        calls.push(['bounce']);
+        return ++bounce;
+      },
       cancelBounce: (id) => calls.push(['cancel', id]),
     },
   };
   return {
     calls,
     window,
-    attention: createApplicationAttention({ BrowserWindow: { getAllWindows: () => [window] }, app }),
+    attention: createApplicationAttention({
+      BrowserWindow: { getAllWindows: () => [window] },
+      app,
+    }),
   };
 }
 
@@ -36,12 +48,7 @@ test('deduplicates native attention per account and clears it without changing u
   assert.equal(fixture.attention.request('a@example.invalid'), true);
   assert.equal(fixture.attention.request('a@example.invalid'), false);
   fixture.attention.clear('a@example.invalid');
-  assert.deepEqual(fixture.calls, [
-    ['flash', true],
-    ['bounce'],
-    ['flash', false],
-    ['cancel', 1],
-  ]);
+  assert.deepEqual(fixture.calls, [['flash', true], ['bounce'], ['flash', false], ['cancel', 1]]);
 });
 
 test('focus acknowledgement stops all pending attention requests', () => {

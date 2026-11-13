@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
-const { PersistenceStore } = require('../electron/storage.cjs');
-const { XmppAdapter, negotiateStartTls } = require('../electron/xmpp-adapter.cjs');
-const { assessCertificate } = require('../electron/certificate-trust.cjs');
-const { tlsIdentityCheck } = require('../electron/xmpp-transport.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
+const { XmppAdapter, negotiateStartTls } = require('../electron/xmpp/xmpp-adapter.cjs');
+const { assessCertificate } = require('../electron/security/certificate-trust.cjs');
+const { tlsIdentityCheck } = require('../electron/xmpp/xmpp-transport.cjs');
 
 function syntheticCertificate(overrides = {}) {
   const certificate = {

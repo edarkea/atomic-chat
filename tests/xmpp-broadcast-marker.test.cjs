@@ -5,7 +5,7 @@ const {
   BROADCAST_NAMESPACE,
   JIVE_PROPERTIES_NAMESPACE,
   createRosterMessaging,
-} = require('../electron/xmpp-roster-messaging.cjs');
+} = require('../electron/xmpp/xmpp-roster-messaging.cjs');
 
 function createAdapter(sent) {
   const events = [];
@@ -80,12 +80,7 @@ test('classifies Atomic, Spark and private stanzas without treating server headl
   const jiveProperties = xml(
     'properties',
     { xmlns: JIVE_PROPERTIES_NAMESPACE },
-    xml(
-      'property',
-      {},
-      xml('name', {}, 'broadcast'),
-      xml('value', { type: 'boolean' }, 'true'),
-    ),
+    xml('property', {}, xml('name', {}, 'broadcast'), xml('value', { type: 'boolean' }, 'true')),
   );
   const stanzas = [
     xml(

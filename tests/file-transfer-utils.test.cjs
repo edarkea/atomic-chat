@@ -4,9 +4,9 @@ const {
   isTerminalState,
   transferError,
   transferView,
-} = require('../electron/file-transfer-utils.cjs');
-const { transferView: incomingView } = require('../electron/file-transfer.cjs');
-const { transferView: outgoingView } = require('../electron/file-transfer-outgoing.cjs');
+} = require('../electron/files/file-transfer-utils.cjs');
+const { transferView: incomingView } = require('../electron/files/file-transfer.cjs');
+const { transferView: outgoingView } = require('../electron/files/file-transfer-outgoing.cjs');
 
 function record(overrides = {}) {
   return {

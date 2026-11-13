@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { xml } = require('@xmpp/client');
-const { profileDisplayName, loadDisplayName } = require('../electron/xmpp-display-name.cjs');
+const { profileDisplayName, loadDisplayName } = require('../electron/xmpp/xmpp-display-name.cjs');
 
 test('uses full name, structured name or nickname without showing a JID', () => {
   assert.equal(profileDisplayName(xml('vCard', {}, xml('FN', {}, ' Juan  Munoz '))), 'Juan Munoz');

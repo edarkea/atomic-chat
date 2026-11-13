@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { PersistenceStore } = require('../electron/storage.cjs');
+const { PersistenceStore } = require('../electron/persistence/storage.cjs');
 
 function account(accountId) {
   return {
@@ -30,14 +30,14 @@ function message(accountId, id, classification) {
   };
 }
 
-test('migrates messages to v7 and persists classification through history pagination', () => {
+test('persists message classification through history pagination on the current schema', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-chat-classification-'));
   let store = new PersistenceStore(directory);
   try {
     store.upsertAccount(account('receiver@example.invalid'));
     store.saveMessage(message('receiver@example.invalid', 'direct-1'));
     store.saveMessage(message('receiver@example.invalid', 'broadcast-1', 'broadcast'));
-    assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 7);
+    assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 15);
     assert.equal(
       store.database
         .prepare("SELECT name FROM pragma_table_info('messages') WHERE name = 'classification'")
@@ -59,7 +59,9 @@ test('migrates messages to v7 and persists classification through history pagina
     store.close();
     store = new PersistenceStore(directory);
     assert.deepEqual(
-      store.listMessages('receiver@example.invalid', 'contact@example.invalid').map((item) => item.classification),
+      store
+        .listMessages('receiver@example.invalid', 'contact@example.invalid')
+        .map((item) => item.classification),
       ['direct', 'broadcast'],
     );
   } finally {
