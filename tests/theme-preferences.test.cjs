@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createIpcHelpers } = require('../electron/ipc-helpers.cjs');
-const { registerPreferenceHandlers } = require('../electron/ipc-preference-handlers.cjs');
+const { createIpcHelpers } = require('../electron/ipc/ipc-helpers.cjs');
+const { registerPreferenceHandlers } = require('../electron/ipc/ipc-preference-handlers.cjs');
 
 function setup(defaultDownloadDirectory = '') {
   const handlers = new Map();
@@ -53,8 +53,14 @@ test('close-to-tray is opt-in, global, boolean and resettable', () => {
   assert.equal(handlers.get('preferences.get')(event, {}).value.closeToTray, false);
   handlers.get('preferences.update')(event, { changes: { closeToTray: true } });
   assert.equal(values.get('global:app').closeToTray, true);
-  assert.equal(handlers.get('preferences.get')(event, { accountId: 'other' }).value.closeToTray, true);
-  assert.throws(() => handlers.get('preferences.update')(event, { changes: { closeToTray: 'yes' } }), /INVALID_INPUT/);
+  assert.equal(
+    handlers.get('preferences.get')(event, { accountId: 'other' }).value.closeToTray,
+    true,
+  );
+  assert.throws(
+    () => handlers.get('preferences.update')(event, { changes: { closeToTray: 'yes' } }),
+    /INVALID_INPUT/,
+  );
   assert.equal(handlers.get('preferences.reset')(event, {}).value.closeToTray, false);
 });
 
@@ -139,7 +145,10 @@ test('reset removes the saved custom palette from every preference scope', () =>
     },
   );
 
-  handlers.get('preferences.reset')({ sender: { id: 1 } }, { accountId: 'account@example.invalid' });
+  handlers.get('preferences.reset')(
+    { sender: { id: 1 } },
+    { accountId: 'account@example.invalid' },
+  );
 
   assert.equal(values.has('global:app'), false);
   assert.equal(values.has('account:account@example.invalid'), false);

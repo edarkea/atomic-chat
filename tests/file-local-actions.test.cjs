@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { FileLocalActionRegistry } = require('../electron/file-local-actions.cjs');
+const { FileLocalActionRegistry } = require('../electron/files/file-local-actions.cjs');
 
 const ACCOUNT = 'one@example.invalid';
 const PATH = 'C:\\AtomicChat\\received\\report.pdf';

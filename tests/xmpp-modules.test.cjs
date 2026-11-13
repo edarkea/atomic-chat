@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
+const { XmppAdapter } = require('../electron/xmpp/xmpp-adapter.cjs');
 
 test('XmppAdapter composes specialized services over one shared state owner', () => {
   const adapter = new XmppAdapter();

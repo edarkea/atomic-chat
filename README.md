@@ -46,7 +46,7 @@ Atomic Chat es un cliente de mensajería XMPP para escritorio, desarrollado con 
 
 ### Available with explicit limitations
 
-- MUC support currently covers discovery, entry/exit and participant state for the supported flow. Room creation, moderation, invitations, passwords, private room messages, automatic rejoin/forwarding, files and persistent MUC history are not complete.
+- MUC support covers discovery and server-authorized entry/exit of **existing** rooms, with participants and live messages. Joining a discovered room uses Openfire's permissions when no optional operator policy is configured; if `ATOMIC_XMPP_MUC_POLICY_JSON` contains policies, joins remain restricted to an exact account/service/endpoint match. Being in a contact group is not the same as MUC room membership. Room creation, moderation, invitations, passwords, private room messages, automatic rejoin/forwarding, files and persistent MUC history are not complete.
 - Sticker assets can be organized locally and received sticker messages can be displayed or saved. Sending stickers remains disabled and must not be considered an available chat feature.
 - The updater infrastructure can check public GitHub Releases and lets the user control download and installation. Installed-update end-to-end validation, signing and target-platform compatibility remain pending.
 - Interoperability evidence is limited to the tested Openfire/Spark environment; compatibility with every XMPP server or extension is not claimed.
@@ -98,16 +98,18 @@ Useful project commands:
 npm run build
 npm run electron
 npm run typecheck
-npm run test:ci:focused
+npm run test:angular
+npm run lint
+npm run format:check:all
 ```
 
-`npm run electron` launches the desktop application using the local `.env`. Focused CI tests are intentionally separate from the historical P0, Openfire integration and load suites.
+`npm run electron` launches the desktop application using the local `.env`. Angular tests, lint and formatting are intentionally separate from the historical P0, Openfire integration and load suites. See the [testing guide](docs/getting-started/testing.md) for the complete command map.
 
 ## Documentation, limitations and roadmap
 
-See [Desktop profile, background mode and version updates](docs/desktop-background-and-updates.md) for the new preferences, tray menu, login/chat update controls and validation results.
+See the [project documentation](docs/README.md) for setup, development workflow and validation guidance.
 
-See [CI, builds and updates](docs/ci-cd-and-updates.md) for the current release controls, dependency-security notes, manual build workflow and updater status.
+Architecture, domain, contract and operations references will be added as each area is audited and verified against the current implementation.
 
 The main operational limitations are conditional MUC authorization, disabled sticker sending, incomplete installed-updater E2E validation, target-platform packaging/signing checks and dependence on the configured XMPP server's authentication, roster, presence, file-transfer and MUC capabilities.
 

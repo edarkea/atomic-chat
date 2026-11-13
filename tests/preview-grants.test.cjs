@@ -1,15 +1,23 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const test = require('node:test');
-const { PreviewGrantRegistry } = require('../electron/preview-grants.cjs');
-const { MAX_PREVIEW_BYTES } = require('../electron/preview-image.cjs');
+const { PreviewGrantRegistry } = require('../electron/files/preview-grants.cjs');
+const { MAX_PREVIEW_BYTES } = require('../electron/files/preview-image.cjs');
 
-const metadata = (size) => ({ dev: '1', ino: '2', size: String(size), mtimeMs: '3', birthtimeMs: '4' });
+const metadata = (size) => ({
+  dev: '1',
+  ino: '2',
+  size: String(size),
+  mtimeMs: '3',
+  birthtimeMs: '4',
+});
 const jpeg = Buffer.from([
-  0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x02, 0x01, 0x01, 0x11, 0x00,
-  0xff, 0xd9,
+  0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x02, 0x01, 0x01, 0x11, 0x00, 0xff,
+  0xd9,
 ]);
-const decoder = { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 2, height: 1 }) }) };
+const decoder = {
+  createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 2, height: 1 }) }),
+};
 
 function input(overrides = {}) {
   return {
@@ -29,15 +37,23 @@ function fakeHandle(stats, readImpl) {
   return {
     stat: async () => ({ isFile: () => true, ...stats }),
     readFile: async () => jpeg,
-    read: readImpl || (async (buffer, _offset, length) => {
-      jpeg.copy(buffer, 0, 0, length);
-      return { bytesRead: Math.min(length, jpeg.length) };
-    }),
+    read:
+      readImpl ||
+      (async (buffer, _offset, length) => {
+        jpeg.copy(buffer, 0, 0, length);
+        return { bytesRead: Math.min(length, jpeg.length) };
+      }),
     close: async () => undefined,
   };
 }
 
-function fakeRegistry({ source = readySource(), streamStats, readImpl, resolveSource, openFile } = {}) {
+function fakeRegistry({
+  source = readySource(),
+  streamStats,
+  readImpl,
+  resolveSource,
+  openFile,
+} = {}) {
   let openCount = 0;
   const defaultOpenFile = async () => {
     openCount += 1;
@@ -93,7 +109,10 @@ test('rejects a concurrent read and preserves one sequence/offset', async () => 
   });
   const preview = await registry.get(1, input());
   assert.equal(preview.state, 'ready');
-  const stream = await registry.open(1, { ...input({ requestId: 'open' }), previewId: preview.previewId });
+  const stream = await registry.open(1, {
+    ...input({ requestId: 'open' }),
+    previewId: preview.previewId,
+  });
   const first = registry.read(1, {
     ...input({ requestId: 'read-1' }),
     previewId: preview.previewId,
@@ -102,12 +121,21 @@ test('rejects a concurrent read and preserves one sequence/offset', async () => 
   });
   await readStarted;
   await assert.rejects(
-    () => registry.read(1, { ...input({ requestId: 'read-2' }), previewId: preview.previewId, streamId: stream.streamId, sequence: 0 }),
+    () =>
+      registry.read(1, {
+        ...input({ requestId: 'read-2' }),
+        previewId: preview.previewId,
+        streamId: stream.streamId,
+        sequence: 0,
+      }),
     (error) => error.code === 'CONFLICT',
   );
   const chunk = await first;
   assert.equal(chunk.done, true);
-  await registry.revoke(1, { ...input({ requestId: 'revoke-after-read' }), previewId: preview.previewId });
+  await registry.revoke(1, {
+    ...input({ requestId: 'revoke-after-read' }),
+    previewId: preview.previewId,
+  });
 });
 
 test('reserves the single stream slot before concurrent opens can proceed', async () => {
@@ -125,7 +153,10 @@ test('reserves the single stream slot before concurrent opens can proceed', asyn
     await sourceCheck;
   };
   const preview = await registry.get(1, input());
-  const firstOpen = registry.open(1, { ...input({ requestId: 'open-1' }), previewId: preview.previewId });
+  const firstOpen = registry.open(1, {
+    ...input({ requestId: 'open-1' }),
+    previewId: preview.previewId,
+  });
   await sourceCheckStartedPromise;
   await assert.rejects(
     () => registry.open(1, { ...input({ requestId: 'open-2' }), previewId: preview.previewId }),
@@ -133,9 +164,20 @@ test('reserves the single stream slot before concurrent opens can proceed', asyn
   );
   releaseSourceCheck();
   const stream = await firstOpen;
-  await registry.close(1, { ...input({ requestId: 'close' }), previewId: preview.previewId, streamId: stream.streamId });
-  const reopened = await registry.open(1, { ...input({ requestId: 'open-after-close' }), previewId: preview.previewId });
-  await registry.close(1, { ...input({ requestId: 'close-after-reopen' }), previewId: preview.previewId, streamId: reopened.streamId });
+  await registry.close(1, {
+    ...input({ requestId: 'close' }),
+    previewId: preview.previewId,
+    streamId: stream.streamId,
+  });
+  const reopened = await registry.open(1, {
+    ...input({ requestId: 'open-after-close' }),
+    previewId: preview.previewId,
+  });
+  await registry.close(1, {
+    ...input({ requestId: 'close-after-reopen' }),
+    previewId: preview.previewId,
+    streamId: reopened.streamId,
+  });
   await registry.revoke(1, { ...input({ requestId: 'revoke' }), previewId: preview.previewId });
 });
 
@@ -173,9 +215,15 @@ test('revocation invalidates an open that resolves later and cleans its private 
     await removePrivateCopy(privatePath, directory);
   };
   const preview = await registry.get(1, input());
-  const pendingOpen = registry.open(1, { ...input({ requestId: 'open' }), previewId: preview.previewId });
+  const pendingOpen = registry.open(1, {
+    ...input({ requestId: 'open' }),
+    previewId: preview.previewId,
+  });
   await openFileStartedPromise;
-  const pendingRevoke = registry.revoke(1, { ...input({ requestId: 'revoke' }), previewId: preview.previewId });
+  const pendingRevoke = registry.revoke(1, {
+    ...input({ requestId: 'revoke' }),
+    previewId: preview.previewId,
+  });
   await pendingRevoke;
   releaseOpenFile();
   await assert.rejects(pendingOpen, (error) => error.code === 'MEDIA_REFERENCE_REVOKED');
@@ -183,7 +231,10 @@ test('revocation invalidates an open that resolves later and cleans its private 
   assert.ok(closeCalls >= 1);
   if (process.platform === 'win32') {
     assert.ok(removedPaths.length >= 1);
-    assert.equal(removedPaths.every((filePath) => !fs.existsSync(filePath)), true);
+    assert.equal(
+      removedPaths.every((filePath) => !fs.existsSync(filePath)),
+      true,
+    );
   } else {
     assert.equal(removedPaths.length, 0);
   }
@@ -207,7 +258,10 @@ test('does not return a block when revocation or close wins a pending read', asy
     },
   });
   const preview = await registry.get(1, input());
-  const stream = await registry.open(1, { ...input({ requestId: 'open' }), previewId: preview.previewId });
+  const stream = await registry.open(1, {
+    ...input({ requestId: 'open' }),
+    previewId: preview.previewId,
+  });
   const pendingRead = registry.read(1, {
     ...input({ requestId: 'read' }),
     previewId: preview.previewId,
@@ -220,7 +274,10 @@ test('does not return a block when revocation or close wins a pending read', asy
   await assert.rejects(pendingRead, (error) => error.code === 'MEDIA_REFERENCE_REVOKED');
 
   const second = await registry.get(1, input({ requestId: 'preview-get-2' }));
-  const secondStream = await registry.open(1, { ...input({ requestId: 'open-2' }), previewId: second.previewId });
+  const secondStream = await registry.open(1, {
+    ...input({ requestId: 'open-2' }),
+    previewId: second.previewId,
+  });
   let releaseSecondRead;
   let secondReadStarted;
   const secondReadGate = new Promise((resolve) => {
@@ -229,7 +286,11 @@ test('does not return a block when revocation or close wins a pending read', asy
   const secondReadStartedPromise = new Promise((resolve) => {
     secondReadStarted = resolve;
   });
-  registry.grants.get(second.previewId).streams.get(secondStream.streamId).handle.read = async (buffer, _offset, length) => {
+  registry.grants.get(second.previewId).streams.get(secondStream.streamId).handle.read = async (
+    buffer,
+    _offset,
+    length,
+  ) => {
     secondReadStarted();
     await secondReadGate;
     jpeg.copy(buffer, 0, 0, length);
@@ -242,7 +303,11 @@ test('does not return a block when revocation or close wins a pending read', asy
     sequence: 0,
   });
   await secondReadStartedPromise;
-  await registry.close(1, { ...input({ requestId: 'close-2' }), previewId: second.previewId, streamId: secondStream.streamId });
+  await registry.close(1, {
+    ...input({ requestId: 'close-2' }),
+    previewId: second.previewId,
+    streamId: secondStream.streamId,
+  });
   releaseSecondRead();
   await assert.rejects(pendingClosedRead, (error) => error.code === 'CONFLICT');
   await registry.revoke(1, { ...input({ requestId: 'revoke-2' }), previewId: second.previewId });
@@ -290,14 +355,26 @@ test('revokes on metadata change during a read and prevents reopening', async ()
     const handle = await original(value);
     return {
       ...handle,
-      stat: async () => ({ isFile: () => true, ...metadata(changed ? jpeg.length + 1 : jpeg.length) }),
+      stat: async () => ({
+        isFile: () => true,
+        ...metadata(changed ? jpeg.length + 1 : jpeg.length),
+      }),
     };
   };
   const preview = await registry.get(1, input());
   assert.equal(preview.state, 'ready');
-  const stream = await registry.open(1, { ...input({ requestId: 'open' }), previewId: preview.previewId });
+  const stream = await registry.open(1, {
+    ...input({ requestId: 'open' }),
+    previewId: preview.previewId,
+  });
   await assert.rejects(
-    () => registry.read(1, { ...input({ requestId: 'read' }), previewId: preview.previewId, streamId: stream.streamId, sequence: 0 }),
+    () =>
+      registry.read(1, {
+        ...input({ requestId: 'read' }),
+        previewId: preview.previewId,
+        streamId: stream.streamId,
+        sequence: 0,
+      }),
     (error) => error.code === 'STORAGE_FAILED',
   );
   await assert.rejects(
@@ -310,7 +387,11 @@ test('rejects symlink sources and keeps revocation owner-scoped and idempotent',
   const symlinkRegistry = new PreviewGrantRegistry({
     nativeImage: decoder,
     resolveSource: async () => readySource(),
-    lstat: async () => ({ isSymbolicLink: () => true, isFile: () => false, ...metadata(jpeg.length) }),
+    lstat: async () => ({
+      isSymbolicLink: () => true,
+      isFile: () => false,
+      ...metadata(jpeg.length),
+    }),
   });
   const unavailable = await symlinkRegistry.get(1, input());
   assert.equal(unavailable.state, 'unavailable');
@@ -319,25 +400,48 @@ test('rejects symlink sources and keeps revocation owner-scoped and idempotent',
   const preview = await registry.get(1, input());
   assert.equal(preview.state, 'ready');
   await assert.rejects(
-    () => registry.revoke(2, { ...input({ requestId: 'revoke-cross' }), previewId: preview.previewId }),
+    () =>
+      registry.revoke(2, { ...input({ requestId: 'revoke-cross' }), previewId: preview.previewId }),
     (error) => error.code === 'UNAUTHORIZED',
   );
   await assert.rejects(
-    () => registry.revoke(1, { ...input({ requestId: 'revoke-unknown' }), previewId: 'unknown-preview' }),
+    () =>
+      registry.revoke(1, {
+        ...input({ requestId: 'revoke-unknown' }),
+        previewId: 'unknown-preview',
+      }),
     (error) => error.code === 'UNAUTHORIZED',
   );
-  const revocation = registry.revoke(1, { ...input({ requestId: 'revoke-owner' }), previewId: preview.previewId });
+  const revocation = registry.revoke(1, {
+    ...input({ requestId: 'revoke-owner' }),
+    previewId: preview.previewId,
+  });
   await assert.rejects(
-    () => registry.open(1, { ...input({ requestId: 'open-during-revoke' }), previewId: preview.previewId }),
+    () =>
+      registry.open(1, {
+        ...input({ requestId: 'open-during-revoke' }),
+        previewId: preview.previewId,
+      }),
     (error) => error.code === 'UNAUTHORIZED',
   );
   await Promise.all([
     revocation,
-    registry.revoke(1, { ...input({ requestId: 'revoke-owner-again' }), previewId: preview.previewId }),
+    registry.revoke(1, {
+      ...input({ requestId: 'revoke-owner-again' }),
+      previewId: preview.previewId,
+    }),
   ]);
-  await registry.close(1, { ...input({ requestId: 'close-after-revoke' }), previewId: preview.previewId, streamId: 'stream-after-revoke' });
+  await registry.close(1, {
+    ...input({ requestId: 'close-after-revoke' }),
+    previewId: preview.previewId,
+    streamId: 'stream-after-revoke',
+  });
   await assert.rejects(
-    () => registry.open(1, { ...input({ requestId: 'open-after-revoke' }), previewId: preview.previewId }),
+    () =>
+      registry.open(1, {
+        ...input({ requestId: 'open-after-revoke' }),
+        previewId: preview.previewId,
+      }),
     (error) => error.code === 'UNAUTHORIZED',
   );
 });

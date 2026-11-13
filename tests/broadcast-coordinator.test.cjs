@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createBroadcastCoordinator } = require('../electron/broadcast-coordinator.cjs');
+const { createBroadcastCoordinator } = require('../electron/application/broadcast-coordinator.cjs');
 
 test('coordinator sends unique bare JIDs without invoking persistence', async () => {
   const sent = [];

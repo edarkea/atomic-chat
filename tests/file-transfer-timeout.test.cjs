@@ -3,9 +3,9 @@ const test = require('node:test');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { FileTransferCoordinator } = require('../electron/file-transfer.cjs');
-const { OutgoingFileTransferCoordinator } = require('../electron/file-transfer-outgoing.cjs');
-const { createFileDialogs } = require('../electron/file-dialog.cjs');
+const { FileTransferCoordinator } = require('../electron/files/file-transfer.cjs');
+const { OutgoingFileTransferCoordinator } = require('../electron/files/file-transfer-outgoing.cjs');
+const { createFileDialogs } = require('../electron/files/file-dialog.cjs');
 
 function timerHarness() {
   const timers = [];
@@ -105,6 +105,13 @@ test('uses the configured timeout for outgoing protocol phases without creating 
     cancelTimeout: harness.cancelTimeout,
   });
   try {
+    let unsubscribe;
+    const recordReady = new Promise((resolve) => {
+      unsubscribe = coordinator.onEvent(() => {
+        unsubscribe();
+        resolve();
+      });
+    });
     const operation = coordinator.start({
       filePath,
       offer: {
@@ -124,9 +131,7 @@ test('uses the configured timeout for outgoing protocol phases without creating 
         sendOffer: () => new Promise(() => undefined),
       },
     });
-    await Promise.resolve();
-    for (let attempt = 0; attempt < 20 && !harness.timers.length; attempt += 1)
-      await new Promise((resolve) => setImmediate(resolve));
+    await recordReady;
     assert.equal(harness.timers[0].delay, 600000);
     harness.timers[0].callback();
     const result = await operation;

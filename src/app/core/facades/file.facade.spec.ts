@@ -1,0 +1,363 @@
+import { TestBed } from '@angular/core/testing';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FileTransfer, TypedDomainEvent } from '../domain';
+import { FileFacade } from './file.facade';
+import { MessageComposerComponent } from '../../features/conversation/message-composer.component';
+import { FILE_HISTORY_PORT, FILE_TRANSFER_PORT, FileHistoryPort, FileTransferPort } from '../ports';
+
+const ok = <T>(value: T) => ({ ok: true as const, value, version: 1 as const, requestId: 'test' });
+const transfer = (accountId: string, transferId: string): FileTransfer => ({
+  offer: {
+    transferId,
+    accountId,
+    conversationId: 'contact@example.invalid',
+    senderJid: 'sender@example.invalid',
+    name: 'fixture.txt',
+    sizeBytes: '12',
+    transport: 'ibb',
+    offeredAt: '2026-01-01T00:00:00.000Z',
+  },
+  direction: 'incoming',
+  state: 'offered',
+  bytesTransferred: '0',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+});
+
+describe('FileFacade injected transfer port', () => {
+  let port: FileTransferPort;
+  let historyPort: FileHistoryPort;
+  let emit: (event: TypedDomainEvent) => void;
+  let unsubscribeCalled: boolean;
+
+  beforeEach(() => {
+    unsubscribeCalled = false;
+    port = {
+      send: vi.fn(async () => ok<FileTransfer | null>(null)),
+      sendDropped: vi.fn(async () => ok<FileTransfer | null>(null)),
+      sendClipboard: vi.fn(async () => ok<FileTransfer | null>(null)),
+      accept: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
+      reject: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
+      cancel: vi.fn(async () => ok(transfer('a@example.invalid', 'incoming'))),
+      open: vi.fn(async () => ok<void>(undefined)),
+      reveal: vi.fn(async () => ok<void>(undefined)),
+      listActive: vi.fn(async () =>
+        ok<ReadonlyArray<FileTransfer>>([transfer('a@example.invalid', 'incoming')]),
+      ),
+      subscribe: vi.fn((listener: (event: TypedDomainEvent) => void) => {
+        emit = listener;
+        return () => {
+          unsubscribeCalled = true;
+        };
+      }),
+    };
+    historyPort = {
+      open: vi.fn(async () => ok<void>(undefined)),
+      reveal: vi.fn(async () => ok<void>(undefined)),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: FILE_TRANSFER_PORT, useValue: port },
+        { provide: FILE_HISTORY_PORT, useValue: historyPort },
+      ],
+    });
+  });
+
+  it('routes send, accept, reject and cancel through the injected port', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    expect(facade.transfers()).toHaveLength(1);
+    await facade.accept('incoming');
+    await facade.reject('incoming');
+    await facade.cancel('incoming');
+    await facade.send('contact@example.invalid');
+    expect(port.accept).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'a@example.invalid', transferId: 'incoming' }),
+    );
+    expect(port.reject).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'a@example.invalid', transferId: 'incoming' }),
+    );
+    expect(port.cancel).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'a@example.invalid', transferId: 'incoming' }),
+    );
+    expect(port.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'a@example.invalid',
+        conversationId: 'contact@example.invalid',
+      }),
+    );
+  });
+
+  it('coalesces concurrent manual file sends for the same contact', async () => {
+    let resolveSend!: (result: ReturnType<typeof ok<FileTransfer | null>>) => void;
+    const pendingSend = new Promise<ReturnType<typeof ok<FileTransfer | null>>>((resolve) => {
+      resolveSend = resolve;
+    });
+    (port.send as ReturnType<typeof vi.fn>).mockReturnValueOnce(pendingSend);
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+
+    const first = facade.send('contact@example.invalid');
+    await Promise.resolve();
+    await facade.send('contact@example.invalid/resource');
+
+    expect(port.send).toHaveBeenCalledOnce();
+    expect(facade.error()).toContain('Ya hay una selección');
+    resolveSend(ok<FileTransfer | null>(null));
+    await first;
+
+    await facade.send('contact@example.invalid');
+    expect(port.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps terminal transfers immutable when offers or progress arrive late', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    for (const state of ['completed', 'failed', 'cancelled'] as const) {
+      const item = { ...transfer('a@example.invalid', state), state };
+      emit({ version: 1, eventId: `${state}-terminal`, type: 'file.stateChanged', payload: item });
+      emit({
+        version: 1,
+        eventId: `${state}-offer`,
+        type: 'file.offerReceived',
+        payload: item.offer,
+      });
+      emit({
+        version: 1,
+        eventId: `${state}-late`,
+        type: 'file.stateChanged',
+        payload: { ...item, state: 'transferring' },
+      });
+      expect(facade.transfers().find((candidate) => candidate.offer.transferId === state)).toEqual(
+        item,
+      );
+    }
+    expect(port.send).not.toHaveBeenCalled();
+    expect(port.sendClipboard).not.toHaveBeenCalled();
+    expect(port.sendDropped).not.toHaveBeenCalled();
+  });
+
+  it('does not regress an accepted transfer when its offer is repeated', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const item: FileTransfer = { ...transfer('a@example.invalid', 'incoming'), state: 'accepted' };
+    emit({ version: 1, eventId: 'accepted', type: 'file.stateChanged', payload: item });
+    emit({ version: 1, eventId: 'duplicate', type: 'file.offerReceived', payload: item.offer });
+    expect(facade.transfers()).toEqual([item]);
+  });
+
+  it('uses a new requestId for deliberate clipboard resend after a remote rejection', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const send = vi.mocked(port.sendClipboard);
+    send.mockResolvedValue(
+      ok({
+        ...transfer('a@example.invalid', 'rejected'),
+        state: 'cancelled',
+        endReason: 'cancelled_by_receiver',
+      }),
+    );
+    const files = [new File(['same bytes'], 'same.txt')];
+    await facade.sendClipboard('contact@example.invalid', files);
+    expect(send).toHaveBeenCalledTimes(1);
+    await facade.sendClipboard('contact@example.invalid', files);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[0][0].requestId).not.toBe(send.mock.calls[1][0].requestId);
+  });
+
+  it('routes a single bubbled paste to one send and allows a later deliberate paste', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const fixture = TestBed.createComponent(MessageComposerComponent);
+    fixture.componentRef.setInput('inputName', 'message');
+    fixture.componentRef.setInput('placeholder', 'Escribir');
+    fixture.componentRef.setInput('draft', '');
+    fixture.detectChanges();
+    const tasks: Promise<void>[] = [];
+    fixture.componentInstance.filesPasted.subscribe((files) => {
+      tasks.push(facade.sendClipboard('contact@example.invalid', files));
+    });
+    const file = new File(['same'], 'same.txt', { lastModified: 1 });
+    const paste = () => {
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: {
+          files: [file],
+          items: [{ kind: 'file', getAsFile: () => file }],
+        },
+      });
+      fixture.nativeElement.querySelector('textarea').dispatchEvent(event);
+    };
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    try {
+      paste();
+      paste();
+      await Promise.all(tasks);
+      expect(port.sendClipboard).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(1801);
+      paste();
+      await Promise.all(tasks);
+      expect(port.sendClipboard).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('stops a previous clipboard batch after leaving and returning to the same account', async () => {
+    let release: ((value: ReturnType<typeof ok<FileTransfer | null>>) => void) | undefined;
+    vi.mocked(port.sendClipboard).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const batch = facade.sendClipboard('contact@example.invalid', [
+      new File(['a'], 'a.txt'),
+      new File(['b'], 'b.txt'),
+    ]);
+    await facade.setAccount('');
+    await facade.setAccount('a@example.invalid');
+    release?.(ok(transfer('a@example.invalid', 'old-operation')));
+    await batch;
+    expect(port.sendClipboard).toHaveBeenCalledTimes(1);
+    expect(facade.transfers().some((item) => item.offer.transferId === 'old-operation')).toBe(
+      false,
+    );
+  });
+
+  it('ignores a late listActive result after changing account', async () => {
+    let release!: (result: ReturnType<typeof ok<ReadonlyArray<FileTransfer>>>) => void;
+    (port.listActive as ReturnType<typeof vi.fn>).mockImplementation(
+      (input: { accountId: string }) =>
+        input.accountId === 'a@example.invalid'
+          ? new Promise((resolve) => {
+              release = resolve;
+            })
+          : Promise.resolve(ok<ReadonlyArray<FileTransfer>>([])),
+    );
+    const facade = TestBed.inject(FileFacade);
+    const first = facade.setAccount('a@example.invalid');
+    await Promise.resolve();
+    await facade.setAccount('b@example.invalid');
+    release(ok([transfer('a@example.invalid', 'late')]));
+    await first;
+    expect(facade.transfers()).toEqual([]);
+  });
+
+  it('sends dropped files sequentially and rejects oversized drops', async () => {
+    let active = 0;
+    let maximumActive = 0;
+    (port.sendDropped as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return ok<FileTransfer | null>(null);
+    });
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const files = [
+      new File(['one'], 'one.txt'),
+      new File(['two'], 'two.txt'),
+      new File(['three'], 'three.txt'),
+    ];
+    await facade.sendDropped('contact@example.invalid', files);
+    expect(port.sendDropped).toHaveBeenCalledTimes(3);
+    expect(maximumActive).toBe(1);
+    await facade.sendDropped(
+      'contact@example.invalid',
+      Array.from({ length: 9 }, (_, index) => new File(['x'], `file-${index}.txt`)),
+    );
+    expect(port.sendDropped).toHaveBeenCalledTimes(3);
+    expect(facade.error()).toContain('hasta 8');
+  });
+
+  it('rejects a second dropped batch while the first one is in flight', async () => {
+    let release!: (result: ReturnType<typeof ok<FileTransfer | null>>) => void;
+    (port.sendDropped as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve)),
+    );
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    const first = facade.sendDropped('contact@example.invalid', [new File(['one'], 'one.txt')]);
+    await Promise.resolve();
+    await facade.sendDropped('contact@example.invalid', [new File(['two'], 'two.txt')]);
+    expect(facade.error()).toContain('Ya hay un lote');
+    release(ok<FileTransfer | null>(null));
+    await first;
+    expect(port.sendDropped).toHaveBeenCalledOnce();
+  });
+
+  it('ignores transfer events belonging to another account', async () => {
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    emit({
+      version: 1,
+      eventId: 'foreign-transfer',
+      type: 'file.stateChanged',
+      payload: transfer('b@example.invalid', 'foreign'),
+    });
+    expect(facade.transfers().map((item) => item.offer.transferId)).toEqual(['incoming']);
+    emit({
+      version: 1,
+      eventId: 'owned-transfer',
+      type: 'file.stateChanged',
+      payload: transfer('a@example.invalid', 'owned'),
+    });
+    expect(facade.transfers().map((item) => item.offer.transferId)).toEqual(['incoming', 'owned']);
+  });
+
+  it('routes completed local actions and prevents duplicate pending calls', async () => {
+    let resolveOpen!: (result: ReturnType<typeof ok<void>>) => void;
+    const deferred = new Promise<ReturnType<typeof ok<void>>>((resolve) => {
+      resolveOpen = resolve;
+    });
+    (port.open as ReturnType<typeof vi.fn>).mockReturnValueOnce(deferred);
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    emit({
+      version: 1,
+      eventId: 'completed-file',
+      type: 'file.stateChanged',
+      payload: {
+        ...transfer('a@example.invalid', 'completed'),
+        state: 'completed',
+        localActions: { open: true, reveal: true },
+      },
+    });
+    const first = facade.open('completed');
+    await Promise.resolve();
+    await facade.open('completed');
+    expect(port.open).toHaveBeenCalledOnce();
+    expect(facade.isLocalActionPending('completed')).toBe(true);
+    resolveOpen(ok<void>(undefined));
+    await first;
+    expect(facade.isLocalActionPending('completed')).toBe(false);
+    await facade.reveal('completed');
+    expect(port.reveal).toHaveBeenCalledOnce();
+  });
+
+  it('maps historical opening failures to a friendly message', async () => {
+    historyPort.open = vi.fn(async () => ({
+      ok: false as const,
+      version: 1 as const,
+      error: {
+        code: 'UNAUTHORIZED' as const,
+        retryable: false,
+        requestId: 'history-error',
+        message: 'La ventana o la cuenta no están autorizadas para este archivo.',
+      },
+    }));
+    const facade = TestBed.inject(FileFacade);
+    await facade.setAccount('a@example.invalid');
+    await facade.openHistory('file-1', 'contact@example.invalid');
+    expect(facade.error()).toBe('No se pudo abrir el archivo');
+  });
+
+  it('unsubscribes from transfer events when destroyed', () => {
+    TestBed.inject(FileFacade);
+    TestBed.resetTestingModule();
+    expect(unsubscribeCalled).toBe(true);
+  });
+});

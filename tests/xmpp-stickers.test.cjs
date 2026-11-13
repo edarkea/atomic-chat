@@ -14,8 +14,8 @@ const {
   DISCO_ITEMS_NS,
   DATAFORM_NS,
   HASHES_NS,
-} = require('../electron/xmpp-stickers.cjs');
-const { XmppAdapter } = require('../electron/xmpp-adapter.cjs');
+} = require('../electron/xmpp/xmpp-stickers.cjs');
+const { XmppAdapter } = require('../electron/xmpp/xmpp-adapter.cjs');
 
 const hashValue = crypto.createHash('sha256').update('data').digest('hex');
 
@@ -45,7 +45,10 @@ test('E8.5-XMPP-001 serializes static sticker metadata, SFS source and fallback'
   const sharing = stanza.getChild('file-sharing', SFS_NS);
   assert.equal(sharing.getChild('file').getChildText('media-type'), 'image/png');
   assert.equal(sharing.getChild('file').getChild('hash', HASHES_NS).attrs.algo, 'sha-256');
-  assert.equal(sharing.getChild('sources').getChild('url-data').attrs.target, 'https://cdn.example.test/sticker.png');
+  assert.equal(
+    sharing.getChild('sources').getChild('url-data').attrs.target,
+    'https://cdn.example.test/sticker.png',
+  );
   assert.equal(stanza.getChild('fallback').attrs.for, SFS_NS);
   assert.match(stanza.toString(), /terminal &amp; sticker\.png/);
 });
@@ -62,44 +65,103 @@ test('E8.5-XMPP-002 parses static incoming stickers and rejects non-static sourc
   assert.equal(parsed.mimeType, 'image/jpeg');
   assert.equal(parsed.conversationId, 'alice@example.test');
   assert.equal(parsed.availability, 'missing');
-  const animated = xml('message', { from: 'alice@example.test/resource', id: 'client-3' },
+  const animated = xml(
+    'message',
+    { from: 'alice@example.test/resource', id: 'client-3' },
     xml('sticker', { xmlns: STICKERS_NS }),
-    xml('file-sharing', { xmlns: SFS_NS },
-      xml('file', { xmlns: 'urn:xmpp:file:metadata:0' },
-        xml('media-type', {}, 'image/gif'), xml('size', {}, '4'), xml('width', {}, '1'), xml('height', {}, '1'),
-        xml('hash', { xmlns: HASHES_NS, algo: 'sha-256' }, Buffer.from(hashValue, 'hex').toString('base64')),
+    xml(
+      'file-sharing',
+      { xmlns: SFS_NS },
+      xml(
+        'file',
+        { xmlns: 'urn:xmpp:file:metadata:0' },
+        xml('media-type', {}, 'image/gif'),
+        xml('size', {}, '4'),
+        xml('width', {}, '1'),
+        xml('height', {}, '1'),
+        xml(
+          'hash',
+          { xmlns: HASHES_NS, algo: 'sha-256' },
+          Buffer.from(hashValue, 'hex').toString('base64'),
+        ),
         xml('name', {}, 'animated.gif'),
       ),
-      xml('sources', {}, xml('url-data', { xmlns: 'http://jabber.org/protocol/url-data', target: 'https://cdn.example.test/sticker.gif' })),
+      xml(
+        'sources',
+        {},
+        xml('url-data', {
+          xmlns: 'http://jabber.org/protocol/url-data',
+          target: 'https://cdn.example.test/sticker.gif',
+        }),
+      ),
     ),
   );
-  assert.throws(() => parseStickerMessage('bob@example.test', animated), { code: 'MEDIA_TYPE_UNSUPPORTED' });
-  assert.equal(validateHttpsUrl('https://cdn.example.test/sticker.png?token=secret'), 'https://cdn.example.test/sticker.png?token=secret');
-  assert.throws(() => validateHttpsUrl('https://[::ffff:127.0.0.1]/sticker.png?token=secret'), { code: 'UNSUPPORTED' });
+  assert.throws(() => parseStickerMessage('bob@example.test', animated), {
+    code: 'MEDIA_TYPE_UNSUPPORTED',
+  });
+  assert.equal(
+    validateHttpsUrl('https://cdn.example.test/sticker.png?token=secret'),
+    'https://cdn.example.test/sticker.png?token=secret',
+  );
+  assert.throws(() => validateHttpsUrl('https://[::ffff:127.0.0.1]/sticker.png?token=secret'), {
+    code: 'UNSUPPORTED',
+  });
 });
 
 test('E8.5-XMPP-004 rejects a slot with duplicate put/get elements instead of guessing', async () => {
   const adapter = mockAdapter();
   adapter.session.iqCaller.request = async (request) => {
     adapter.requests.push(request);
-    if (request.getChild('query', DISCO_ITEMS_NS)) return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_ITEMS_NS }));
-    if (request.getChild('query', DISCO_INFO_NS)) return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: UPLOAD_NS })));
-    return xml('iq', { type: 'result' }, xml('slot', { xmlns: UPLOAD_NS },
-      xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/a' }),
-      xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/b' }),
-      xml('get', { xmlns: UPLOAD_NS, url: 'https://cdn.example.test/a' }),
-    ));
+    if (request.getChild('query', DISCO_ITEMS_NS))
+      return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_ITEMS_NS }));
+    if (request.getChild('query', DISCO_INFO_NS))
+      return xml(
+        'iq',
+        { type: 'result' },
+        xml('query', { xmlns: DISCO_INFO_NS }, xml('feature', { var: UPLOAD_NS })),
+      );
+    return xml(
+      'iq',
+      { type: 'result' },
+      xml(
+        'slot',
+        { xmlns: UPLOAD_NS },
+        xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/a' }),
+        xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/b' }),
+        xml('get', { xmlns: UPLOAD_NS, url: 'https://cdn.example.test/a' }),
+      ),
+    );
   };
-  const service = createXmppStickerService(adapter, { lookup: async () => [{ address: '203.0.113.10', family: 4 }] });
-  await assert.rejects(() => service.send(
-    { version: 1, requestId: 'r2', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm2', stickerId: 's1' },
-    async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
-  ), { code: 'UNSUPPORTED' });
+  const service = createXmppStickerService(adapter, {
+    lookup: async () => [{ address: '203.0.113.10', family: 4 }],
+  });
+  await assert.rejects(
+    () =>
+      service.send(
+        {
+          version: 1,
+          requestId: 'r2',
+          accountId: 'alice@example.test',
+          conversationId: 'bob@example.test',
+          clientMessageId: 'm2',
+          stickerId: 's1',
+        },
+        async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+      ),
+    { code: 'UNSUPPORTED' },
+  );
 });
 
 test('E8.5-XMPP-005 forwards progress callbacks through the real adapter boundary', async () => {
   const adapter = new XmppAdapter();
-  const input = { version: 1, requestId: 'r-progress', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-progress', stickerId: 's1' };
+  const input = {
+    version: 1,
+    requestId: 'r-progress',
+    accountId: 'alice@example.test',
+    conversationId: 'bob@example.test',
+    clientMessageId: 'm-progress',
+    stickerId: 's1',
+  };
   const states = [];
   adapter.stickerService = {
     send: async (value, resolveSource, onState) => {
@@ -110,15 +172,29 @@ test('E8.5-XMPP-005 forwards progress callbacks through the real adapter boundar
       return { transportStatus: 'sent' };
     },
   };
-  const result = await adapter.sendSticker(input, async () => ({}), (state) => states.push(state.transportStatus));
+  const result = await adapter.sendSticker(
+    input,
+    async () => ({}),
+    (state) => states.push(state.transportStatus),
+  );
   assert.equal(result.transportStatus, 'sent');
   assert.deepEqual(states, ['uploading', 'sending']);
 });
 
 test('E8.5-XMPP-006 keeps incoming and outgoing identities distinct for the same conversation id', () => {
-  const incoming = buildStickerMessage({ to: 'alice@example.test', clientMessageId: 'same-id', sticker: sticker(), sourceUrl: 'https://cdn.example.test/a.png' });
+  const incoming = buildStickerMessage({
+    to: 'alice@example.test',
+    clientMessageId: 'same-id',
+    sticker: sticker(),
+    sourceUrl: 'https://cdn.example.test/a.png',
+  });
   incoming.attrs.from = 'bob@example.test/resource';
-  const outgoing = buildStickerMessage({ to: 'bob@example.test', clientMessageId: 'same-id', sticker: sticker(), sourceUrl: 'https://cdn.example.test/a.png' });
+  const outgoing = buildStickerMessage({
+    to: 'bob@example.test',
+    clientMessageId: 'same-id',
+    sticker: sticker(),
+    sourceUrl: 'https://cdn.example.test/a.png',
+  });
   outgoing.attrs.from = 'alice@example.test/resource';
   const incomingRef = parseStickerMessage('alice@example.test', incoming, 'incoming');
   const outgoingRef = parseStickerMessage('alice@example.test', outgoing, 'outgoing');
@@ -133,19 +209,42 @@ function mockAdapter() {
       request: async (request) => {
         requests.push(request);
         if (request.getChild('query', DISCO_ITEMS_NS))
-          return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_ITEMS_NS }, xml('item', { jid: 'upload.example.test' })));
+          return xml(
+            'iq',
+            { type: 'result' },
+            xml('query', { xmlns: DISCO_ITEMS_NS }, xml('item', { jid: 'upload.example.test' })),
+          );
         if (request.getChild('query', DISCO_INFO_NS))
-          return xml('iq', { type: 'result' }, xml('query', { xmlns: DISCO_INFO_NS },
-            xml('feature', { var: UPLOAD_NS }),
-            xml('x', { xmlns: DATAFORM_NS }, xml('field', { var: 'max-file-size' }, xml('value', {}, '4'))),
-          ));
-        return xml('iq', { type: 'result' }, xml('slot', { xmlns: UPLOAD_NS },
-          xml('put', { xmlns: UPLOAD_NS, url: 'https://upload.example.test/put' },
-            xml('header', { name: 'Authorization' }, 'Bearer test'),
-            xml('header', { name: 'Expires' }, 'one\r\n'),
-            xml('header', { name: 'Expires' }, 'two')),
-          xml('get', { xmlns: UPLOAD_NS, url: 'https://cdn.example.test/sticker.png' }),
-        ));
+          return xml(
+            'iq',
+            { type: 'result' },
+            xml(
+              'query',
+              { xmlns: DISCO_INFO_NS },
+              xml('feature', { var: UPLOAD_NS }),
+              xml(
+                'x',
+                { xmlns: DATAFORM_NS },
+                xml('field', { var: 'max-file-size' }, xml('value', {}, '4')),
+              ),
+            ),
+          );
+        return xml(
+          'iq',
+          { type: 'result' },
+          xml(
+            'slot',
+            { xmlns: UPLOAD_NS },
+            xml(
+              'put',
+              { xmlns: UPLOAD_NS, url: 'https://upload.example.test/put' },
+              xml('header', { name: 'Authorization' }, 'Bearer test'),
+              xml('header', { name: 'Expires' }, 'one\r\n'),
+              xml('header', { name: 'Expires' }, 'two'),
+            ),
+            xml('get', { xmlns: UPLOAD_NS, url: 'https://cdn.example.test/sticker.png' }),
+          ),
+        );
       },
     },
     send: async (stanza) => sent.push(stanza),
@@ -171,24 +270,50 @@ test('E8.5-XMPP-003 discovers HTTP Upload, validates the slot and sends one mess
   const service = createXmppStickerService(adapter, {
     lookup: async () => [{ address: '203.0.113.10' }],
     readFile: async () => Buffer.from('data'),
-    put: async (_url, body, headers, options) => { putBody = { body, headers }; putOptions = options; return 201; },
+    put: async (_url, body, headers, options) => {
+      putBody = { body, headers };
+      putOptions = options;
+      return 201;
+    },
   });
-  const input = { version: 1, requestId: 'r1', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm1', stickerId: 's1' };
+  const input = {
+    version: 1,
+    requestId: 'r1',
+    accountId: 'alice@example.test',
+    conversationId: 'bob@example.test',
+    clientMessageId: 'm1',
+    stickerId: 's1',
+  };
   const capability = await service.discover(input);
   assert.equal(capability.serviceJid, 'example.test');
   assert.equal(capability.maxFileSize, 4);
   const states = [];
-  const result = await service.send(input, async () => ({ ...sticker(), path: 'private', assetId: 'a1' }), (state) => states.push(state.transportStatus));
+  const result = await service.send(
+    input,
+    async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+    (state) => states.push(state.transportStatus),
+  );
   assert.equal(result.transportStatus, 'sent');
   assert.deepEqual(states, ['uploading', 'sending', 'sent']);
   assert.equal(putBody.body.toString(), 'data');
   assert.equal(putBody.headers.Authorization, 'Bearer test');
-  assert.deepEqual(putOptions.headerEntries, [['Authorization', 'Bearer test'], ['Expires', 'one'], ['Expires', 'two']]);
+  assert.deepEqual(putOptions.headerEntries, [
+    ['Authorization', 'Bearer test'],
+    ['Expires', 'one'],
+    ['Expires', 'two'],
+  ]);
   assert.equal(adapter.sent.length, 1);
 });
 
 test('E8.5-XMPP-007 reports failed states for discovery, PUT and uncertain XMPP send errors', async () => {
-  const input = { version: 1, requestId: 'r-failure', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-failure', stickerId: 's1' };
+  const input = {
+    version: 1,
+    requestId: 'r-failure',
+    accountId: 'alice@example.test',
+    conversationId: 'bob@example.test',
+    clientMessageId: 'm-failure',
+    stickerId: 's1',
+  };
   const run = async (configure, putStatus = 201) => {
     const adapter = mockAdapter();
     configure(adapter);
@@ -198,17 +323,33 @@ test('E8.5-XMPP-007 reports failed states for discovery, PUT and uncertain XMPP 
       readFile: async () => Buffer.from('data'),
       put: async () => putStatus,
     });
-    await assert.rejects(() => service.send(input, async () => ({ ...sticker(), path: 'private', assetId: 'a1' }), (state) => states.push(state)));
+    await assert.rejects(() =>
+      service.send(
+        input,
+        async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+        (state) => states.push(state),
+      ),
+    );
     return states;
   };
   const discoveryStates = await run((adapter) => {
-    adapter.session.iqCaller.request = async () => { throw new Error('discovery failed'); };
+    adapter.session.iqCaller.request = async () => {
+      throw new Error('discovery failed');
+    };
   });
-  assert.deepEqual(discoveryStates.map((state) => state.transportStatus), ['uploading', 'failed']);
+  assert.deepEqual(
+    discoveryStates.map((state) => state.transportStatus),
+    ['uploading', 'failed'],
+  );
   const putStates = await run(() => undefined, 500);
-  assert.deepEqual(putStates.map((state) => state.transportStatus), ['uploading', 'failed']);
+  assert.deepEqual(
+    putStates.map((state) => state.transportStatus),
+    ['uploading', 'failed'],
+  );
   const sendStates = await run((adapter) => {
-    adapter.session.send = async () => { throw new Error('send uncertain'); };
+    adapter.session.send = async () => {
+      throw new Error('send uncertain');
+    };
   });
   assert.equal(sendStates.at(-1).errorCode, 'SEND_RESULT_UNKNOWN');
 });
@@ -222,14 +363,23 @@ test('E8.5-XMPP-008 preserves confirmed send when the sent-state callback fails'
     put: async () => 201,
   });
   await assert.rejects(
-    () => service.send(
-      { version: 1, requestId: 'r-confirmed', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-confirmed', stickerId: 's1' },
-      async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
-      (state) => {
-        states.push(state.transportStatus);
-        if (state.transportStatus === 'sent') throw Object.assign(new Error('event publication failed'), { code: 'STORAGE_FAILED' });
-      },
-    ),
+    () =>
+      service.send(
+        {
+          version: 1,
+          requestId: 'r-confirmed',
+          accountId: 'alice@example.test',
+          conversationId: 'bob@example.test',
+          clientMessageId: 'm-confirmed',
+          stickerId: 's1',
+        },
+        async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+        (state) => {
+          states.push(state.transportStatus);
+          if (state.transportStatus === 'sent')
+            throw Object.assign(new Error('event publication failed'), { code: 'STORAGE_FAILED' });
+        },
+      ),
     (error) => error.sendConfirmed === true && error.code === 'STORAGE_FAILED',
   );
   assert.deepEqual(states, ['uploading', 'sending', 'sent']);
@@ -239,7 +389,8 @@ test('E8.5-XMPP-008 preserves confirmed send when the sent-state callback fails'
 test('E8.5-XMPP-009 does not emit a failed transition after the session changes post-send', async () => {
   const adapter = mockAdapter();
   adapter.assertSessionCurrent = (accountId, _session, generation) => {
-    if (adapter.sessionGenerations.get(accountId) !== generation) throw Object.assign(new Error('session replaced'), { code: 'NOT_CONNECTED' });
+    if (adapter.sessionGenerations.get(accountId) !== generation)
+      throw Object.assign(new Error('session replaced'), { code: 'NOT_CONNECTED' });
   };
   adapter.session.send = async (stanza) => {
     adapter.sent.push(stanza);
@@ -252,11 +403,19 @@ test('E8.5-XMPP-009 does not emit a failed transition after the session changes 
     put: async () => 201,
   });
   await assert.rejects(
-    () => service.send(
-      { version: 1, requestId: 'r-generation', accountId: 'alice@example.test', conversationId: 'bob@example.test', clientMessageId: 'm-generation', stickerId: 's1' },
-      async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
-      (state) => states.push(state.transportStatus),
-    ),
+    () =>
+      service.send(
+        {
+          version: 1,
+          requestId: 'r-generation',
+          accountId: 'alice@example.test',
+          conversationId: 'bob@example.test',
+          clientMessageId: 'm-generation',
+          stickerId: 's1',
+        },
+        async () => ({ ...sticker(), path: 'private', assetId: 'a1' }),
+        (state) => states.push(state.transportStatus),
+      ),
     (error) => error.sendConfirmed === true && error.code === 'SEND_RESULT_UNKNOWN',
   );
   assert.deepEqual(states, ['uploading', 'sending']);

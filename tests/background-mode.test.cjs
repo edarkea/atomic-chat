@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
-const { createBackgroundMode, badgeImage } = require('../electron/background-mode.cjs');
+const { createBackgroundMode, badgeImage } = require('../electron/platform/background-mode.cjs');
 
 function setup({ closeToTray = true, trayFails = false } = {}) {
   const windows = [];
@@ -16,7 +16,7 @@ function setup({ closeToTray = true, trayFails = false } = {}) {
       this.destroyed = false;
       this.webContents = new EventEmitter();
       this.webContents.mainFrame = {
-        url: pathToFileURL(path.resolve('electron/tray-menu.html')).href,
+        url: pathToFileURL(path.resolve('electron/tray/tray-menu.html')).href,
       };
       this.webContents.send = () => {};
       this.webContents.setWindowOpenHandler = (handler) => {
@@ -167,7 +167,7 @@ test('preference changes create/destroy tray and themed menu securely', async ()
   service.syncPreferences();
   const { menu, event } = openMenu();
   assert.deepEqual(menu.options.webPreferences, {
-    preload: path.resolve('electron/tray-preload.cjs'),
+    preload: path.resolve('electron/tray/tray-preload.cjs'),
     sandbox: true,
     contextIsolation: true,
     nodeIntegration: false,

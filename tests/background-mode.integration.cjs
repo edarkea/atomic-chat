@@ -3,8 +3,8 @@ const { app, BrowserWindow, ipcMain, nativeImage, screen } = require('electron')
 const { EventEmitter } = require('node:events');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { createBackgroundMode } = require('../electron/background-mode.cjs');
-const { createMainWindow } = require('../electron/main-window.cjs');
+const { createBackgroundMode } = require('../electron/platform/background-mode.cjs');
+const { createMainWindow } = require('../electron/platform/main-window.cjs');
 
 const windows = [];
 class HiddenWindow extends BrowserWindow {
@@ -43,7 +43,7 @@ app
     const cleanedSenders = [];
     const main = createMainWindow({
       BrowserWindow: HiddenWindow,
-      preloadPath: path.resolve('electron/tray-preload.cjs'),
+      preloadPath: path.resolve('electron/tray/tray-preload.cjs'),
       devServerUrl: 'about:blank',
       onDestroyed: (senderId) => cleanedSenders.push(senderId),
     });

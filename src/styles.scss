@@ -263,13 +263,27 @@ select:focus-visible {
   overflow-wrap: anywhere;
 }
 .message.group-middle,
-.message.group-last { margin-top: 2px; }
-.message.group-first.incoming { border-bottom-left-radius: 5px; }
-.message.group-middle.incoming { border-radius: 5px; }
-.message.group-last.incoming { border-top-left-radius: 5px; }
-.message.group-first.outgoing { border-bottom-right-radius: 5px; }
-.message.group-middle.outgoing { border-radius: 5px; }
-.message.group-last.outgoing { border-top-right-radius: 5px; }
+.message.group-last {
+  margin-top: 2px;
+}
+.message.group-first.incoming {
+  border-bottom-left-radius: 5px;
+}
+.message.group-middle.incoming {
+  border-radius: 5px;
+}
+.message.group-last.incoming {
+  border-top-left-radius: 5px;
+}
+.message.group-first.outgoing {
+  border-bottom-right-radius: 5px;
+}
+.message.group-middle.outgoing {
+  border-radius: 5px;
+}
+.message.group-last.outgoing {
+  border-top-right-radius: 5px;
+}
 .message small {
   color: var(--atomic-green-soft);
   font-size: 12px;

@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld(
       connect: (input) => invoke('account.connect', input),
       disconnect: (accountId) => invoke('account.disconnect', accountId),
       forgetSecret: (input) => invoke('account.forgetSecret', input),
+      recoverSecretStorage: (input) => invoke('account.recoverSecretStorage', input),
+      resetSecretStorage: (input) => invoke('account.resetSecretStorage', input),
     }),
     connectionProfiles: Object.freeze({
       list: (input) => invoke('connectionProfiles.list', input),
@@ -101,7 +103,11 @@ contextBridge.exposeInMainWorld(
         };
         if (!input?.file || typeof input.file.arrayBuffer !== 'function')
           return invoke('file.sendClipboard', { ...base, bytes: new Uint8Array() });
-        if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > MAX_CLIPBOARD_FILE_BYTES)
+        if (
+          !Number.isSafeInteger(sizeBytes) ||
+          sizeBytes < 0 ||
+          sizeBytes > MAX_CLIPBOARD_FILE_BYTES
+        )
           return invoke('file.sendClipboard', { ...base, bytes: new Uint8Array() });
         const bytes = new Uint8Array(await input.file.arrayBuffer());
         return invoke('file.sendClipboard', { ...base, bytes });

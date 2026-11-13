@@ -1,5 +1,5 @@
 // This fixture is compiled by tsconfig.electron-checkjs.json and is not executed.
-const { transferView } = require('../../electron/file-transfer-utils.cjs');
+const { transferView } = require('../../electron/files/file-transfer-utils.cjs');
 
 /** @type {never} */
 const unavailableRecord = /** @type {never} */ ({});

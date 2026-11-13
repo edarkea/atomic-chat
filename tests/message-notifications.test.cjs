@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createMessageNotifications } = require('../electron/message-notifications.cjs');
+const { createMessageNotifications } = require('../electron/platform/message-notifications.cjs');
 
 const accountId = 'me@example.com';
 const senderJid = 'carlos@example.com';
@@ -81,11 +81,19 @@ function createHarness({
 
 test('background badge receives deduplicated messages even with OS notifications disabled', () => {
   let received = 0;
-  const { notificationHandler, shown } = createHarness({ notifications: false, onIncomingMessage: () => { received++; } });
+  const { notificationHandler, shown } = createHarness({
+    notifications: false,
+    onIncomingMessage: () => {
+      received++;
+    },
+  });
   const event = { type: 'message.received', payload: directMessage() };
   notificationHandler.handle(event);
   notificationHandler.handle(event);
-  notificationHandler.handle({ type: 'message.received', payload: directMessage({ senderJid: accountId }) });
+  notificationHandler.handle({
+    type: 'message.received',
+    payload: directMessage({ senderJid: accountId }),
+  });
   assert.equal(received, 1);
   assert.equal(shown.length, 0);
 });

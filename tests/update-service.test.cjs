@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { createUpdateService } = require('../electron/update-service.cjs');
+const { createUpdateService } = require('../electron/platform/update-service.cjs');
 
 function fakeUpdater() {
   const updater = new EventEmitter();
@@ -52,7 +52,10 @@ test('updater exposes available and downloaded states without auto-download', as
   assert.equal(wasInstalled(), false);
   assert.equal(service.getStatus({ version: 1, requestId: 'retained' }).state, 'downloaded');
   await service.check({ version: 1, requestId: 'periodic' });
-  assert.equal(service.getStatus({ version: 1, requestId: 'retained-after-check' }).state, 'downloaded');
+  assert.equal(
+    service.getStatus({ version: 1, requestId: 'retained-after-check' }).state,
+    'downloaded',
+  );
   service.stop();
 });
 

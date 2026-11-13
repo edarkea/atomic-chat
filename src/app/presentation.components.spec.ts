@@ -8,19 +8,22 @@ import {
   RoomRef,
   RoomState,
 } from './core/domain';
-import { CertificateDialogComponent } from './certificate-dialog.component';
-import { ConnectionSettingsDialogComponent } from './connection-settings-dialog.component';
-import { ConversationTimelineItem, ConversationViewComponent } from './conversation-view.component';
-import { FileTransferCardComponent } from './file-transfer-card.component';
-import { LoginPanelComponent } from './login-panel.component';
-import { MessageComposerComponent } from './message-composer.component';
-import { MessageItemComponent } from './message-item.component';
-import { MucViewComponent } from './muc-view.component';
-import { OperatorPresenceComponent } from './operator-presence.component';
-import { PreferencesDialogComponent } from './preferences-dialog.component';
-import { SidebarComponent } from './sidebar.component';
+import { CertificateDialogComponent } from './features/session/certificate-dialog.component';
+import { ConnectionSettingsDialogComponent } from './features/settings/connection-settings-dialog.component';
+import {
+  ConversationTimelineItem,
+  ConversationViewComponent,
+} from './features/conversation/conversation-view.component';
+import { FileTransferCardComponent } from './features/conversation/file-transfer-card.component';
+import { LoginPanelComponent } from './features/session/login-panel.component';
+import { MessageComposerComponent } from './features/conversation/message-composer.component';
+import { MessageItemComponent } from './features/conversation/message-item.component';
+import { MucViewComponent } from './features/muc/muc-view.component';
+import { OperatorPresenceComponent } from './features/navigation/operator-presence.component';
+import { PreferencesDialogComponent } from './features/settings/preferences-dialog.component';
+import { SidebarComponent } from './features/navigation/sidebar.component';
 import { PREFERENCES_PORT } from './core/ports';
-import { PresenceOption } from './sidebar.models';
+import { PresenceOption } from './features/navigation/sidebar.models';
 
 const room: RoomRef = {
   service: 'conference.example.invalid',
@@ -302,6 +305,7 @@ describe('extracted Angular presentation components', () => {
     fixture.componentRef.setInput('historyLoading', false);
     fixture.componentRef.setInput('hasOlderMessages', false);
     fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.componentRef.setInput('initialTimelineReady', true);
     const closed = vi.fn();
     const dropped = vi.fn();
     const rejected = vi.fn();
@@ -312,7 +316,7 @@ describe('extracted Angular presentation components', () => {
     expect(fixture.nativeElement.querySelector('.message-sender')?.textContent).toContain(
       'Contacto',
     );
-    expect(fixture.nativeElement.querySelector('input[name="message"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('textarea[name="message"]')).toBeTruthy();
     (fixture.nativeElement.querySelector('.conversation-close') as HTMLButtonElement).click();
     expect(closed).toHaveBeenCalledOnce();
     const dataTransfer = {
@@ -413,7 +417,9 @@ describe('extracted Angular presentation components', () => {
     fixture.componentInstance.cancelled.subscribe(cancelled);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('.file-actions button')).toHaveLength(2);
-    expect(fixture.nativeElement.querySelector('button:not(.file-actions button)')).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement).disabled,
+    ).toBe(true);
     (fixture.nativeElement.querySelector('.file-actions button') as HTMLButtonElement).click();
     (
       fixture.nativeElement.querySelectorAll('.file-actions button')[1] as HTMLButtonElement
@@ -452,18 +458,32 @@ describe('extracted Angular presentation components', () => {
     fixture.componentInstance.opened.subscribe(opened);
     fixture.componentInstance.revealed.subscribe(revealed);
     fixture.detectChanges();
-    const buttons = fixture.nativeElement.querySelectorAll('.file-actions button');
-    expect(buttons).toHaveLength(2);
-    (buttons[0] as HTMLButtonElement).click();
-    (buttons[1] as HTMLButtonElement).click();
+    // Completed transfers use the accessible file heading, not old .file-actions controls.
+    expect(fixture.nativeElement.querySelectorAll('.file-actions button')).toHaveLength(0);
+    const heading = fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement;
+    expect(heading.disabled).toBe(false);
+    heading.click();
     expect(opened).toHaveBeenCalledWith('file-completed');
-    expect(revealed).toHaveBeenCalledWith('file-completed');
+    expect(revealed).not.toHaveBeenCalled();
+
+    // Outgoing completed files may also be opened. Failed files must not be opened.
     fixture.componentRef.setInput('transfer', {
       ...completedTransfer,
       direction: 'outgoing',
     });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelectorAll('.file-actions button')).toHaveLength(0);
+    expect(
+      (fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement).disabled,
+    ).toBe(false);
+    fixture.componentRef.setInput('transfer', {
+      ...completedTransfer,
+      state: 'failed',
+      localActions: { open: false, reveal: false },
+    });
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement.querySelector('.file-heading') as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it('reuses the composer for attachable direct chat and text-only MUC input', async () => {
@@ -482,7 +502,7 @@ describe('extracted Angular presentation components', () => {
     fixture.componentInstance.messageSubmitted.subscribe(submitted);
     fixture.componentInstance.attach.subscribe(attached);
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('input[name="message"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('textarea[name="message"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.composer-icon')).toBeTruthy();
     (fixture.nativeElement.querySelector('.composer-icon') as HTMLButtonElement).click();
     (fixture.nativeElement.querySelector('form') as HTMLFormElement).dispatchEvent(
@@ -494,7 +514,7 @@ describe('extracted Angular presentation components', () => {
     fixture.componentRef.setInput('showAttach', false);
     fixture.componentRef.setInput('showEmoji', false);
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('input[name="muc-message"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('textarea[name="muc-message"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.composer-icon')).toBeNull();
   });
 
@@ -669,6 +689,9 @@ describe('extracted Angular presentation components', () => {
       saveState: 'idle',
       downloadDirectorySelecting: false,
       error: null,
+      updateStatus: { version: 1, state: 'idle', currentVersion: '0.0.5' },
+      updateBusy: false,
+      updateError: null,
     });
     fixture.detectChanges();
 

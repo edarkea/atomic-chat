@@ -1,0 +1,182 @@
+<main class="login-window">
+  <div class="login-brand">
+    <svg
+      class="ac-icon ac-icon-brand login-logo"
+      role="img"
+      aria-label="Logo de Atomic Chat"
+      focusable="false"
+    >
+      <use href="#ac-brand" />
+    </svg>
+    <strong>ATOMIC CHAT</strong>
+  </div>
+  <div class="login-symbol" aria-hidden="true">
+    <svg class="ac-icon ac-icon--24" aria-hidden="true" focusable="false">
+      <use href="#ac-login" />
+    </svg>
+  </div>
+  <p class="eyebrow">CONEXIÓN XMPP</p>
+  <h1>Iniciar sesión</h1>
+  <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
+  <form class="login-form" (ngSubmit)="submitted.emit()">
+    <label for="login-account">Usuario XMPP</label>
+    <div #profilePicker class="account-picker" (focusout)="onProfileFocusOut($event)">
+      <div class="account-input-row">
+        <input
+          #accountInput
+          id="login-account"
+          name="account"
+          [ngModel]="accountId()"
+          (ngModelChange)="accountIdChange.emit($event)"
+          autocomplete="username"
+          placeholder="usuario o usuario@dominio"
+          role="combobox"
+          aria-controls="login-profile-options"
+          [attr.aria-expanded]="profileMenuOpen()"
+          [attr.aria-autocomplete]="'list'"
+        />
+        <button
+          #profileTrigger
+          type="button"
+          class="profile-trigger"
+          [disabled]="!profiles().length"
+          aria-label="Seleccionar cuenta guardada"
+          aria-haspopup="listbox"
+          aria-controls="login-profile-options"
+          [attr.aria-expanded]="profileMenuOpen()"
+          (click)="toggleProfileMenu()"
+          (keydown)="onProfileTriggerKeydown($event)"
+        >
+          <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+            <use href="#ac-expand" />
+          </svg>
+        </button>
+      </div>
+      @if (profileMenuOpen()) {
+        <div
+          id="login-profile-options"
+          class="profile-options"
+          role="listbox"
+          aria-label="Cuentas guardadas"
+        >
+          <button
+            #profileOption
+            type="button"
+            role="option"
+            [attr.aria-selected]="!selectedProfileId()"
+            (click)="selectProfile('')"
+            (keydown)="onProfileOptionKeydown($event, 0)"
+          >
+            Nueva cuenta
+          </button>
+          @for (profile of profiles(); track profile.accountId; let index = $index) {
+            <button
+              #profileOption
+              type="button"
+              role="option"
+              [attr.aria-selected]="selectedProfileId() === profile.accountId"
+              (click)="selectProfile(profile.accountId)"
+              (keydown)="onProfileOptionKeydown($event, index + 1)"
+            >
+              {{ profile.accountId }}
+            </button>
+          }
+        </div>
+      }
+    </div>
+    <label
+      >Dominio XMPP<input
+        name="domain"
+        [ngModel]="domain()"
+        (ngModelChange)="domainChange.emit($event)"
+        autocomplete="organization"
+        placeholder="empresa.com"
+        [attr.aria-invalid]="!domain() && !accountId().includes('@') ? 'true' : null"
+    /></label>
+    <label
+      >Contraseña<input
+        name="password"
+        type="password"
+        [ngModel]="password()"
+        (ngModelChange)="passwordChange.emit($event)"
+        autocomplete="current-password"
+        placeholder="••••••••"
+    /></label>
+    <label class="check-row"
+      ><input
+        type="checkbox"
+        name="remember"
+        [ngModel]="remember()"
+        (ngModelChange)="rememberChange.emit($event)"
+      />
+      Recordar contraseña</label
+    >
+    <label class="check-row"
+      ><input
+        type="checkbox"
+        name="autoLogin"
+        [ngModel]="autoLogin()"
+        [disabled]="!remember()"
+        (ngModelChange)="autoLoginChange.emit($event)"
+      />
+      Iniciar sesión automáticamente</label
+    >
+    <button
+      #advancedButton
+      type="button"
+      class="advanced-settings-button"
+      (click)="advancedSettings.emit()"
+    >
+      Configuración avanzada
+    </button>
+    @if (selectedProfileId()) {
+      <div class="profile-actions">
+        <button type="button" [disabled]="profileActionBusy()" (click)="forgetSecret.emit()">
+          {{ profileActionBusy() ? 'Procesando…' : 'Olvidar contraseña' }}
+        </button>
+        <button type="button" [disabled]="profileActionBusy()" (click)="deleteProfile.emit()">
+          Eliminar perfil
+        </button>
+      </div>
+      @if (credentialStorageStatus() === 'recovery_available') {
+        <p class="login-error" role="status">Se encontró una copia segura de las credenciales.</p>
+        <button
+          type="button"
+          [disabled]="profileActionBusy()"
+          (click)="recoverSecretStorage.emit()"
+        >
+          Restaurar credenciales guardadas
+        </button>
+      } @else if (credentialStorageStatus() === 'corrupt') {
+        <p class="login-error" role="alert">
+          El almacenamiento de credenciales necesita reiniciarse. Los perfiles y mensajes no se
+          borrarán.
+        </p>
+        <button type="button" [disabled]="profileActionBusy()" (click)="resetSecretStorage.emit()">
+          Reiniciar almacenamiento seguro
+        </button>
+      } @else if (credentialStorageStatus() === 'unavailable') {
+        <p class="login-error" role="alert">
+          El sistema seguro de credenciales no está disponible en este perfil del sistema.
+        </p>
+      }
+    }
+    @if (error()) {
+      <p class="login-error" role="alert">{{ error() }}</p>
+    }
+    <button class="primary login-button" type="submit" [disabled]="!canSubmit()">
+      {{ busy() ? 'Conectando…' : 'Entrar' }}
+    </button>
+  </form>
+  <app-version-update
+    [status]="updateStatus()"
+    [busy]="updateBusy()"
+    [error]="updateError()"
+    (download)="downloadUpdate.emit()"
+    (install)="installUpdate.emit()"
+    (check)="checkForUpdates.emit()"
+  />
+  <small class="login-footnote"
+    >Servidor XMPP configurado · conexión protegida por la política del entorno</small
+  >
+</main>
