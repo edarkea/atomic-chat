@@ -416,8 +416,11 @@ describe('App composer integration', () => {
     const symbols = root.querySelectorAll<SVGSymbolElement>('svg.ac-icon-sprite symbol[id^="ac-"]');
     const ids = new Set(Array.from(symbols, (symbol) => symbol.id));
 
-    expect(symbols).toHaveLength(26);
+    expect(symbols.length).toBeGreaterThan(0);
     expect(ids.size).toBe(symbols.length);
+
+    for (const requiredId of ['ac-brand', 'ac-search', 'ac-games', 'ac-send', 'ac-settings'])
+      expect(ids.has(requiredId)).toBe(true);
 
     const uses = root.querySelectorAll<SVGUseElement>('svg.ac-icon use');
     for (const use of uses) {

@@ -276,7 +276,7 @@ test('v3 message tables migrate through the current schema and remain idempotent
     INSERT INTO messages VALUES ('m2','two@example.invalid','c','old-two','x@example.invalid','{"kind":"text","text":"two"}','sent','2026-01-02');`);
   legacy.close();
   let store = new PersistenceStore(directory);
-  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 15);
+  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 16);
   assert.ok(
     store.database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'media_assets'")
@@ -325,7 +325,7 @@ test('v3 message tables migrate through the current schema and remain idempotent
   );
   store.close();
   store = new PersistenceStore(directory);
-  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 15);
+  assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 16);
   assert.equal(store.listMessages('one@example.invalid', 'c')[0].body.text, 'one');
   assert.equal(store.listMessages('two@example.invalid', 'c')[0].body.text, 'two');
   assert.ok(

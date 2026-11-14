@@ -1,0 +1,217 @@
+<section class="games-panel" aria-label="Juegos">
+  @if (!matchOnly() && menuOpen()) {
+    <div id="games-panel-content" class="games-menu" aria-label="Catálogo de juegos oficiales">
+      <p class="games-menu__title">Juegos oficiales</p>
+      <div class="games-catalog">
+        @for (game of catalog(); track game.gameId) {
+          <button
+            type="button"
+            class="games-catalog__item"
+            (click)="inviteRequested.emit({ gameId: game.gameId, gameVersion: game.version })"
+          >
+            <span class="games-catalog__mark" aria-hidden="true">{{
+              game.gameId.endsWith('reversi') ? '◉' : '×'
+            }}</span>
+            <span>
+              <strong>{{ game.displayName }}</strong>
+              <small>Invitar a jugar</small>
+            </span>
+          </button>
+        } @empty {
+          <p class="games-panel__muted">Catálogo oficial no disponible.</p>
+        }
+      </div>
+    </div>
+  }
+
+  @if (!menuOnly() && error()) {
+    <p class="games-panel__error" role="alert">{{ error() }}</p>
+  }
+
+  @if (!menuOnly() && currentSession(); as session) {
+    <article
+      class="games-match"
+      [class.games-match--outgoing]="session.localRole === 'initiator'"
+      [class.games-match--incoming]="session.localRole === 'responder'"
+      aria-live="polite"
+    >
+      <div class="games-match__bubble">
+        <header class="games-match__header">
+          <div>
+            <p class="games-panel__eyebrow">
+              {{ currentGameName() }}
+            </p>
+            <h3>{{ statusLabel(session) }}</h3>
+          </div>
+          <span class="games-match__revision">REV {{ session.revision }}</span>
+        </header>
+        @if (session.state === 'invited' && session.localRole === 'initiator') {
+          <p class="games-message">Esperando que acepte la invitación…</p>
+        } @else if (session.state === 'invited') {
+          <p class="games-message">Te han invitado a jugar {{ currentGameName() }}.</p>
+        } @else if (session.state === 'rejected') {
+          <p class="games-message">La invitación fue rechazada.</p>
+        } @else if (session.state === 'cancelled' || session.state === 'expired') {
+          <p class="games-message">La invitación ya no está disponible.</p>
+        } @else if (session.state === 'closed') {
+          <p class="games-message">El juego ha finalizado.</p>
+        }
+
+        @if (session.state === 'invited' && session.localRole === 'responder') {
+          <div class="games-action-row">
+            <button
+              type="button"
+              class="primary"
+              [disabled]="isPending(session, 'accept')"
+              (click)="acceptRequested.emit(session)"
+            >
+              Aceptar
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              [disabled]="isPending(session, 'reject')"
+              (click)="rejectRequested.emit(session)"
+            >
+              Rechazar
+            </button>
+          </div>
+        } @else if (session.state === 'invited') {
+          <div class="games-action-row">
+            <button
+              type="button"
+              class="secondary"
+              [disabled]="isPending(session, 'cancel')"
+              (click)="cancelRequested.emit(session)"
+            >
+              Cancelar invitación
+            </button>
+          </div>
+        } @else if (session.state === 'accepted') {
+          <p class="games-message">Preparando el tablero…</p>
+        }
+
+        @if (session.state === 'paused' || session.state === 'resync-required') {
+          <div class="games-warning" role="status">
+            <strong>{{
+              session.state === 'paused' ? 'Conexión pausada' : 'Divergencia detectada'
+            }}</strong>
+            <span>No se aceptan movimientos hasta confirmar la sincronización.</span>
+            <button
+              type="button"
+              class="secondary"
+              [disabled]="isPending(session, 'resync')"
+              (click)="resyncRequested.emit(session)"
+            >
+              Solicitar estado
+            </button>
+          </div>
+        }
+
+        @if (isBoardVisible(session)) {
+          @if (tttState(); as state) {
+            <div class="ttt-board" role="grid" aria-label="Tablero Tic Tac Toe">
+              @for (cell of state.board; track $index) {
+                <button
+                  type="button"
+                  role="gridcell"
+                  class="ttt-cell"
+                  [class.ttt-cell--initiator]="cell === 'initiator'"
+                  [class.ttt-cell--responder]="cell === 'responder'"
+                  [disabled]="!localCanMove() || cell !== 'empty'"
+                  [attr.aria-label]="cellLabel($index, cell, 3)"
+                  (click)="requestTicTacToeMove($index)"
+                >
+                  {{ cell === 'initiator' ? 'X' : cell === 'responder' ? 'O' : '' }}
+                </button>
+              }
+            </div>
+          }
+
+          @if (reversiState(); as state) {
+            <div class="reversi-score" aria-label="Marcador Reversi">
+              <span>INICIADOR {{ reversiCounts().initiator }}</span>
+              <span>RESPONDER {{ reversiCounts().responder }}</span>
+            </div>
+            <div
+              class="reversi-board"
+              role="grid"
+              aria-label="Tablero Reversi"
+              aria-rowcount="8"
+              aria-colcount="8"
+            >
+              @for (cell of state.board; track $index) {
+                <button
+                  type="button"
+                  role="gridcell"
+                  class="reversi-cell"
+                  [attr.data-reversi-index]="$index"
+                  [class.reversi-cell--initiator]="cell === 'initiator'"
+                  [class.reversi-cell--responder]="cell === 'responder'"
+                  [class.reversi-cell--legal]="
+                    localCanMove() && currentSnapshot()?.legalMoves?.includes($index)
+                  "
+                  [disabled]="!localCanMove()"
+                  [attr.aria-disabled]="cell !== 'empty'"
+                  [attr.aria-label]="cellLabel($index, cell, 8)"
+                  [attr.aria-rowindex]="boardRow($index, 8)"
+                  [attr.aria-colindex]="boardColumn($index, 8)"
+                  [attr.tabindex]="reversiTabIndex($index)"
+                  (keydown)="handleReversiKeydown($event, $index)"
+                  (click)="requestReversiMove($index)"
+                >
+                  <span aria-hidden="true"></span>
+                </button>
+              }
+            </div>
+            @if (localCanMove() && passAllowed()) {
+              <button type="button" class="secondary games-pass" (click)="requestReversiPass()">
+                Pasar turno (obligatorio)
+              </button>
+            }
+          }
+        }
+        @if (resultLabel(); as result) {
+          <p class="games-result" role="status">{{ result }}</p>
+        }
+
+        @if (session.state === 'finished') {
+          <div class="games-action-row">
+            <button
+              type="button"
+              class="secondary games-close"
+              [disabled]="isPending(session, 'close')"
+              (click)="closeRequested.emit(session)"
+            >
+              Finalizar juego
+            </button>
+            <button
+              type="button"
+              class="secondary games-rematch"
+              [disabled]="isPending(session, 'rematch')"
+              (click)="rematchRequested.emit(session)"
+            >
+              Solicitar revancha
+            </button>
+          </div>
+        }
+
+        @if (session.state === 'active') {
+          <p class="games-turn">
+            {{ localCanMove() ? 'TU TURNO' : 'TURNO DEL CONTACTO' }} · estado confirmado
+          </p>
+          <div class="games-action-row">
+            <button
+              type="button"
+              class="secondary"
+              [disabled]="isPending(session, 'resign')"
+              (click)="resignRequested.emit(session)"
+            >
+              Abandonar
+            </button>
+          </div>
+        }
+      </div>
+    </article>
+  }
+</section>

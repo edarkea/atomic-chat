@@ -36,3 +36,20 @@ This is the concise maintenance checklist for business rules. When a change modi
 - Unknown or malformed domain events are rejected at the subscription boundary.
 - SQLite migrations preserve account isolation, historical data and idempotency.
 - Secret recovery is explicit and does not silently overwrite corrupt evidence or unrelated chat data.
+
+## Games
+
+- A game snapshot shown by Renderer is confirmed by Main and scoped by account,
+  conversation and session; Renderer never decides legal moves or winners.
+- Reversi pass is accepted only when Main-derived `passAllowed` is true; a legal move
+  takes precedence over pass.
+- Terminal sessions do not accept moves; a rematch creates a new session and is allowed
+  only from `finished` or `abandoned`.
+- A finished session may be explicitly closed by either participant; that `closed` state
+  is propagated to both direct chats and remains a terminal presentation state.
+- Duplicate accepted game events are idempotent across a persistence restart, and two
+  sessions with the same peer keep independent revisions and snapshots.
+- Live game admission and transport caches are bounded per account/session; terminal
+  history is retained explicitly rather than compacted implicitly.
+- A divergent remote snapshot never replaces the confirmed local snapshot; Main marks
+  the session `resync-required` until a protocol-safe recovery is available.

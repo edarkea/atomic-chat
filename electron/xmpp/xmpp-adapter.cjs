@@ -5,6 +5,7 @@ const { createXmppCarbons } = require('./xmpp-carbons.cjs');
 const { createMucService } = require('./xmpp-muc.cjs');
 const { createFileService } = require('./xmpp-file.cjs');
 const { createXmppStickerService } = require('./xmpp-stickers.cjs');
+const { createXmppGames } = require('./xmpp-games.cjs');
 const xmppClient = require('@xmpp/client');
 const { REACTIONS_NS, REPLY_NS, FALLBACK_NS, SID_NS } = require('./xmpp-message-features.cjs');
 
@@ -67,6 +68,7 @@ class XmppAdapter {
    * @param {StickerStorageProvider | null} [stickerStorageProvider]
    * @param {{alternativeAvailable?: boolean} | null} [stickerStorageConfiguration]
    * @param {boolean} [requireMucPolicy]
+   * @param {{manager?: object, registry?: object} | null} [gameRuntime]
    */
   constructor(
     packaged = false,
@@ -77,6 +79,7 @@ class XmppAdapter {
     stickerStorageProvider = null,
     stickerStorageConfiguration = null,
     requireMucPolicy = false,
+    gameRuntime = null,
   ) {
     this.packaged = packaged;
     this.requireMucPolicy = requireMucPolicy;
@@ -121,6 +124,10 @@ class XmppAdapter {
       storageProvider: stickerStorageProvider || undefined,
       storageConfiguration: stickerStorageConfiguration || undefined,
     });
+    this.games = createXmppGames(
+      this,
+      /** @type {Parameters<typeof createXmppGames>[1]} */ (gameRuntime || {}),
+    );
     if (this.fileTransfers)
       this.fileTransfers.onEvent((event) => {
         if (!event.type.endsWith('stateChanged')) return;
@@ -156,6 +163,7 @@ class XmppAdapter {
   }
   /** @param {string} accountId */
   disconnect(accountId) {
+    this.games.handleConnectionEvent(accountId, 'offline');
     return this.sessionService.disconnect(accountId);
   }
   /** @param {string} accountId @param {string} status @param {boolean} retryable @param {string} [reason] */
@@ -164,12 +172,62 @@ class XmppAdapter {
   }
   /** @param {string} accountId @param {unknown} session @param {string} event @param {string} [reason] */
   handleSessionEvent(accountId, session, event, reason) {
-    return this.sessionService.handleSessionEvent(
+    if (event === 'offline' || event === 'error')
+      this.games.handleConnectionEvent(accountId, event);
+    const handled = this.sessionService.handleSessionEvent(
       accountId,
       /** @type {XmppSession} */ (session),
       /** @type {'error' | 'offline' | 'online'} */ (event),
       reason,
     );
+    if (handled && event === 'online') this.games.handleConnectionEvent(accountId, 'online');
+    return handled;
+  }
+
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameInvite(accountId, sessionId, correlationId) {
+    return this.games.sendInvite(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameAccept(accountId, sessionId, correlationId) {
+    return this.games.sendAccept(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameReject(accountId, sessionId, correlationId) {
+    return this.games.sendReject(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameCancel(accountId, sessionId, correlationId) {
+    return this.games.sendCancel(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameStart(accountId, sessionId, correlationId) {
+    return this.games.sendStart(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameResign(accountId, sessionId, correlationId) {
+    return this.games.sendResign(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameClose(accountId, sessionId, correlationId) {
+    return this.games.sendClose(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameRematch(accountId, sessionId, correlationId) {
+    return this.games.sendRematch(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId @param {{sessionId: string, actor: 'initiator' | 'responder', move: unknown, eventId?: string, actorSeq?: number, correlationId?: string}} input */
+  sendGameMove(accountId, input) {
+    return this.games.sendMove(accountId, input);
+  }
+  /** @param {string} accountId @param {string} sessionId @param {string | undefined} [correlationId] */
+  sendGameStateRequest(accountId, sessionId, correlationId) {
+    return this.games.sendStateRequest(accountId, sessionId, correlationId);
+  }
+  /** @param {string} accountId */
+  disposeGames(accountId) {
+    if (accountId) this.games.clear(accountId);
+    else this.games.dispose();
   }
   /** @param {string} accountId @returns {XmppSession} */
   require(accountId) {
@@ -647,6 +705,7 @@ class XmppAdapter {
       (this.sessions.get(accountId)?.iqCallee && this.isFileIq(typedStanza))
     )
       return;
+    if (typedStanza.is('message') && this.games.handleMessage(accountId, typedStanza)) return;
     if (this.handleMucStanza(accountId, typedStanza)) return;
     if (this.handleFileStanza(accountId, typedStanza)) return;
     if (typedStanza.is('message') && this.handleFileCancellationMessage(accountId, typedStanza))

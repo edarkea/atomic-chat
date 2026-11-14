@@ -4,6 +4,16 @@ import {
   AttentionRequest,
   BroadcastSendInput,
   BroadcastSendResult,
+  GameActionReceipt,
+  GameCatalogRequest,
+  GameConversationRequest,
+  GameInviteRequest,
+  GameMoveRequest,
+  GameSessionDto,
+  GameSessionRequest,
+  GameSnapshotDto,
+  GameSubscriptionRequest,
+  OfficialGameCatalog,
   ChatStateInput,
   ConnectInput,
   ConnectionState,
@@ -143,6 +153,22 @@ export interface AtomicChatApi {
     clear(input: AttentionClearRequest): Promise<Result<void>>;
   };
   broadcast: { send(input: BroadcastSendInput): Promise<Result<BroadcastSendResult>> };
+  games: {
+    catalog(input: GameCatalogRequest): Promise<Result<OfficialGameCatalog>>;
+    sessions(input: GameConversationRequest): Promise<Result<ReadonlyArray<GameSessionDto>>>;
+    snapshot(input: GameSessionRequest): Promise<Result<GameSnapshotDto>>;
+    invite(input: GameInviteRequest): Promise<Result<GameActionReceipt>>;
+    accept(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    reject(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    cancel(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    start(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    move(input: GameMoveRequest): Promise<Result<GameActionReceipt>>;
+    resign(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    resync(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    rematch(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    close(input: GameSessionRequest): Promise<Result<GameActionReceipt>>;
+    subscribe(input: GameSubscriptionRequest, listener: (event: unknown) => void): () => void;
+  };
   session: { getState(accountId: string): Promise<Result<ConnectionState>> };
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };

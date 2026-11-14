@@ -6,15 +6,7 @@
   (drop)="onDrop($event)"
 >
   <header class="chat-header">
-    <button
-      class="conversation-profile"
-      type="button"
-      aria-label="Buscar en mensajes"
-      [attr.title]="profileTooltip()"
-      [attr.aria-expanded]="searchOpen()"
-      [disabled]="!isSelected()"
-      (click)="toggleSearch()"
-    >
+    <div class="conversation-profile">
       <span class="avatar header-avatar" aria-hidden="true"
         ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
           <use href="#ac-contact" /></svg
@@ -25,21 +17,42 @@
         }}</strong>
         <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
       </span>
-    </button>
-    <button
-      class="conversation-close"
-      type="button"
-      aria-label="Cerrar conversación"
-      title="Cerrar conversación"
-      (click)="closeRequested.emit()"
-    >
-      <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
-        <use href="#ac-close" />
-      </svg>
-    </button>
+    </div>
+    <div class="conversation-actions" aria-label="Acciones de conversación">
+      <button
+        class="conversation-action"
+        type="button"
+        aria-label="Buscar en conversación"
+        title="Buscar en conversación"
+        [attr.aria-expanded]="searchOpen()"
+        aria-controls="conversation-message-search"
+        [disabled]="!isSelected()"
+        (click)="toggleSearch()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-search" />
+        </svg>
+      </button>
+      <button
+        class="conversation-action"
+        [class.conversation-action--active]="gamesOpen()"
+        type="button"
+        aria-label="Juegos"
+        title="Juegos"
+        [attr.aria-expanded]="gamesOpen()"
+        aria-controls="games-panel-content"
+        [disabled]="!isSelected()"
+        (click)="gamesToggleRequested.emit()"
+      >
+        <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-games" />
+        </svg>
+      </button>
+    </div>
   </header>
   @if (searchOpen()) {
     <app-message-search
+      id="conversation-message-search"
       [query]="searchQuery()"
       [scope]="searchScope()"
       [conversationId]="selectedJid()"
@@ -54,6 +67,13 @@
       (loadMore)="searchLoadMore.emit()"
     />
   }
+  <app-games-panel
+    [catalog]="gameCatalog()"
+    [pending]="gamePending()"
+    [menuOpen]="gamesOpen()"
+    [menuOnly]="true"
+    (inviteRequested)="gameInviteRequested.emit($event)"
+  />
   <div
     #chatContent
     class="chat-content"
@@ -150,6 +170,22 @@
         />
       }
     }
+    <app-games-panel
+      [catalog]="gameCatalog()"
+      [currentSession]="gameCurrentSession()"
+      [currentSnapshot]="gameCurrentSnapshot()"
+      [pending]="gamePending()"
+      [error]="gameError()"
+      [matchOnly]="true"
+      (acceptRequested)="gameAcceptRequested.emit($event)"
+      (rejectRequested)="gameRejectRequested.emit($event)"
+      (cancelRequested)="gameCancelRequested.emit($event)"
+      (moveRequested)="gameMoveRequested.emit($event)"
+      (resignRequested)="gameResignRequested.emit($event)"
+      (resyncRequested)="gameResyncRequested.emit($event)"
+      (rematchRequested)="gameRematchRequested.emit($event)"
+      (closeRequested)="gameCloseRequested.emit($event)"
+    />
   </div>
   <div
     class="typing-indicator-slot"

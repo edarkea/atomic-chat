@@ -21,24 +21,25 @@ The page receives a frozen, capability-oriented API. It does not receive `ipcRen
 
 ## Capability groups
 
-| Group                       | Scope                                                                  |
-| --------------------------- | ---------------------------------------------------------------------- |
-| `account`                   | Secrets, connect/disconnect and secret-storage recovery/reset actions. |
-| `connectionProfiles`        | List, save and delete connection profiles.                             |
-| `certificate`               | Apply an explicit certificate trust decision.                          |
-| `session`                   | Read connection state.                                                 |
-| `presence` and `roster`     | Set presence and list contacts.                                        |
-| `messaging` and `chatState` | Send messages, reactions and typing state.                             |
-| `muc`                       | Discover, join, leave, send room messages and reactions.               |
-| `history`                   | List/search/page messages, timelines and conversation summaries.       |
-| `media` and `fileHistory`   | List media and open/reveal persisted files.                            |
-| `file` and `preview`        | Transfer actions and guarded image preview streams.                    |
-| `stickers`                  | Sticker library, message, pack, draft and preview operations.          |
-| `preferences`               | Read/update/reset preferences and select a download directory.         |
-| `attention` and `broadcast` | Window attention and controlled broadcasts.                            |
-| `updates`                   | Read, check, download and install packaged updates.                    |
-| `externalLinks`             | Open an approved external link through Main.                           |
-| `subscribe`                 | Receive validated `domain.event` messages and unsubscribe.             |
+| Group                       | Scope                                                                     |
+| --------------------------- | ------------------------------------------------------------------------- |
+| `account`                   | Secrets, connect/disconnect and secret-storage recovery/reset actions.    |
+| `connectionProfiles`        | List, save and delete connection profiles.                                |
+| `certificate`               | Apply an explicit certificate trust decision.                             |
+| `session`                   | Read connection state.                                                    |
+| `presence` and `roster`     | Set presence and list contacts.                                           |
+| `messaging` and `chatState` | Send messages, reactions and typing state.                                |
+| `muc`                       | Discover, join, leave, send room messages and reactions.                  |
+| `history`                   | List/search/page messages, timelines and conversation summaries.          |
+| `media` and `fileHistory`   | List media and open/reveal persisted files.                               |
+| `file` and `preview`        | Transfer actions and guarded image preview streams.                       |
+| `stickers`                  | Sticker library, message, pack, draft and preview operations.             |
+| `preferences`               | Read/update/reset preferences and select a download directory.            |
+| `attention` and `broadcast` | Window attention and controlled broadcasts.                               |
+| `updates`                   | Read, check, download and install packaged updates.                       |
+| `externalLinks`             | Open an approved external link through Main.                              |
+| `games`                     | Official game catalog, direct sessions, actions and filtered game events. |
+| `subscribe`                 | Receive validated `domain.event` messages and unsubscribe.                |
 
 Exact methods and payloads are defined in:
 
@@ -47,6 +48,20 @@ Exact methods and payloads are defined in:
 - `src/app/core/domain/`;
 - `electron/preload.cjs`;
 - `electron/ipc/`.
+
+### `window.atomicChat.games`
+
+The frozen games capability exposes only named methods: `catalog`, `sessions`,
+`snapshot`, `invite`, `accept`, `reject`, `cancel`, `start`, `move`, `resign`,
+`resync`, `rematch`, `close` and `subscribe`. Its event listener receives only `game.event`
+envelopes authorized for the sender's account and optional direct conversation/session
+filter. There is no generic invoke/send method and no access to XMPP, Node.js, SQLite,
+rules or secrets.
+
+`games.snapshot` may include `legalMoves` and `passAllowed` for Reversi. These are
+Main-derived presentation metadata for the confirmed snapshot; the Renderer must not
+reimplement or treat them as authority. Authoritative move validation remains in
+`GameSessionManager` and the registered official rules.
 
 ## Contract change checklist
 

@@ -43,6 +43,9 @@ Atomic Chat es un cliente de mensajería XMPP para escritorio, desarrollado con 
 - Theme Studio, the Atomic theme and persisted custom themes.
 - Preferences, connection profiles and guarded credential handling through Electron Main and operating-system secure storage.
 - Local sticker library and sticker-pack organization.
+- Official Tic Tac Toe and Reversi games in direct conversations, with account-scoped
+  sessions, confirmed snapshots and conservative pause/resync behavior. External games
+  and package installation are not enabled.
 
 ### Available with explicit limitations
 

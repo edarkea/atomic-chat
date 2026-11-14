@@ -54,6 +54,8 @@ import { WorkspaceConversationViewCoordinator } from './features/navigation/work
 import { SidebarViewCoordinator } from './features/navigation/sidebar-view.coordinator';
 import { bareJid } from './core/identity';
 import { VersionUpdateComponent } from './features/session/version-update.component';
+import { GameFacade } from './features/games/game.facade';
+import type { GameSessionDto } from './core/domain';
 
 import {
   STICKER_SENDING_DISABLED_MESSAGE,
@@ -92,6 +94,7 @@ export class App {
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly stickerMessages = inject(StickerMessageFacade);
+  protected readonly games = inject(GameFacade);
   protected readonly updates = inject(UpdateFacade);
   private readonly destroyRef = inject(DestroyRef);
   private readonly stickerSendingDisabled = true;
@@ -168,9 +171,11 @@ export class App {
   protected readonly search = this.workspace.search;
   protected readonly messageSearchQuery = signal('');
   protected readonly messageSearchScope = signal<'all' | 'conversation'>('conversation');
+  protected readonly gamesOpen = signal(false);
   protected readonly messageSearchConversationNames = this.workspace.messageSearchConversationNames;
   private messageSearchTimer: ReturnType<typeof setTimeout> | undefined;
   private messageSearchNavigationGeneration = 0;
+  private gamesContext = '';
   private destroyed = false;
   private uiTaskGeneration = 0;
   private newMessageFocusFrame: number | undefined;
@@ -302,6 +307,20 @@ export class App {
       if (this.chat.preferencesLoaded?.() && !this.chat.preferences().hideClosedConversations)
         this.conversationVisibility.clearAll();
     });
+    effect(() => {
+      const selection = this.activeSelection();
+      const accountId = this.chat.accountId();
+      const context =
+        selection.kind === 'direct' && accountId ? `${accountId}|${selection.jid}` : '';
+      if (context !== this.gamesContext) {
+        this.gamesContext = context;
+        this.gamesOpen.set(false);
+      }
+      if (selection.kind === 'direct' && accountId && selection.jid)
+        this.games.openConversation(accountId, selection.jid);
+      else this.games.closeConversation();
+    });
+    this.destroyRef.onDestroy(() => this.games.destroy());
   }
 
   protected setLoginAccount(accountId: string): void {
@@ -377,6 +396,38 @@ export class App {
       option.id === 'phone' ? 'Al teléfono' : option.id === 'away' ? '' : this.presenceStatus();
     await this.chat.setPresence(option.mode, status);
     this.presenceOpen.set(false);
+  }
+  protected inviteGame(input: { gameId: string; gameVersion: string }): void {
+    this.gamesOpen.set(false);
+    void this.games.invite(input.gameId, input.gameVersion);
+  }
+  protected toggleGames(): void {
+    if (!this.selectedJid()) return;
+    this.gamesOpen.update((open) => !open);
+  }
+  protected acceptGame(session: GameSessionDto): void {
+    void this.games.accept(session);
+  }
+  protected rejectGame(session: GameSessionDto): void {
+    void this.games.reject(session);
+  }
+  protected cancelGame(session: GameSessionDto): void {
+    void this.games.cancel(session);
+  }
+  protected moveGame(input: { session: GameSessionDto; move: unknown }): void {
+    void this.games.move(input.session, input.move);
+  }
+  protected resignGame(session: GameSessionDto): void {
+    void this.games.resign(session);
+  }
+  protected resyncGame(session: GameSessionDto): void {
+    void this.games.resync(session);
+  }
+  protected rematchGame(session: GameSessionDto): void {
+    void this.games.rematch(session);
+  }
+  protected closeGame(session: GameSessionDto): void {
+    void this.games.close(session);
   }
   protected async connect(): Promise<void> {
     this.resetConversationSelection();

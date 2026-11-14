@@ -64,7 +64,7 @@ test('E8.3-PACK-001 migrates v10 through the current schema without losing exist
   );
   value.persistence.close();
   const reopened = new PersistenceStore(value.root);
-  assert.equal(reopened.database.prepare('SELECT version FROM schema_meta').get().version, 15);
+  assert.equal(reopened.database.prepare('SELECT version FROM schema_meta').get().version, 16);
   assert.ok(reopened.getSticker('alice@example.test', preservedStickerId));
   const reopenedPacks = new StickerPackStore(reopened);
   const draft = await reopenedPacks.createDraft('alice@example.test');

@@ -31,7 +31,7 @@ describe('ConversationViewComponent profile search target', () => {
     expect(fixture.nativeElement.querySelector('.typing-indicator')).toBeNull();
   });
 
-  it('uses the complete selected-user profile as the search target', async () => {
+  it('keeps the profile card static and exposes search and games as header actions', async () => {
     await TestBed.configureTestingModule({
       imports: [ConversationViewComponent],
     }).compileComponents();
@@ -46,11 +46,19 @@ describe('ConversationViewComponent profile search target', () => {
     fixture.componentRef.setInput('initialTimelineReady', true);
     fixture.detectChanges();
 
-    const profile = fixture.nativeElement.querySelector(
-      '.conversation-profile',
-    ) as HTMLButtonElement;
-    expect(profile.disabled).toBe(false);
-    profile.click();
+    const profile = fixture.nativeElement.querySelector('.conversation-profile') as HTMLElement;
+    expect(profile.tagName).toBe('DIV');
+    expect(fixture.nativeElement.querySelector('.conversation-close')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Buscar en conversación"]'),
+    ).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[aria-label="Juegos"]')).toBeTruthy();
+
+    (
+      fixture.nativeElement.querySelector(
+        '[aria-label="Buscar en conversación"]',
+      ) as HTMLButtonElement
+    ).click();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('app-message-search')).toBeTruthy();

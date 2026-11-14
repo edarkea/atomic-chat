@@ -91,6 +91,7 @@ import {
   XmppConnectionProfile,
 } from '../domain';
 import type { TypedDomainEvent } from '../domain/domain-event';
+import type { GamesPort } from './games.port';
 
 export interface XmppPort {
   connect(input: ConnectInput): Promise<Result<ConnectionState>>;
@@ -301,3 +302,4 @@ export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>(
 export const STICKER_MESSAGE_PORT = new InjectionToken<StickerMessagePort>(
   'AtomicChat StickerMessagePort',
 );
+export const GAMES_PORT = new InjectionToken<GamesPort>('AtomicChat GamesPort');

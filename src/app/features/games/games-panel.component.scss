@@ -1,0 +1,328 @@
+:host {
+  display: contents;
+}
+
+.games-panel {
+  color: var(--atomic-text);
+  font-family: var(--atomic-font-mono);
+}
+
+.games-match__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--atomic-border);
+}
+
+.games-match__header h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.games-catalog__item,
+.games-action-row button,
+.games-warning button,
+.games-pass {
+  border: 1px solid var(--atomic-border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.games-action-row button,
+.games-warning button,
+.games-pass {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.68rem;
+}
+
+.games-catalog__item:hover,
+.games-action-row button:hover:not(:disabled),
+.games-warning button:hover:not(:disabled),
+.games-pass:hover:not(:disabled) {
+  border-color: var(--atomic-green);
+  color: var(--atomic-green);
+}
+
+.games-panel button:focus-visible {
+  outline: 2px solid var(--atomic-focus);
+  outline-offset: 2px;
+}
+
+.games-panel__content {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.55rem;
+}
+
+.games-menu {
+  position: absolute;
+  z-index: 5;
+  top: 3.75rem;
+  right: 0.7rem;
+  width: min(18rem, calc(100% - 1.4rem));
+  padding: 0.55rem;
+  border: 1px solid var(--atomic-border);
+  background: var(--atomic-surface);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--atomic-bg) 45%, transparent);
+}
+
+.games-menu__title {
+  margin: 0 0 0.45rem;
+  color: var(--atomic-green);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.games-catalog {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+
+.games-catalog__item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.42rem 0.5rem;
+  text-align: left;
+}
+
+.games-catalog__item strong,
+.games-catalog__item small {
+  display: block;
+}
+
+.games-catalog__item strong {
+  font-size: 0.68rem;
+}
+
+.games-catalog__item small {
+  margin-top: 0.12rem;
+  color: var(--atomic-text-secondary);
+  font-size: 0.56rem;
+}
+
+.games-catalog__mark {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--atomic-border);
+  color: var(--atomic-green);
+  font-size: 0.75rem;
+}
+
+.games-match {
+  display: flex;
+  flex: 0 0 auto;
+  width: min(75%, 520px);
+  margin: 10px 0 14px;
+}
+
+.games-match--outgoing {
+  align-self: flex-end;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.games-match--incoming {
+  align-self: flex-start;
+  margin-right: auto;
+}
+
+.games-match__bubble {
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: var(--atomic-radius-lg);
+  background: var(--atomic-bubble-incoming);
+  color: var(--atomic-text);
+}
+
+.games-match--outgoing .games-match__bubble {
+  background: var(--atomic-bubble-outgoing);
+  color: var(--atomic-message-outgoing-text);
+}
+
+.games-match__revision,
+.games-turn,
+.games-player,
+.games-result {
+  color: var(--atomic-green-soft);
+  font-size: 0.6rem;
+}
+
+.games-match--outgoing .games-match__revision,
+.games-match--outgoing .games-turn,
+.games-match--outgoing .games-result {
+  color: var(--atomic-message-outgoing-text);
+}
+
+.games-match__header {
+  padding: 6px 10px 4px;
+  border-bottom-color: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.games-message,
+.games-result {
+  margin: 0;
+  padding: 6px 10px 0;
+}
+
+.games-message {
+  color: inherit;
+  font-size: 0.66rem;
+  padding-bottom: 10px;
+}
+
+.games-result {
+  color: var(--atomic-green);
+  font-weight: 700;
+}
+
+.games-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 6px 10px 10px;
+}
+
+.games-action-row .primary {
+  border-color: var(--atomic-green);
+  background: var(--atomic-green);
+  color: var(--atomic-surface);
+}
+
+.games-action-row button:disabled,
+.games-warning button:disabled,
+.games-pass:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.games-warning,
+.games-panel__error {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.55rem 0.7rem;
+  padding: 0.5rem;
+  border-left: 2px solid var(--atomic-green);
+  color: var(--atomic-text-secondary);
+  font-size: 0.65rem;
+}
+
+.games-panel__error {
+  border-color: var(--atomic-text-secondary);
+  color: var(--atomic-text-secondary);
+}
+
+.games-warning span {
+  font-size: 0.6rem;
+}
+
+.games-panel__muted {
+  margin: 0;
+  color: var(--atomic-text-secondary);
+  font-size: 0.65rem;
+}
+
+.ttt-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(3rem, 4.5rem));
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.75rem;
+}
+
+.ttt-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--atomic-border);
+  background: var(--atomic-surface-raised);
+  color: var(--atomic-green);
+  font: 700 1.45rem var(--atomic-font-mono);
+  cursor: pointer;
+}
+
+.ttt-cell:disabled {
+  cursor: default;
+}
+
+.ttt-cell:not(:disabled):hover {
+  border-color: var(--atomic-green);
+  background: var(--atomic-surface-hover);
+}
+
+.ttt-cell--responder {
+  color: var(--atomic-text-secondary);
+}
+
+.reversi-score {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.6rem 0.6rem 0;
+  color: var(--atomic-text-secondary);
+  font-size: 0.6rem;
+}
+
+.reversi-board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(1.25rem, 2.8rem));
+  justify-content: center;
+  gap: 1px;
+  padding: 0.6rem;
+}
+
+.reversi-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 1px solid var(--atomic-border);
+  background: var(--atomic-surface-raised);
+  cursor: pointer;
+}
+
+.reversi-cell span {
+  width: 68%;
+  height: 68%;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.reversi-cell--initiator span {
+  background: var(--atomic-green);
+}
+
+.reversi-cell--responder span {
+  background: var(--atomic-text-secondary);
+}
+
+.reversi-cell:disabled {
+  cursor: default;
+}
+
+.reversi-cell:not(:disabled):hover {
+  background: var(--atomic-surface-hover);
+}
+
+.reversi-cell--legal {
+  box-shadow: inset 0 0 0 2px var(--atomic-green);
+}
+
+.games-pass {
+  margin: 0 0.7rem 0.55rem;
+}
+
+.games-turn {
+  margin: 0 0.7rem;
+  padding-top: 0.15rem;
+}

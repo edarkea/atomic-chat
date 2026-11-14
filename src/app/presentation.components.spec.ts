@@ -306,10 +306,8 @@ describe('extracted Angular presentation components', () => {
     fixture.componentRef.setInput('hasOlderMessages', false);
     fixture.componentRef.setInput('hasNewerMessages', false);
     fixture.componentRef.setInput('initialTimelineReady', true);
-    const closed = vi.fn();
     const dropped = vi.fn();
     const rejected = vi.fn();
-    fixture.componentInstance.closeRequested.subscribe(closed);
     fixture.componentInstance.filesDropped.subscribe(dropped);
     fixture.componentInstance.dropRejected.subscribe(rejected);
     fixture.detectChanges();
@@ -317,8 +315,11 @@ describe('extracted Angular presentation components', () => {
       'Contacto',
     );
     expect(fixture.nativeElement.querySelector('textarea[name="message"]')).toBeTruthy();
-    (fixture.nativeElement.querySelector('.conversation-close') as HTMLButtonElement).click();
-    expect(closed).toHaveBeenCalledOnce();
+    expect(fixture.nativeElement.querySelector('.conversation-close')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Buscar en conversación"]'),
+    ).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[aria-label="Juegos"]')).toBeTruthy();
     const dataTransfer = {
       types: ['Files'],
       items: [],

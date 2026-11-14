@@ -70,6 +70,43 @@ contextBridge.exposeInMainWorld(
       sendMessage: (input) => invoke('muc.sendMessage', input),
       react: (input) => invoke('muc.react', input),
     }),
+    games: Object.freeze({
+      catalog: (input) => invoke('games.catalog', input),
+      sessions: (input) => invoke('games.sessions', input),
+      snapshot: (input) => invoke('games.snapshot', input),
+      invite: (input) => invoke('games.invite', input),
+      accept: (input) => invoke('games.accept', input),
+      reject: (input) => invoke('games.reject', input),
+      cancel: (input) => invoke('games.cancel', input),
+      start: (input) => invoke('games.start', input),
+      move: (input) => invoke('games.move', input),
+      resign: (input) => invoke('games.resign', input),
+      resync: (input) => invoke('games.resync', input),
+      rematch: (input) => invoke('games.rematch', input),
+      close: (input) => invoke('games.close', input),
+      subscribe: (input, listener) => {
+        if (typeof listener !== 'function') return () => undefined;
+        const handler = (_event, value) => listener(value);
+        ipcRenderer.on('game.event', handler);
+        let active = true;
+        void invoke('games.subscribe', input).then((result) => {
+          if (!result?.ok && active) {
+            active = false;
+            ipcRenderer.removeListener('game.event', handler);
+          }
+        });
+        return () => {
+          if (!active) return;
+          active = false;
+          ipcRenderer.removeListener('game.event', handler);
+          void invoke('games.unsubscribe', {
+            version: 1,
+            requestId: `games-unsubscribe-${Date.now()}`,
+            accountId: input?.accountId,
+          });
+        };
+      },
+    }),
     file: Object.freeze({
       send: (input) => invoke('file.send', input),
       sendDropped: (input) => {

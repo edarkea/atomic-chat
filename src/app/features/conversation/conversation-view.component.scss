@@ -15,9 +15,6 @@
 }
 .conversation-profile {
   align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
   display: flex;
   flex: 1 1 auto;
   gap: var(--atomic-space-3);
@@ -35,25 +32,36 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.conversation-profile:hover,
-.conversation-profile:focus-visible {
+.conversation-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--atomic-space-1);
+  margin-left: auto;
+}
+.conversation-action {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  padding: 6px;
+}
+.conversation-action:hover,
+.conversation-action:focus-visible,
+.conversation-action--active {
   border-color: var(--atomic-border);
+  color: var(--atomic-green);
+}
+.conversation-action:focus-visible {
   outline: 2px solid var(--atomic-focus);
+  outline-offset: 1px;
 }
-.conversation-profile:disabled {
+.conversation-action:disabled {
   cursor: default;
-  opacity: 0.65;
-}
-.conversation-profile:not(:disabled):hover strong,
-.conversation-profile:not(:disabled):focus-visible strong {
-  color: var(--atomic-green);
-}
-.conversation-profile:not(:disabled):hover,
-.conversation-profile:not(:disabled):focus-visible {
-  color: var(--atomic-green);
-}
-.conversation-profile:focus-visible {
-  background: var(--atomic-surface-active);
+  opacity: 0.5;
 }
 .day-separator {
   align-items: center;

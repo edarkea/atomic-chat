@@ -29,8 +29,15 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "build:electron": "npm run build",
+    "build:games:commonjs": "tsc -p tsconfig.games-main.json",
+    "build:electron": "npm run build:games:commonjs && npm run build",
+    "games:interop:simulated": "node tools/games-interoperability-harness.cjs --level simulated",
+    "games:interop:electron": "node tools/games-interoperability-harness.cjs --level electron-local",
+    "games:test:isolation": "node --test tests/games-packaged-isolation.test.cjs",
+    "games:smoke:packaged": "node tests/games-packaged-smoke.integration.cjs",
+    "preelectron": "npm run build:games:commonjs",
     "electron": "node --env-file=.env node_modules/electron/cli.js electron/main.cjs",
+    "pretest:node": "npm run build:games:commonjs",
     "test:node": "node --env-file=.env --test tests/*.test.cjs",
     "test:node:outgoing": "node --env-file=.env --test tests/file-transfer.outgoing.test.cjs",
     "test:node:outgoing:safety": "node --env-file=.env --test --test-name-pattern=\"^Outgoing file transfer robustness:\" tests/file-transfer.outgoing.test.cjs",
@@ -38,6 +45,7 @@
     "test": "ng test",
     "test:angular": "ng test --no-watch --no-progress",
     "test:ci:focused": "ng test --no-watch --no-progress --include src/app/features/conversation/message-composer.spec.ts --include src/app/features/conversation/message-date-time.spec.ts && node --test tests/message-search.test.cjs tests/sticker-message-ipc.test.cjs tests/update-service.test.cjs tests/ci-cd-contract.test.cjs tests/login-credentials.test.cjs",
+    "pretest:electron": "npm run build:games:commonjs",
     "test:electron": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const child = require('node:child_process').spawnSync(require('electron'), ['tests/electron-ipc.integration.cjs'], { stdio: 'inherit', env: process.env }); process.exit(child.status ?? 1)\"",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && npm run typecheck:electron",
     "typecheck:electron": "tsc -p tsconfig.electron-checkjs.json --noEmit",
@@ -95,7 +103,17 @@
     "files": [
       "electron/**/*",
       "dist/atomic-chat/browser/**/*",
-      "build/icons/128x128.png"
+      "build/icons/128x128.png",
+      "!node_modules/**/*.ts",
+      "!node_modules/**/*.map",
+      "!node_modules/**/*.test.js",
+      "!node_modules/**/test/**",
+      "!node_modules/**/tests/**",
+      "!node_modules/**/__tests__/**",
+      "!node_modules/**/fixtures/**",
+      "!node_modules/better-sqlite3/build/**",
+      "!node_modules/better-sqlite3/deps/**",
+      "!node_modules/better-sqlite3/src/**"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**"

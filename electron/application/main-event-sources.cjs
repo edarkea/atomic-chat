@@ -9,6 +9,7 @@ function createMainEventSources({
   backgroundMode,
   autoAcceptFileTransfers,
   messageNotifications,
+  gameEventPublisher,
 }) {
   return {
     attach() {
@@ -39,6 +40,10 @@ function createMainEventSources({
       });
       outgoingFileTransfers.onEvent(eventRouter.forwardTransferEvent);
       runtime.xmpp.onEvent((event) => {
+        if (event.type.startsWith('game.')) {
+          gameEventPublisher?.publish(event);
+          return;
+        }
         if (event.type === 'connection.stateChanged') backgroundMode.updateMenu();
         if (event.type === 'reaction.changed') {
           try {

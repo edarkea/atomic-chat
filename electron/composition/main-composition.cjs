@@ -29,7 +29,12 @@ const { createEventRouter } = require('../application/event-router.cjs');
 const { createFileDialogs } = require('../files/file-dialog.cjs');
 const { createMainWindow } = require('../platform/main-window.cjs');
 const { createRuntime } = require('../application/runtime.cjs');
+const { GameRegistry } = require('../games/game-registry.cjs');
+const { GameSessionManager } = require('../games/game-session-manager.cjs');
+const { GameStorage } = require('../persistence/game-storage.cjs');
+const compiledGameRules = require('../generated/games');
 const { registerIpcHandlers } = require('../ipc/ipc-handlers.cjs');
+const { createGameEventPublisher } = require('../ipc/ipc-game-handlers.cjs');
 const { createUpdateService } = require('../platform/update-service.cjs');
 const { createApplicationAttention } = require('../platform/application-attention.cjs');
 const { createMessageNotifications } = require('../platform/message-notifications.cjs');
@@ -48,6 +53,7 @@ const { activateStickerStorage } = require('../stickers/sticker-storage-activati
 const { createConfiguredStickerStorageProvider } = require('../stickers/sticker-storage-http.cjs');
 const { persistCompletedTransfer } = require('../files/media-transfer-persistence.cjs');
 const { createMainEventSources } = require('../application/main-event-sources.cjs');
+const { resolveApplicationDataPath } = require('../security/packaged-smoke-isolation.cjs');
 const { normalizeTransferTimeout } = require('../files/transfer-timeout.cjs');
 const {
   DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -60,9 +66,12 @@ const { version: applicationVersion } = require('../../package.json');
 const electronDirectory = path.resolve(__dirname, '..');
 
 function startMainApplication() {
-  const atomicDataPath = app.isPackaged
-    ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || app.getPath('appData'), 'AtomicChat-Data')
-    : path.join(app.getPath('appData'), 'AtomicChat-Dev');
+  const atomicDataPath = resolveApplicationDataPath({
+    isPackaged: app.isPackaged,
+    environment: process.env,
+    appDataPath: app.getPath('appData'),
+    portableExecutableDirectory: process.env.PORTABLE_EXECUTABLE_DIR,
+  });
   const defaultDownloadDirectory = path.join(
     app.getPath('documents'),
     DEFAULT_DOWNLOAD_DIRECTORY_NAME,
@@ -102,6 +111,11 @@ function startMainApplication() {
     },
   });
   let runtime;
+  const gameEventPublisher = createGameEventPublisher({
+    webContents,
+    getRuntime: () => runtime,
+    historySecurity,
+  });
   const currentTransferTimeout = () => {
     try {
       return normalizeTransferTimeout(
@@ -206,6 +220,7 @@ function startMainApplication() {
     backgroundMode,
     autoAcceptFileTransfers,
     messageNotifications,
+    gameEventPublisher,
   });
 
   const assertSender = createIpcSenderGuard({
@@ -233,6 +248,7 @@ function startMainApplication() {
       devServerUrl: process.env.ATOMIC_CHAT_DEV_SERVER,
       onDestroyed: (senderId) => {
         historySecurity.destroySender(senderId);
+        gameEventPublisher.clearSender(senderId);
         localFileActions.clearSender(senderId);
         previewGrants.clearSender(senderId);
         stickerGrants.clearSender(senderId);
@@ -262,6 +278,10 @@ function startMainApplication() {
       shell,
       stickerStorageProvider: stickerStorageActivation.provider,
       stickerStorageConfiguration: stickerStorageActivation.configuration,
+      GameRegistry,
+      GameSessionManager,
+      GameStorage,
+      compiledGameRules,
     });
     runtime.stickers.setActiveGrantChecker((accountId, assetId) =>
       stickerGrants.hasActiveAsset(accountId, assetId),
@@ -274,6 +294,8 @@ function startMainApplication() {
     backgroundMode.dispose();
     updateService.stop();
     const activeRuntime = runtime;
+    activeRuntime?.xmpp.disposeGames?.();
+    activeRuntime?.gameSessions?.dispose();
     await Promise.all(
       [...(activeRuntime?.xmpp.sessions.keys() || [])].map((accountId) =>
         Promise.race([
@@ -306,6 +328,7 @@ function startMainApplication() {
     applicationAttention,
     updateService,
     onPreferencesChanged: () => backgroundMode.syncPreferences(),
+    gameEventPublisher,
   });
   app.whenReady().then(() => {
     initializeRuntime();

@@ -156,6 +156,10 @@
       />
       <path d="M7 11v4M5 13h4M17 12h.01M19 14h.01" />
     </symbol>
+    <symbol id="ac-games" viewBox="0 0 24 24">
+      <rect x="4" y="4" width="16" height="16" rx="1.5" />
+      <path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16" />
+    </symbol>
     <symbol id="ac-emoji-category-travel" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="8.5" />
       <path d="m12 7 2 5-2 5-2-5 2-5ZM7 12h10" />
@@ -288,6 +292,12 @@
             [activeContact]="activeContact()"
             [selectedJid]="selectedJid()"
             [accountId]="chat.accountId()"
+            [gamesOpen]="gamesOpen()"
+            [gameCatalog]="games.catalog()"
+            [gameCurrentSession]="games.currentSession()"
+            [gameCurrentSnapshot]="games.currentSnapshot()"
+            [gamePending]="games.pending()"
+            [gameError]="games.error()"
             [timeline]="conversationTimeline()"
             [initialTimelineReady]="initialTimelineReady()"
             [error]="conversationError()"
@@ -323,7 +333,16 @@
             (filesDropped)="dropFiles($event)"
             (filesPasted)="pasteFiles($event)"
             (dropRejected)="dropRejected($event)"
-            (closeRequested)="dismissConversationByUser()"
+            (gamesToggleRequested)="toggleGames()"
+            (gameInviteRequested)="inviteGame($event)"
+            (gameAcceptRequested)="acceptGame($event)"
+            (gameRejectRequested)="rejectGame($event)"
+            (gameCancelRequested)="cancelGame($event)"
+            (gameMoveRequested)="moveGame($event)"
+            (gameResignRequested)="resignGame($event)"
+            (gameResyncRequested)="resyncGame($event)"
+            (gameRematchRequested)="rematchGame($event)"
+            (gameCloseRequested)="closeGame($event)"
             (accept)="files.accept($event)"
             (reject)="files.reject($event)"
             (fileCancel)="files.cancel($event)"

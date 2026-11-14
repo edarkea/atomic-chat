@@ -5,6 +5,7 @@
 /tmp
 /out-tsc
 /bazel-out
+/electron/generated/games
 
 # Node
 /node_modules

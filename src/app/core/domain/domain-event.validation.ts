@@ -32,6 +32,7 @@ import type {
   RosterChangedPayload,
   TypedDomainEvent,
 } from './domain-event';
+import type { GameDomainEventPayload, GameSessionDto, GameSnapshotDto } from './domain-games';
 
 interface EventRecord {
   actorId?: unknown;
@@ -149,6 +150,22 @@ interface EventRecord {
   verificationError?: unknown;
   version?: unknown;
   payload?: unknown;
+  peerBareJid?: unknown;
+  sessionId?: unknown;
+  gameId?: unknown;
+  gameVersion?: unknown;
+  apiVersion?: unknown;
+  localRole?: unknown;
+  revision?: unknown;
+  connectionGeneration?: unknown;
+  snapshot?: unknown;
+  session?: unknown;
+  localRevision?: unknown;
+  remoteRevision?: unknown;
+  localStateHash?: unknown;
+  remoteStateHash?: unknown;
+  actorSeq?: unknown;
+  stateHash?: unknown;
 }
 
 function isRecord(value: unknown): value is EventRecord & Record<string, unknown> {
@@ -249,6 +266,16 @@ const domainEventTypes: readonly DomainEventType[] = [
   'sticker.messageReceived',
   'sticker.stateChanged',
   'sticker.capabilityChanged',
+  'game.sessionChanged',
+  'game.invitationReceived',
+  'game.invitationUpdated',
+  'game.moveAccepted',
+  'game.moveConfirmed',
+  'game.stateSynchronized',
+  'game.syncRequired',
+  'game.remoteError',
+  'game.transportError',
+  'game.eventDuplicate',
 ];
 
 function isDomainEventType(value: unknown): value is DomainEventType {
@@ -695,6 +722,103 @@ interface RawDomainEvent extends EventRecord {
   correlationId?: string;
 }
 
+function isSafeGameValue(value: unknown, depth = 0): boolean {
+  if (depth > 8 || value === null) return value === null;
+  if (typeof value === 'string') return value.length <= 65536;
+  if (typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value))
+    return value.length <= 1024 && value.every((item) => isSafeGameValue(item, depth + 1));
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  return (
+    keys.length <= 256 &&
+    keys.every((key) => key.length <= 128 && key !== '__proto__' && key !== 'constructor') &&
+    keys.every((key) => isSafeGameValue(value[key], depth + 1))
+  );
+}
+
+function isGameSession(value: unknown): value is GameSessionDto {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value.accountId) &&
+    isString(value.conversationId) &&
+    isString(value.peerBareJid) &&
+    isString(value.sessionId) &&
+    isString(value.gameId) &&
+    isString(value.gameVersion) &&
+    value.apiVersion === 1 &&
+    isOneOf(value.localRole, ['initiator', 'responder']) &&
+    isOneOf(value.state, [
+      'invited',
+      'accepted',
+      'active',
+      'paused',
+      'resync-required',
+      'rejected',
+      'cancelled',
+      'expired',
+      'finished',
+      'abandoned',
+      'closed',
+    ]) &&
+    isNumber(value.revision) &&
+    Number.isInteger(value.revision) &&
+    value.revision >= 0 &&
+    isString(value.stateHash) &&
+    isPositiveInteger(value.sessionGeneration) &&
+    isPositiveInteger(value.connectionGeneration) &&
+    isString(value.createdAt) &&
+    isString(value.updatedAt)
+  );
+}
+
+function isGameSnapshot(value: unknown): value is GameSnapshotDto {
+  return (
+    isRecord(value) &&
+    isString(value.sessionId) &&
+    isSafeGameValue(value.state) &&
+    isNumber(value.revision) &&
+    Number.isInteger(value.revision) &&
+    value.revision >= 0 &&
+    isString(value.stateHash) &&
+    (value['legalMoves'] === undefined ||
+      (Array.isArray(value['legalMoves']) &&
+        value['legalMoves'].every(
+          (move) => isNumber(move) && Number.isInteger(move) && move >= 0 && move < 64,
+        ))) &&
+    (value['passAllowed'] === undefined || typeof value['passAllowed'] === 'boolean')
+  );
+}
+
+function isGameEventPayload(value: unknown): value is GameDomainEventPayload {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value.accountId) &&
+    isString(value.conversationId) &&
+    isString(value.sessionId) &&
+    isPositiveInteger(value.connectionGeneration) &&
+    (value.session === undefined || isGameSession(value.session)) &&
+    (value.snapshot === undefined || isGameSnapshot(value.snapshot)) &&
+    isOptionalString(value.eventId) &&
+    isOptionalString(value.stateHash) &&
+    isOptionalString(value.localStateHash) &&
+    isOptionalString(value.remoteStateHash) &&
+    isOptionalString(value.code) &&
+    (value.revision === undefined ||
+      (isNumber(value.revision) && Number.isInteger(value.revision) && value.revision >= 0)) &&
+    (value.localRevision === undefined ||
+      (isNumber(value.localRevision) &&
+        Number.isInteger(value.localRevision) &&
+        value.localRevision >= 0)) &&
+    (value.remoteRevision === undefined ||
+      (isNumber(value.remoteRevision) &&
+        Number.isInteger(value.remoteRevision) &&
+        value.remoteRevision >= 0)) &&
+    (value.actorSeq === undefined || isPositiveInteger(value.actorSeq))
+  );
+}
+
 function isRawEvent(value: unknown): value is RawDomainEvent {
   return (
     isRecord(value) &&
@@ -781,6 +905,19 @@ export function validateDomainEvent(value: unknown): TypedDomainEvent | undefine
         : undefined;
     case 'sticker.capabilityChanged':
       return isStickerCapability(value.payload)
+        ? typedEvent(value, value.type, value.payload)
+        : undefined;
+    case 'game.sessionChanged':
+    case 'game.invitationReceived':
+    case 'game.invitationUpdated':
+    case 'game.moveAccepted':
+    case 'game.moveConfirmed':
+    case 'game.stateSynchronized':
+    case 'game.syncRequired':
+    case 'game.remoteError':
+    case 'game.transportError':
+    case 'game.eventDuplicate':
+      return isGameEventPayload(value.payload)
         ? typedEvent(value, value.type, value.payload)
         : undefined;
   }

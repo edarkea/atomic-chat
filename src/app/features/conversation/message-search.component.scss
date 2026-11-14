@@ -2,11 +2,12 @@
   display: block;
 }
 .message-search {
-  background: var(--atomic-surface-raised);
+  background: var(--atomic-bg);
   border-bottom: 1px solid var(--atomic-border);
-  padding: 8px 16px;
+  padding: 8px 16px 10px;
 }
 .search-controls {
+  align-items: center;
   display: flex;
   gap: 8px;
 }
@@ -22,6 +23,18 @@
 .search-controls input {
   flex: 1;
   min-width: 0;
+}
+.search-controls select {
+  flex: 0 1 180px;
+  min-width: 150px;
+}
+.search-controls input::placeholder {
+  color: var(--atomic-text-muted);
+}
+.search-controls input:focus-visible,
+.search-controls select:focus-visible {
+  outline: 2px solid var(--atomic-focus);
+  outline-offset: -1px;
 }
 .search-results {
   display: grid;
@@ -80,4 +93,16 @@
   cursor: pointer;
   margin-top: 7px;
   padding: 5px 8px;
+}
+
+@media (max-width: 520px) {
+  .search-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-controls select {
+    flex-basis: auto;
+    min-width: 0;
+  }
 }

@@ -13,6 +13,7 @@ const { registerStickerPackHandlers } = require('./ipc-sticker-pack-handlers.cjs
 const { registerStickerMessageHandlers } = require('./ipc-sticker-message-handlers.cjs');
 const { registerUpdateHandlers } = require('./ipc-update-handlers.cjs');
 const { registerExternalLinkHandlers } = require('./ipc-external-link-handlers.cjs');
+const { registerGameHandlers } = require('./ipc-game-handlers.cjs');
 
 const IPC_USE_CASES = Object.freeze([
   Object.freeze({ name: 'account', register: registerAccountHandlers }),
@@ -30,6 +31,7 @@ const IPC_USE_CASES = Object.freeze([
   Object.freeze({ name: 'attention', register: registerAttentionHandlers }),
   Object.freeze({ name: 'updates', register: registerUpdateHandlers }),
   Object.freeze({ name: 'external-links', register: registerExternalLinkHandlers }),
+  Object.freeze({ name: 'games', register: registerGameHandlers }),
 ]);
 
 function registerIpcUseCases(dependencies) {

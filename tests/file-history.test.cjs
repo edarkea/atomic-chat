@@ -87,7 +87,7 @@ test('current schema and repeated persistence are idempotent', async () => {
       store.persistTransfer(record, 'outgoing'),
     ]);
     assert.equal(first.fileId, second.fileId);
-    assert.equal(persistence.database.prepare('SELECT version FROM schema_meta').get().version, 15);
+    assert.equal(persistence.database.prepare('SELECT version FROM schema_meta').get().version, 16);
     assert.equal(
       persistence.database.prepare('SELECT COUNT(*) AS count FROM file_assets').get().count,
       1,

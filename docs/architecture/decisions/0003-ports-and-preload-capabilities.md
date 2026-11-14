@@ -26,6 +26,9 @@ These options spread process-boundary knowledge through the UI and reduce the co
 - A capability change has an explicit implementation path and focused tests.
 - The Renderer can run with in-memory or unavailable ports.
 - IPC names, request versions and error codes remain visible at the boundary.
+- Official games use the same least-privilege path: `GamesPort` → named Preload
+  methods → account/session-scoped Main handlers; confirmed snapshots are presentation
+  data and never move rule authority into Renderer.
 - There is some adapter boilerplate, accepted as the cost of least privilege and testability.
 
 The implementation procedure is described in [Add an IPC capability](../../guides/add-ipc-capability.md).

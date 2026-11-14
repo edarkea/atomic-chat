@@ -14,8 +14,11 @@ import {
 } from '@angular/core';
 import {
   Contact,
+  GameSessionDto,
+  GameSnapshotDto,
   Message,
   MessageSearchHit,
+  OfficialGameCatalog,
   ReactionActor,
   ReactionState,
 } from '../../core/domain';
@@ -30,6 +33,7 @@ import {
 import { StickerMessageCardComponent } from '../stickers/sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
 import { ScrollToLatestButtonComponent } from './scroll-to-latest-button.component';
+import { GamesPanelComponent } from '../games/games-panel.component';
 import { formatMessageDay } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 import { ConversationMessageCoordinator } from './conversation-message.coordinator';
@@ -50,6 +54,7 @@ export type { ConversationTimelineItem, OlderMessagesRequest } from './conversat
     ScrollToLatestButtonComponent,
     StickerMessageCardComponent,
     MessageSearchComponent,
+    GamesPanelComponent,
   ],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
@@ -62,6 +67,12 @@ export class ConversationViewComponent {
   readonly timeline = input.required<ReadonlyArray<ConversationTimelineItem>>();
   readonly initialTimelineReady = input.required<boolean>();
   readonly error = input<string | null>(null);
+  readonly gamesOpen = input(false);
+  readonly gameCatalog = input<OfficialGameCatalog>([]);
+  readonly gameCurrentSession = input<GameSessionDto>();
+  readonly gameCurrentSnapshot = input<GameSnapshotDto>();
+  readonly gamePending = input<ReadonlySet<string>>(new Set());
+  readonly gameError = input<string | null>(null);
   readonly draft = input.required<string>();
   readonly historyLoading = input.required<boolean>();
   readonly hasOlderMessages = input.required<boolean>();
@@ -82,6 +93,16 @@ export class ConversationViewComponent {
   }>();
 
   readonly closeRequested = output<void>();
+  readonly gamesToggleRequested = output<void>();
+  readonly gameInviteRequested = output<{ gameId: string; gameVersion: string }>();
+  readonly gameAcceptRequested = output<GameSessionDto>();
+  readonly gameRejectRequested = output<GameSessionDto>();
+  readonly gameCancelRequested = output<GameSessionDto>();
+  readonly gameMoveRequested = output<{ session: GameSessionDto; move: unknown }>();
+  readonly gameResignRequested = output<GameSessionDto>();
+  readonly gameResyncRequested = output<GameSessionDto>();
+  readonly gameRematchRequested = output<GameSessionDto>();
+  readonly gameCloseRequested = output<GameSessionDto>();
   readonly filesDropped = output<ReadonlyArray<File>>();
   readonly filesPasted = output<ReadonlyArray<File>>();
   readonly dropRejected = output<string>();
@@ -126,7 +147,8 @@ export class ConversationViewComponent {
   private readonly visibleMessageKey = computed(() => {
     const items = this.timeline();
     const last = items[items.length - 1];
-    return `${this.accountId()}|${bareJid(this.selectedJid())}|${items.length}|${last?.id || ''}|${last?.sortAt || ''}`;
+    const game = this.gameCurrentSession();
+    return `${this.accountId()}|${bareJid(this.selectedJid())}|${items.length}|${last?.id || ''}|${last?.sortAt || ''}|game:${game?.sessionId || ''}:${game?.state || ''}:${game?.revision ?? ''}`;
   });
   private readonly scroll = new ConversationScrollCoordinator({
     container: () => this.chatContent?.nativeElement,
@@ -177,12 +199,6 @@ export class ConversationViewComponent {
 
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
-  }
-  protected profileTooltip(): string {
-    const name =
-      this.activeContact()?.name?.trim() || this.selectedJid() || 'Selecciona un contacto';
-    const jid = this.selectedJid();
-    return jid && jid !== name ? `${name}\n${jid}` : name;
   }
   protected toggleSearch(): void {
     if (!this.isSelected()) return;

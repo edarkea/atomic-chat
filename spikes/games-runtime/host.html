@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'; frame-src 'self' atomic-game:;" />
+    <title>Atomic Chat game runtime spike host</title>
+  </head>
+  <body>
+    <main>
+      <h1>Game Runtime spike host</h1>
+      <p id="status">waiting</p>
+      <iframe id="game" title="Untrusted local game" sandbox="allow-scripts"></iframe>
+    </main>
+    <script src="host-renderer.js"></script>
+  </body>
+</html>
+
