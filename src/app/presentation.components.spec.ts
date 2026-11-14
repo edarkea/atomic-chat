@@ -319,7 +319,7 @@ describe('extracted Angular presentation components', () => {
     expect(
       fixture.nativeElement.querySelector('[aria-label="Buscar en conversación"]'),
     ).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('[aria-label="Juegos"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[aria-label="Entretenimiento"]')).toBeTruthy();
     const dataTransfer = {
       types: ['Files'],
       items: [],

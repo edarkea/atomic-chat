@@ -14,8 +14,10 @@ import {
 } from '@angular/core';
 import {
   Contact,
+  GameId,
   GameSessionDto,
   GameSnapshotDto,
+  GameVersion,
   Message,
   MessageSearchHit,
   OfficialGameCatalog,
@@ -94,7 +96,7 @@ export class ConversationViewComponent {
 
   readonly closeRequested = output<void>();
   readonly gamesToggleRequested = output<void>();
-  readonly gameInviteRequested = output<{ gameId: string; gameVersion: string }>();
+  readonly gameInviteRequested = output<{ gameId: GameId; gameVersion: GameVersion }>();
   readonly gameAcceptRequested = output<GameSessionDto>();
   readonly gameRejectRequested = output<GameSessionDto>();
   readonly gameCancelRequested = output<GameSessionDto>();

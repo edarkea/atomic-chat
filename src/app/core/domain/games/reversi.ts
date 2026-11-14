@@ -107,11 +107,15 @@ export function reversiLegalMoves(state: ReversiState, actor: GameRole): readonl
 }
 
 export function reversiCounts(board: readonly ReversiCell[]): ReversiCounts {
-  return Object.freeze({
-    initiator: board.filter((cell) => cell === 'initiator').length,
-    responder: board.filter((cell) => cell === 'responder').length,
-    empty: board.filter((cell) => cell === 'empty').length,
-  });
+  let initiator = 0;
+  let responder = 0;
+  let empty = 0;
+  for (const cell of board) {
+    if (cell === 'initiator') initiator += 1;
+    else if (cell === 'responder') responder += 1;
+    else empty += 1;
+  }
+  return Object.freeze({ initiator, responder, empty });
 }
 
 function winnerFromCounts(counts: ReversiCounts): GameRole | undefined {
@@ -195,7 +199,7 @@ export function applyReversiMove(state: ReversiState, move: ReversiMove): RuleRe
   const validation = validateReversiMove(state, move);
   if (!validation.ok) return validation;
   if (move.kind === 'pass') {
-    const passes = (state.consecutivePasses + 1) as 1 | 2;
+    const passes: 1 | 2 = state.consecutivePasses === 0 ? 1 : 2;
     if (passes === 2) {
       const counts = reversiCounts(state.board);
       const winner = winnerFromCounts(counts);

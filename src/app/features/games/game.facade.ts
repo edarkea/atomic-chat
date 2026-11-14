@@ -1,11 +1,13 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import type {
   GameActionReceipt,
-  GameDomainEventPayload,
+  GameId,
+  GameOperation,
   GameInviteRequest,
   GameMoveRequest,
   GameSessionDto,
   GameSessionRequest,
+  GameVersion,
   Result,
   TypedDomainEvent,
 } from '../../core/domain';
@@ -16,6 +18,14 @@ import { GameSessionStore } from './game-session.store';
 
 let requestSequence = 0;
 
+type SessionOperation = Exclude<GameOperation, 'invite' | 'move'>;
+type GameDomainEvent = Extract<TypedDomainEvent, { type: `game.${string}` }>;
+
+const GAME_ERROR_EVENTS: ReadonlySet<GameDomainEvent['type']> = new Set([
+  'game.remoteError',
+  'game.transportError',
+]);
+
 function nextRequestId(operation: string): string {
   requestSequence += 1;
   return `games-${operation}-${Date.now()}-${requestSequence}`;
@@ -25,9 +35,9 @@ function nextRequestId(operation: string): string {
 export class GameFacade {
   private readonly port = inject<GamesPort>(GAMES_PORT);
   private readonly lifecycle = new GameLifecycleCoordinator();
-  readonly store = inject(GameSessionStore);
-  private readonly accountIdState = signal('');
-  private readonly conversationIdState = signal('');
+  private readonly store = inject(GameSessionStore);
+  private accountId = '';
+  private conversationId = '';
 
   readonly catalog = this.store.catalog;
   readonly sessions = this.store.sessions;
@@ -45,8 +55,8 @@ export class GameFacade {
       this.closeConversation();
       return;
     }
-    this.accountIdState.set(normalizedAccount);
-    this.conversationIdState.set(normalizedConversation);
+    this.accountId = normalizedAccount;
+    this.conversationId = normalizedConversation;
     this.store.setContext(normalizedAccount, normalizedConversation);
     const generation = this.lifecycle.start(
       this.port,
@@ -63,8 +73,8 @@ export class GameFacade {
 
   closeConversation(): void {
     this.lifecycle.stop();
-    this.accountIdState.set('');
-    this.conversationIdState.set('');
+    this.accountId = '';
+    this.conversationId = '';
     this.store.clearContext();
   }
 
@@ -72,9 +82,8 @@ export class GameFacade {
     this.store.selectSession(sessionId);
   }
 
-  async invite(gameId: string, gameVersion: string): Promise<void> {
-    const accountId = this.accountIdState();
-    const conversationId = this.conversationIdState();
+  async invite(gameId: GameId, gameVersion: GameVersion): Promise<void> {
+    const { accountId, conversationId } = this.context();
     if (!accountId || !conversationId) return Promise.resolve();
     const request: GameInviteRequest = {
       version: 1,
@@ -123,8 +132,7 @@ export class GameFacade {
   }
 
   async move(session: GameSessionDto, move: unknown): Promise<void> {
-    const accountId = this.accountIdState();
-    const conversationId = this.conversationIdState();
+    const { accountId, conversationId } = this.context();
     if (!accountId || !conversationId || session.state !== 'active') return;
     const request: GameMoveRequest = {
       version: 1,
@@ -169,8 +177,17 @@ export class GameFacade {
       return;
     }
     this.store.setSessions(sessions.value);
+    await this.loadSnapshots(generation, accountId, conversationId, sessions.value);
+  }
+
+  private async loadSnapshots(
+    generation: number,
+    accountId: string,
+    conversationId: string,
+    sessions: ReadonlyArray<GameSessionDto>,
+  ): Promise<void> {
     await Promise.all(
-      sessions.value.map(async (session) => {
+      sessions.map(async (session) => {
         const snapshot = await this.port.snapshot({
           version: 1,
           requestId: nextRequestId('snapshot'),
@@ -187,20 +204,22 @@ export class GameFacade {
   }
 
   private acceptEvent(event: TypedDomainEvent): void {
-    if (!event.type.startsWith('game.')) return;
-    const payload = event.payload as GameDomainEventPayload;
-    this.store.applyEvent(payload);
-    if (['game.remoteError', 'game.transportError'].includes(event.type))
-      this.store.setError(payload.code || 'No fue posible sincronizar la partida.');
+    if (!this.isGameEvent(event)) return;
+    this.store.applyEvent(event.payload);
+    if (GAME_ERROR_EVENTS.has(event.type))
+      this.store.setError(event.payload.code || 'No fue posible sincronizar la partida.');
+  }
+
+  private isGameEvent(event: TypedDomainEvent): event is GameDomainEvent {
+    return event.type.startsWith('game.');
   }
 
   private sessionOperation(
-    operation: 'accept' | 'reject' | 'cancel' | 'start' | 'resign' | 'resync' | 'rematch' | 'close',
+    operation: SessionOperation,
     session: GameSessionDto,
     action: (request: GameSessionRequest) => Promise<Result<GameActionReceipt>>,
   ): Promise<boolean> {
-    const accountId = this.accountIdState();
-    const conversationId = this.conversationIdState();
+    const { accountId, conversationId } = this.context();
     if (!accountId || !conversationId) return Promise.resolve(false);
     const request: GameSessionRequest = {
       version: 1,
@@ -222,7 +241,7 @@ export class GameFacade {
   }
 
   private async run<T>(
-    operation: string,
+    operation: GameOperation,
     pendingId: string,
     action: () => Promise<Result<T>>,
     requestId: string,
@@ -248,6 +267,10 @@ export class GameFacade {
   }
 
   private isCurrentContext(accountId: string, conversationId: string): boolean {
-    return this.accountIdState() === accountId && this.conversationIdState() === conversationId;
+    return this.accountId === accountId && this.conversationId === conversationId;
+  }
+
+  private context(): { readonly accountId: string; readonly conversationId: string } {
+    return { accountId: this.accountId, conversationId: this.conversationId };
   }
 }

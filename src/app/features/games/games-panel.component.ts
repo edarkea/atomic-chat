@@ -1,11 +1,30 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  REVERSI_BOARD_CELLS,
+  REVERSI_BOARD_SIZE,
+  REVERSI_GAME_ID,
+  TIC_TAC_TOE_GAME_ID,
+  reversiCounts,
+} from '../../core/domain';
 import type {
+  GameId,
+  GameRole,
+  GameOperation,
   GameSessionDto,
   GameSnapshotDto,
+  GameVersion,
   OfficialGameCatalog,
-  TicTacToeState,
-  ReversiState,
 } from '../../core/domain';
+import {
+  BOARD_VISIBLE_STATES,
+  FALLBACK_GAME_NAMES,
+  REVERSI_DEFAULT_FOCUS_INDEX,
+  SESSION_STATE_LABELS,
+  stateFor,
+  isReversiState,
+  isTicTacToeState,
+  type BoardCell,
+} from './games-panel.models';
 
 @Component({
   selector: 'app-games-panel',
@@ -23,7 +42,7 @@ export class GamesPanelComponent {
   readonly menuOnly = input(false);
   readonly matchOnly = input(false);
 
-  readonly inviteRequested = output<{ gameId: string; gameVersion: string }>();
+  readonly inviteRequested = output<{ gameId: GameId; gameVersion: GameVersion }>();
   readonly acceptRequested = output<GameSessionDto>();
   readonly rejectRequested = output<GameSessionDto>();
   readonly cancelRequested = output<GameSessionDto>();
@@ -33,27 +52,28 @@ export class GamesPanelComponent {
   readonly rematchRequested = output<GameSessionDto>();
   readonly closeRequested = output<GameSessionDto>();
 
-  protected readonly reversiFocusIndex = signal(19);
+  protected readonly reversiBoardSize = REVERSI_BOARD_SIZE;
+  protected readonly reversiFocusIndex = signal(REVERSI_DEFAULT_FOCUS_INDEX);
   protected readonly tttState = computed(() => {
-    const session = this.currentSession();
-    const state = this.currentSnapshot()?.state;
-    return session?.gameId === 'com.atomicchat.tic-tac-toe' ? (state as TicTacToeState) : undefined;
+    return stateFor(
+      this.currentSession(),
+      this.currentSnapshot(),
+      TIC_TAC_TOE_GAME_ID,
+      isTicTacToeState,
+    );
   });
   protected readonly reversiState = computed(() => {
-    const session = this.currentSession();
-    const state = this.currentSnapshot()?.state;
-    return session?.gameId === 'com.atomicchat.reversi' ? (state as ReversiState) : undefined;
+    return stateFor(this.currentSession(), this.currentSnapshot(), REVERSI_GAME_ID, isReversiState);
   });
   protected readonly reversiCounts = computed(() => {
-    const state = this.reversiState();
-    return {
-      initiator: state?.board.filter((cell) => cell === 'initiator').length || 0,
-      responder: state?.board.filter((cell) => cell === 'responder').length || 0,
-    };
+    return reversiCounts(this.reversiState()?.board ?? []);
   });
+  protected readonly legalReversiMoves = computed(
+    () => new Set(this.currentSnapshot()?.legalMoves ?? []),
+  );
   protected readonly localCanMove = computed(() => {
     const session = this.currentSession();
-    const state = this.currentSnapshot()?.state as { turn?: string; status?: string } | undefined;
+    const state = this.tttState() ?? this.reversiState();
     return Boolean(
       session &&
       session.state === 'active' &&
@@ -65,8 +85,7 @@ export class GamesPanelComponent {
   protected readonly passAllowed = computed(() => this.currentSnapshot()?.passAllowed === true);
   protected readonly resultLabel = computed(() => {
     const session = this.currentSession();
-    const state = this.currentSnapshot()?.state as
-      { status?: string; winner?: 'initiator' | 'responder' } | undefined;
+    const state = this.tttState() ?? this.reversiState();
     if (!session || !state || !['finished', 'abandoned'].includes(session.state)) return undefined;
     if (session.state === 'abandoned') return 'PARTIDA ABANDONADA';
     if (state.status === 'draw') return 'EMPATE';
@@ -80,51 +99,35 @@ export class GamesPanelComponent {
     return (
       this.catalog().find(
         (entry) => entry.gameId === session.gameId && entry.version === session.gameVersion,
-      )?.displayName || (session.gameId.endsWith('reversi') ? 'Reversi' : 'Tic-Tac-Toe')
+      )?.displayName ||
+      FALLBACK_GAME_NAMES[session.gameId] ||
+      session.gameId
     );
   });
 
-  protected isPending(session: GameSessionDto, operation: string): boolean {
+  protected isPending(session: GameSessionDto, operation: GameOperation): boolean {
     return this.pending().has(`${session.sessionId}:${operation}`);
   }
 
-  protected canAct(session: GameSessionDto): boolean {
-    return (
-      session.state !== 'paused' &&
-      session.state !== 'resync-required' &&
-      session.state !== 'closed'
-    );
-  }
-
   protected isBoardVisible(session: GameSessionDto): boolean {
-    return ['active', 'paused', 'resync-required', 'finished', 'abandoned'].includes(session.state);
+    return BOARD_VISIBLE_STATES.has(session.state);
   }
 
   protected statusLabel(session: GameSessionDto): string {
-    const labels: Record<string, string> = {
-      invited: session.localRole === 'responder' ? 'INVITACIÓN RECIBIDA' : 'INVITANDO A JUGAR…',
-      accepted: 'PARTIDA ACEPTADA · INICIANDO',
-      active: 'EN CURSO',
-      paused: 'PAUSADA · DESCONECTADA',
-      'resync-required': 'SINCRONIZACIÓN REQUERIDA',
-      rejected: 'INVITACIÓN RECHAZADA',
-      cancelled: 'CANCELADA',
-      finished: 'FINALIZADA',
-      abandoned: 'ABANDONADA',
-      expired: 'EXPIRADA',
-      closed: 'JUEGO FINALIZADO',
-    };
-    return labels[session.state] || session.state.toUpperCase();
+    if (session.state === 'invited')
+      return session.localRole === 'responder' ? 'INVITACIÓN RECIBIDA' : 'INVITANDO A JUGAR…';
+    return SESSION_STATE_LABELS[session.state];
   }
 
-  protected roleLabel(role: string | undefined): string {
-    return role === 'initiator' ? 'INICIADOR' : role === 'responder' ? 'RESPONDER' : 'SIN JUGADOR';
+  protected roleLabel(role: GameRole): string {
+    return role === 'initiator' ? 'INICIADOR' : 'RESPONDER';
   }
 
-  protected cellLabel(index: number, cell: string, boardSize: number): string {
+  protected cellLabel(index: number, cell: BoardCell, boardSize: number): string {
     const row = Math.floor(index / boardSize) + 1;
     const column = (index % boardSize) + 1;
-    return `Fila ${row}, columna ${column}: ${cell === 'empty' ? 'vacía' : this.roleLabel(cell)}`;
+    const value = cell === 'empty' ? 'vacía' : this.roleLabel(cell);
+    return `Fila ${row}, columna ${column}: ${value}`;
   }
 
   protected boardRow(index: number, boardSize: number): number {
@@ -136,12 +139,12 @@ export class GamesPanelComponent {
   }
 
   protected reversiTabIndex(index: number): number {
-    const legalMoves = this.currentSnapshot()?.legalMoves;
+    const legalMoves = this.legalReversiMoves();
     const focusIndex =
-      this.localCanMove() && legalMoves?.length
-        ? legalMoves.includes(this.reversiFocusIndex())
+      this.localCanMove() && legalMoves.size
+        ? legalMoves.has(this.reversiFocusIndex())
           ? this.reversiFocusIndex()
-          : legalMoves[0]
+          : [...legalMoves][0]
         : this.reversiFocusIndex();
     return index === focusIndex ? 0 : -1;
   }
@@ -150,15 +153,15 @@ export class GamesPanelComponent {
     const offsets: Record<string, number> = {
       ArrowLeft: -1,
       ArrowRight: 1,
-      ArrowUp: -8,
-      ArrowDown: 8,
+      ArrowUp: -REVERSI_BOARD_SIZE,
+      ArrowDown: REVERSI_BOARD_SIZE,
       Home: -index,
-      End: 63 - index,
+      End: REVERSI_BOARD_CELLS - 1 - index,
     };
     const offset = offsets[event.key];
     if (offset === undefined) return;
     event.preventDefault();
-    const next = Math.max(0, Math.min(63, index + offset));
+    const next = Math.max(0, Math.min(REVERSI_BOARD_CELLS - 1, index + offset));
     this.reversiFocusIndex.set(next);
     const target = event.currentTarget;
     if (target instanceof HTMLElement)
@@ -183,7 +186,7 @@ export class GamesPanelComponent {
 
   protected requestReversiPass(): void {
     const session = this.currentSession();
-    if (!session || !this.localCanMove()) return;
+    if (!session || !this.localCanMove() || !this.passAllowed()) return;
     this.moveRequested.emit({
       session,
       move: { kind: 'pass', actor: session.localRole },

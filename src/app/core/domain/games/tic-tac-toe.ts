@@ -24,6 +24,8 @@ export interface TicTacToeOutcome {
 
 export const TIC_TAC_TOE_GAME_ID = 'com.atomicchat.tic-tac-toe';
 export const TIC_TAC_TOE_GAME_VERSION = '1.0.0';
+export const TIC_TAC_TOE_BOARD_SIZE = 3;
+export const TIC_TAC_TOE_BOARD_CELLS = TIC_TAC_TOE_BOARD_SIZE * TIC_TAC_TOE_BOARD_SIZE;
 
 export const TIC_TAC_TOE_WINNING_LINES: readonly (readonly [number, number, number])[] =
   Object.freeze([
@@ -55,7 +57,7 @@ function winnerOf(board: readonly TicTacToeCell[]): GameRole | undefined {
 
 export function createTicTacToeState(): TicTacToeState {
   return freezeState({
-    board: Array.from({ length: 9 }, () => 'empty' as const),
+    board: Array.from({ length: TIC_TAC_TOE_BOARD_CELLS }, () => 'empty' as const),
     turn: 'initiator',
     status: 'active',
     moveCount: 0,
@@ -80,7 +82,7 @@ export function validateTicTacToeMove(
         expected: state.turn ?? 'initiator',
       },
     };
-  if (!Number.isInteger(move.index) || move.index < 0 || move.index >= 9)
+  if (!Number.isInteger(move.index) || move.index < 0 || move.index >= TIC_TAC_TOE_BOARD_CELLS)
     return {
       ok: false,
       error: {
@@ -107,7 +109,11 @@ export function applyTicTacToeMove(
   board[move.index] = move.actor;
   const winner = winnerOf(board);
   const moveCount = state.moveCount + 1;
-  const status: TicTacToeStatus = winner ? 'won' : moveCount === 9 ? 'draw' : 'active';
+  const status: TicTacToeStatus = winner
+    ? 'won'
+    : moveCount === TIC_TAC_TOE_BOARD_CELLS
+      ? 'draw'
+      : 'active';
   return {
     ok: true,
     value: freezeState({
@@ -120,8 +126,8 @@ export function applyTicTacToeMove(
   };
 }
 
-export function serializeTicTacToeState(state: TicTacToeState): string {
-  return serializeCanonicalFields([
+function stateFields(state: TicTacToeState): readonly string[] {
+  return [
     TIC_TAC_TOE_GAME_ID,
     TIC_TAC_TOE_GAME_VERSION,
     state.board.join(','),
@@ -129,19 +135,15 @@ export function serializeTicTacToeState(state: TicTacToeState): string {
     state.status,
     state.winner ?? 'none',
     String(state.moveCount),
-  ]);
+  ];
+}
+
+export function serializeTicTacToeState(state: TicTacToeState): string {
+  return serializeCanonicalFields(stateFields(state));
 }
 
 export function hashTicTacToeState(state: TicTacToeState): string {
-  return hashCanonicalFields([
-    TIC_TAC_TOE_GAME_ID,
-    TIC_TAC_TOE_GAME_VERSION,
-    state.board.join(','),
-    state.turn ?? 'none',
-    state.status,
-    state.winner ?? 'none',
-    String(state.moveCount),
-  ]);
+  return hashCanonicalFields(stateFields(state));
 }
 
 export const ticTacToeRules: GameRules<TicTacToeState, TicTacToeMove, TicTacToeOutcome> =
@@ -158,13 +160,5 @@ export const ticTacToeRules: GameRules<TicTacToeState, TicTacToeMove, TicTacToeO
   });
 
 export function canonicalTicTacToeBytes(state: TicTacToeState): Uint8Array {
-  return encodeCanonicalFields([
-    TIC_TAC_TOE_GAME_ID,
-    TIC_TAC_TOE_GAME_VERSION,
-    state.board.join(','),
-    state.turn ?? 'none',
-    state.status,
-    state.winner ?? 'none',
-    String(state.moveCount),
-  ]);
+  return encodeCanonicalFields(stateFields(state));
 }

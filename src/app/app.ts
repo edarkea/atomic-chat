@@ -55,7 +55,7 @@ import { SidebarViewCoordinator } from './features/navigation/sidebar-view.coord
 import { bareJid } from './core/identity';
 import { VersionUpdateComponent } from './features/session/version-update.component';
 import { GameFacade } from './features/games/game.facade';
-import type { GameSessionDto } from './core/domain';
+import type { GameId, GameSessionDto, GameVersion } from './core/domain';
 
 import {
   STICKER_SENDING_DISABLED_MESSAGE,
@@ -397,7 +397,7 @@ export class App {
     await this.chat.setPresence(option.mode, status);
     this.presenceOpen.set(false);
   }
-  protected inviteGame(input: { gameId: string; gameVersion: string }): void {
+  protected inviteGame(input: { gameId: GameId; gameVersion: GameVersion }): void {
     this.gamesOpen.set(false);
     void this.games.invite(input.gameId, input.gameVersion);
   }

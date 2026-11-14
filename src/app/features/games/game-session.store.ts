@@ -1,8 +1,10 @@
 import { Injectable, computed, signal } from '@angular/core';
 import type {
   GameDomainEventPayload,
+  GameOperation,
   GameSessionDto,
   GameSnapshotDto,
+  GameSessionState,
   OfficialGameCatalog,
 } from '../../core/domain';
 
@@ -15,7 +17,17 @@ function keyFor(accountId: string, conversationId: string, sessionId: string): s
   return `${accountId.toLowerCase()}|${conversationId.toLowerCase()}|${sessionId}`;
 }
 
-const LIVE_SESSION_STATES = new Set(['invited', 'accepted', 'active', 'paused', 'resync-required']);
+function pendingKey(sessionId: string, operation: GameOperation): string {
+  return `${sessionId}:${operation}`;
+}
+
+const LIVE_SESSION_STATES = new Set<GameSessionState>([
+  'invited',
+  'accepted',
+  'active',
+  'paused',
+  'resync-required',
+]);
 
 function preferredSession(sessions: ReadonlyArray<GameSessionDto>): GameSessionDto | undefined {
   return [...sessions].sort((left, right) => {
@@ -44,24 +56,8 @@ export class GameSessionStore {
   readonly error = this.errorState.asReadonly();
   readonly currentSession = computed(() => {
     const selected = this.selectedSessionIdState();
-    return (
-      this.sessionsState().find((session) => session.sessionId === selected) ||
-      this.sessionsState().find((session) =>
-        ['active', 'accepted', 'invited'].includes(session.state),
-      ) ||
-      this.sessionsState().find((session) =>
-        [
-          'paused',
-          'resync-required',
-          'rejected',
-          'cancelled',
-          'expired',
-          'finished',
-          'abandoned',
-          'closed',
-        ].includes(session.state),
-      )
-    );
+    const sessions = this.sessionsState();
+    return sessions.find((session) => session.sessionId === selected) || preferredSession(sessions);
   });
   readonly currentSnapshot = computed(() => {
     const session = this.currentSession();
@@ -82,15 +78,15 @@ export class GameSessionStore {
     if (current?.accountId === next.accountId && current.conversationId === next.conversationId)
       return;
     this.context.set(next);
-    this.sessionsState.set([]);
-    this.snapshotsState.set(new Map());
-    this.selectedSessionIdState.set(undefined);
-    this.pendingState.set(new Set());
-    this.errorState.set(null);
+    this.resetConversationState();
   }
 
   clearContext(): void {
     this.context.set(null);
+    this.resetConversationState();
+  }
+
+  private resetConversationState(): void {
     this.sessionsState.set([]);
     this.snapshotsState.set(new Map());
     this.selectedSessionIdState.set(undefined);
@@ -103,13 +99,8 @@ export class GameSessionStore {
   }
 
   setSessions(sessions: ReadonlyArray<GameSessionDto>): void {
-    const context = this.context();
-    if (!context) return;
-    const scoped = sessions.filter(
-      (session) =>
-        session.accountId === context.accountId &&
-        session.conversationId.toLowerCase() === context.conversationId,
-    );
+    if (!this.context()) return;
+    const scoped = sessions.filter((session) => this.matchesContext(session));
     this.sessionsState.set(scoped);
     const selected = this.selectedSessionIdState();
     const selectedSession = scoped.find((session) => session.sessionId === selected);
@@ -134,20 +125,20 @@ export class GameSessionStore {
       this.selectedSessionIdState.set(sessionId);
   }
 
-  begin(sessionId: string, operation: string): void {
+  begin(sessionId: string, operation: GameOperation): void {
     const next = new Set(this.pendingState());
-    next.add(`${sessionId}:${operation}`);
+    next.add(pendingKey(sessionId, operation));
     this.pendingState.set(next);
   }
 
-  end(sessionId: string, operation: string): void {
+  end(sessionId: string, operation: GameOperation): void {
     const next = new Set(this.pendingState());
-    next.delete(`${sessionId}:${operation}`);
+    next.delete(pendingKey(sessionId, operation));
     this.pendingState.set(next);
   }
 
-  isPending(sessionId: string, operation: string): boolean {
-    return this.pendingState().has(`${sessionId}:${operation}`);
+  isPending(sessionId: string, operation: GameOperation): boolean {
+    return this.pendingState().has(pendingKey(sessionId, operation));
   }
 
   setError(message: string | null): void {
@@ -155,21 +146,25 @@ export class GameSessionStore {
   }
 
   applyEvent(payload: GameDomainEventPayload): void {
-    const context = this.context();
-    if (
-      !context ||
-      payload.accountId !== context.accountId ||
-      payload.conversationId.toLowerCase() !== context.conversationId
-    )
-      return;
-    if (payload.session) {
+    if (!this.context() || !this.matchesContext(payload)) return;
+    const session = payload.session;
+    if (session) {
       const sessions = this.sessionsState().filter(
-        (session) => session.sessionId !== payload.session?.sessionId,
+        (current) => current.sessionId !== session.sessionId,
       );
-      this.sessionsState.set([...sessions, payload.session]);
-      if (LIVE_SESSION_STATES.has(payload.session.state))
-        this.selectedSessionIdState.set(payload.session.sessionId);
+      this.sessionsState.set([...sessions, session]);
+      if (LIVE_SESSION_STATES.has(session.state))
+        this.selectedSessionIdState.set(session.sessionId);
     }
     if (payload.snapshot) this.setSnapshot(payload.snapshot);
+  }
+
+  private matchesContext(value: Pick<GameSessionDto, 'accountId' | 'conversationId'>): boolean {
+    const context = this.context();
+    return Boolean(
+      context &&
+      value.accountId === context.accountId &&
+      value.conversationId.toLowerCase() === context.conversationId,
+    );
   }
 }

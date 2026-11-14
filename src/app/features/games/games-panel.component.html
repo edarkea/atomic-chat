@@ -14,7 +14,7 @@
             }}</span>
             <span>
               <strong>{{ game.displayName }}</strong>
-              <small>Invitar a jugar</small>
+              <small>Invitar</small>
             </span>
           </button>
         } @empty {
@@ -148,14 +148,12 @@
                   [attr.data-reversi-index]="$index"
                   [class.reversi-cell--initiator]="cell === 'initiator'"
                   [class.reversi-cell--responder]="cell === 'responder'"
-                  [class.reversi-cell--legal]="
-                    localCanMove() && currentSnapshot()?.legalMoves?.includes($index)
-                  "
+                  [class.reversi-cell--legal]="localCanMove() && legalReversiMoves().has($index)"
                   [disabled]="!localCanMove()"
                   [attr.aria-disabled]="cell !== 'empty'"
-                  [attr.aria-label]="cellLabel($index, cell, 8)"
-                  [attr.aria-rowindex]="boardRow($index, 8)"
-                  [attr.aria-colindex]="boardColumn($index, 8)"
+                  [attr.aria-label]="cellLabel($index, cell, reversiBoardSize)"
+                  [attr.aria-rowindex]="boardRow($index, reversiBoardSize)"
+                  [attr.aria-colindex]="boardColumn($index, reversiBoardSize)"
                   [attr.tabindex]="reversiTabIndex($index)"
                   (keydown)="handleReversiKeydown($event, $index)"
                   (click)="requestReversiMove($index)"

@@ -12,8 +12,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
-  padding: 0.5rem 0.65rem;
-  border-bottom: 1px solid var(--atomic-border);
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
 }
 
 .games-match__header h3 {
@@ -52,12 +52,6 @@
 .games-panel button:focus-visible {
   outline: 2px solid var(--atomic-focus);
   outline-offset: 2px;
-}
-
-.games-panel__content {
-  display: grid;
-  gap: 0.55rem;
-  padding: 0.55rem;
 }
 
 .games-menu {
@@ -155,7 +149,6 @@
 
 .games-match__revision,
 .games-turn,
-.games-player,
 .games-result {
   color: var(--atomic-green-soft);
   font-size: 0.6rem;
@@ -165,11 +158,6 @@
 .games-match--outgoing .games-turn,
 .games-match--outgoing .games-result {
   color: var(--atomic-message-outgoing-text);
-}
-
-.games-match__header {
-  padding: 6px 10px 4px;
-  border-bottom-color: color-mix(in srgb, currentColor 25%, transparent);
 }
 
 .games-message,
