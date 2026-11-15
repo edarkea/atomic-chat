@@ -15,11 +15,11 @@
       <use href="#ac-login" />
     </svg>
   </div>
-  <p class="eyebrow">CONEXIÓN XMPP</p>
+  <p class="eyebrow">CONEXIÓN</p>
   <h1>Iniciar sesión</h1>
   <p class="login-copy">Conecta tu cuenta para abrir tus conversaciones.</p>
   <form class="login-form" (ngSubmit)="submitted.emit()">
-    <label for="login-account">Usuario XMPP</label>
+    <label for="login-account">Usuario</label>
     <div #profilePicker class="account-picker" (focusout)="onProfileFocusOut($event)">
       <div class="account-input-row">
         <input
@@ -85,7 +85,7 @@
       }
     </div>
     <label
-      >Dominio XMPP<input
+      >Dominio<input
         name="domain"
         [ngModel]="domain()"
         (ngModelChange)="domainChange.emit($event)"
@@ -177,6 +177,6 @@
     (check)="checkForUpdates.emit()"
   />
   <small class="login-footnote"
-    >Servidor XMPP configurado · conexión protegida por la política del entorno</small
+    >Servicio configurado · conexión protegida por la política del entorno</small
   >
 </main>

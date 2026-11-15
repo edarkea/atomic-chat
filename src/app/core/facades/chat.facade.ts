@@ -14,6 +14,7 @@ import { OutgoingChatStateStore } from '../stores/outgoing-chat-state.store';
 import { upsertLiveMessage } from '../timeline/conversation-history-window';
 import { ConversationHistoryCoordinator } from '../coordinators/conversation-history.coordinator';
 import { SessionProfileCoordinator } from '../coordinators/session-profile.coordinator';
+import { UserProfileCoordinator } from '../coordinators/user-profile.coordinator';
 import { DirectMessagingCoordinator } from '../coordinators/direct-messaging.coordinator';
 import { RosterConversationCoordinator } from '../coordinators/roster-conversation.coordinator';
 import { UnreadConversationCoordinator } from '../coordinators/unread-conversation.coordinator';
@@ -30,7 +31,10 @@ import {
   Preferences,
   Result,
   StickerMessageRef,
+  UserProfile,
+  UserProfileUpdateInput,
   XmppConnectionProfile,
+  Contact,
 } from '../domain';
 import { UnreadStore } from '../stores/unread.store';
 import { ActiveConversationStore } from '../stores/active-conversation.store';
@@ -43,13 +47,24 @@ import {
   HISTORY_PORT,
   PREFERENCES_PORT,
   XMPP_PORT,
+  USER_PROFILE_PORT,
   ATTENTION_PORT,
   AccountPort,
   AttentionPort,
   HistoryPort,
   PreferencesPort,
+  UserProfilePort,
   XmppPort,
 } from '../ports';
+import { UnavailableUserProfilePort } from '../ports/unavailable.ports';
+
+interface StoredProfileHydrationJob {
+  readonly accountId: string;
+  readonly generation: number;
+  readonly jid: string;
+  readonly key: string;
+  readonly token: symbol;
+}
 
 export type { InitialHistoryState } from '../coordinators/conversation-history.coordinator';
 
@@ -64,6 +79,9 @@ export class ChatFacade {
   private readonly outgoingChatStateStore = inject(OutgoingChatStateStore);
   private readonly preferencesPort = inject<PreferencesPort>(PREFERENCES_PORT);
   private readonly xmpp = inject<XmppPort>(XMPP_PORT);
+  private readonly userProfilePort =
+    inject<UserProfilePort | null>(USER_PROFILE_PORT, { optional: true }) ??
+    new UnavailableUserProfilePort();
   private readonly unread = inject(UnreadStore);
   private readonly activeConversation = inject(ActiveConversationStore);
   private readonly conversationVisibility = inject(ConversationVisibilityStore);
@@ -129,6 +147,29 @@ export class ChatFacade {
   readonly certificateRequest = this.session.certificateRequest;
   readonly profiles = this.session.profiles;
   readonly contacts = this.roster.contacts;
+  private readonly userProfileCoordinator = new UserProfileCoordinator({
+    port: this.userProfilePort,
+    accountId: () => this.accountId(),
+    identityGeneration: () => this.session.identityGeneration(),
+    isCurrent: (generation, accountId) => this.session.isCurrent(generation, accountId),
+    isConnected: () => this.connection().status === 'connected',
+    reportError: (message) => this.error.set(message),
+  });
+  private readonly ownUserProfileCoordinator = new UserProfileCoordinator({
+    port: this.userProfilePort,
+    accountId: () => this.accountId(),
+    identityGeneration: () => this.session.identityGeneration(),
+    isCurrent: (generation, accountId) => this.session.isCurrent(generation, accountId),
+    isConnected: () => this.connection().status === 'connected',
+    reportError: (message) => this.error.set(message),
+  });
+  readonly userProfile = this.userProfileCoordinator.profile.asReadonly();
+  readonly userProfileLoading = this.userProfileCoordinator.loading.asReadonly();
+  readonly userProfileError = this.userProfileCoordinator.error.asReadonly();
+  readonly ownUserProfile = this.ownUserProfileCoordinator.profile.asReadonly();
+  readonly ownUserProfileLoading = this.ownUserProfileCoordinator.loading.asReadonly();
+  readonly ownUserProfileError = this.ownUserProfileCoordinator.error.asReadonly();
+  readonly contactProfiles = signal<ReadonlyMap<string, UserProfile>>(new Map());
   readonly conversationSummaries = this.roster.conversationSummaries;
   readonly presence = signal<Presence>({
     jid: this.accountId(),
@@ -176,7 +217,30 @@ export class ChatFacade {
     const accountId = this.accountId();
     this.messaging.resetForAccount();
     this.roster.resetForAccount(accountId);
+    this.userProfileCoordinator.clear();
+    this.ownUserProfileCoordinator.clear();
+    this.contactProfiles.set(new Map());
     this.conversationHistory.resetSearch();
+  });
+  private profileConnectionStatus: string | undefined;
+  private readonly profileSessionReset = effect(() => {
+    const status = this.connection().status;
+    if (this.profileConnectionStatus === status) return;
+    this.profileConnectionStatus = status;
+    this.userProfileCoordinator.clear();
+    this.ownUserProfileCoordinator.clear();
+    this.contactProfiles.set(new Map());
+    this.storedProfileQueue = [];
+    this.storedProfileLoads.clear();
+  });
+  private readonly storedProfileLoads = new Map<string, symbol>();
+  private storedProfileQueue: ReadonlyArray<StoredProfileHydrationJob> = [];
+  private storedProfileWorkers = 0;
+  private readonly profileStartupHydration = effect(() => {
+    if (this.connection().status !== 'connected') return;
+    const contacts = this.contacts();
+    void this.loadOwnUserProfile();
+    this.hydrateStoredContactProfiles(contacts);
   });
   private readonly reactionReconciler = effect(() => {
     this.messaging.pendingReactionVersion();
@@ -201,6 +265,22 @@ export class ChatFacade {
         if (presence.jid === this.accountId()) this.presence.set(presence);
         else if (presence.accountId === this.accountId()) {
           this.roster.applyRemoteContactPresence(presence);
+        }
+      }
+      if (event.type === 'profile.avatarChanged') {
+        const change = event.payload;
+        if (change.accountId !== this.accountId()) return;
+        if (change.jid === this.accountId() && this.ownUserProfile())
+          void this.loadOwnUserProfile();
+        else {
+          const key = bareJid(change.jid).toLowerCase();
+          if (this.contactProfiles().has(key)) {
+            const next = new Map(this.contactProfiles());
+            next.delete(key);
+            this.contactProfiles.set(next);
+          }
+          if (this.userProfile()?.jid && bareJid(this.userProfile()!.jid).toLowerCase() === key)
+            void this.loadUserProfile(change.jid);
         }
       }
       if (event.type === 'message.stateChanged' || event.type === 'message.received') {
@@ -234,6 +314,56 @@ export class ChatFacade {
       unsubscribe();
       this.clearChatStates();
     });
+  }
+
+  private hydrateStoredContactProfiles(contacts: ReadonlyArray<Contact>): void {
+    const accountId = this.accountId();
+    const generation = this.session.identityGeneration();
+    if (!accountId || !this.isConnected()) return;
+    const queued = [...this.storedProfileQueue];
+    for (const contact of contacts) {
+      const jid = bareJid(contact.jid);
+      const key = jid.toLowerCase();
+      if (key === accountId.toLowerCase() || this.contactProfiles().has(key)) continue;
+      if (this.storedProfileLoads.has(key)) continue;
+      const token = Symbol(key);
+      this.storedProfileLoads.set(key, token);
+      queued.push({ accountId, generation, jid, key, token });
+    }
+    this.storedProfileQueue = queued;
+    this.drainStoredProfileQueue();
+  }
+
+  private drainStoredProfileQueue(): void {
+    while (this.storedProfileWorkers < 4 && this.storedProfileQueue.length) {
+      const [job, ...remaining] = this.storedProfileQueue;
+      this.storedProfileQueue = remaining;
+      this.storedProfileWorkers += 1;
+      void this.readStoredContactProfile(job).finally(() => {
+        this.storedProfileWorkers -= 1;
+        if (this.storedProfileLoads.get(job.key) === job.token)
+          this.storedProfileLoads.delete(job.key);
+        this.drainStoredProfileQueue();
+      });
+    }
+  }
+
+  private async readStoredContactProfile(job: StoredProfileHydrationJob): Promise<void> {
+    try {
+      const result = await this.userProfilePort.get({
+        version: 1,
+        requestId: createOpaqueId('profile-store'),
+        accountId: job.accountId,
+        jid: job.jid,
+        mode: 'stored',
+      });
+      if (!result.ok || !this.isCurrent(job.generation, job.accountId)) return;
+      const next = new Map(this.contactProfiles());
+      next.set(job.key, result.value);
+      this.contactProfiles.set(next);
+    } catch {
+      // A missing stored profile is expected on first contact access.
+    }
   }
 
   async decideCertificate(decision: CertificateTrustDecision): Promise<void> {
@@ -308,6 +438,119 @@ export class ChatFacade {
 
   async refreshRoster(): Promise<void> {
     await this.roster.refreshRoster();
+  }
+
+  async loadUserProfile(jid: string): Promise<void> {
+    const key = bareJid(jid).toLowerCase();
+    const cached = this.contactProfiles().get(key);
+    if (cached) {
+      this.userProfileCoordinator.useCached(cached);
+      return;
+    }
+    await this.userProfileCoordinator.load(jid);
+    const profile = this.userProfileCoordinator.profile();
+    if (!profile || bareJid(profile.jid).toLowerCase() !== bareJid(jid).toLowerCase()) return;
+    const next = new Map(this.contactProfiles());
+    next.set(bareJid(profile.jid).toLowerCase(), profile);
+    this.contactProfiles.set(next);
+  }
+
+  async loadOwnUserProfile(): Promise<void> {
+    const accountId = this.accountId();
+    if (accountId) await this.ownUserProfileCoordinator.load(accountId);
+  }
+
+  async updateOwnUserProfile(input: UserProfileUpdateInput): Promise<Result<UserProfile>> {
+    const accountId = this.accountId();
+    if (!accountId || !this.isConnected()) {
+      const result: Result<UserProfile> = {
+        ok: false,
+        version: 1,
+        error: {
+          code: 'NOT_CONNECTED',
+          retryable: true,
+          requestId: createOpaqueId('profile-update'),
+          message: 'La cuenta no está conectada.',
+        },
+      };
+      this.ownUserProfileCoordinator.error.set(result.error.message);
+      return result;
+    }
+    const result = await this.userProfilePort.update({
+      version: 1,
+      requestId: createOpaqueId('profile-update'),
+      accountId,
+      profile: input,
+    });
+    if (result.ok) {
+      this.ownUserProfileCoordinator.profile.set(result.value);
+      this.ownUserProfileCoordinator.error.set(null);
+      this.connection.update((current) => ({
+        ...current,
+        displayName: result.value.displayName,
+      }));
+    } else this.ownUserProfileCoordinator.error.set(result.error.message);
+    return result;
+  }
+
+  async updateOwnUserAvatar(): Promise<Result<UserProfile | null>> {
+    const accountId = this.accountId();
+    if (!accountId || !this.isConnected()) {
+      const result: Result<UserProfile | null> = {
+        ok: false,
+        version: 1,
+        error: {
+          code: 'NOT_CONNECTED',
+          retryable: true,
+          requestId: createOpaqueId('profile-avatar-update'),
+          message: 'La cuenta no está conectada.',
+        },
+      };
+      this.ownUserProfileCoordinator.error.set(result.error.message);
+      return result;
+    }
+    const result = await this.userProfilePort.updateAvatar({
+      version: 1,
+      requestId: createOpaqueId('profile-avatar-update'),
+      accountId,
+    });
+    if (result.ok) {
+      if (result.value) this.ownUserProfileCoordinator.profile.set(result.value);
+      this.ownUserProfileCoordinator.error.set(null);
+    } else this.ownUserProfileCoordinator.error.set(result.error.message);
+    return result;
+  }
+
+  async clearOwnUserAvatar(): Promise<Result<UserProfile>> {
+    const accountId = this.accountId();
+    if (!accountId || !this.isConnected()) {
+      const result: Result<UserProfile> = {
+        ok: false,
+        version: 1,
+        error: {
+          code: 'NOT_CONNECTED',
+          retryable: true,
+          requestId: createOpaqueId('profile-avatar-clear'),
+          message: 'La cuenta no está conectada.',
+        },
+      };
+      this.ownUserProfileCoordinator.error.set(result.error.message);
+      return result;
+    }
+    const result = await this.userProfilePort.clearAvatar({
+      version: 1,
+      requestId: createOpaqueId('profile-avatar-clear'),
+      accountId,
+    });
+    if (result.ok) {
+      this.ownUserProfileCoordinator.profile.set(result.value);
+      this.ownUserProfileCoordinator.error.set(null);
+    } else this.ownUserProfileCoordinator.error.set(result.error.message);
+    return result;
+  }
+
+  clearUserProfile(): void {
+    this.userProfileCoordinator.clear();
   }
 
   async loadConversation(

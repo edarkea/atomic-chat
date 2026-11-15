@@ -1,0 +1,239 @@
+<div
+  id="contact-profile-dialog"
+  class="contact-profile-backdrop"
+  role="presentation"
+  (click)="onBackdropClick($event)"
+>
+  <section
+    #dialog
+    class="contact-profile-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="contact-profile-title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="contact-profile-header">
+      <app-user-profile-image
+        [accountId]="profile().accountId"
+        [image]="profile().image"
+        [alt]="'Avatar de ' + title()"
+        size="small"
+      />
+      <div>
+        <span class="eyebrow">PERFIL DEL CONTACTO</span>
+        <h2 id="contact-profile-title">{{ title() }}</h2>
+        @if (rosterName() && rosterName() !== profile().displayName) {
+          <small>Nombre personalizado: {{ rosterName() }}</small>
+        }
+      </div>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Cerrar perfil del contacto"
+        (click)="close()"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+
+    <nav class="contact-profile-tabs" role="tablist" aria-label="Secciones del contacto">
+      @for (tab of tabs; track tab.id) {
+        <button
+          [id]="'contact-profile-tab-' + tab.id"
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          [attr.aria-controls]="'contact-profile-panel-' + tab.id"
+          [tabIndex]="activeTab() === tab.id ? 0 : -1"
+          (click)="selectTab(tab.id)"
+          (keydown)="onTabKeydown($event, tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      }
+    </nav>
+
+    <div class="contact-profile-body">
+      @if (activeTab() === 'personal') {
+        <section
+          id="contact-profile-panel-personal"
+          class="contact-profile-panel"
+          role="tabpanel"
+          aria-labelledby="contact-profile-tab-personal"
+        >
+          <p class="contact-profile-section-label">DATOS PERSONALES PUBLICADOS</p>
+          @if (
+            profile().displayName ||
+            fullName() ||
+            profile().nickname ||
+            profile().email ||
+            profile().birthday ||
+            profile().description ||
+            profile().website
+          ) {
+            <dl class="contact-profile-fields">
+              @if (profile().displayName) {
+                <div class="contact-profile-field">
+                  <dt>Nombre visible</dt>
+                  <dd>{{ profile().displayName }}</dd>
+                </div>
+              }
+              @if (fullName()) {
+                <div class="contact-profile-field">
+                  <dt>Nombre completo</dt>
+                  <dd>{{ fullName() }}</dd>
+                </div>
+              }
+              @if (profile().nickname) {
+                <div class="contact-profile-field">
+                  <dt>Nickname</dt>
+                  <dd>{{ profile().nickname }}</dd>
+                </div>
+              }
+              @if (profile().email) {
+                <div class="contact-profile-field">
+                  <dt>Correo electrónico</dt>
+                  <dd>{{ profile().email }}</dd>
+                </div>
+              }
+              @if (profile().birthday) {
+                <div class="contact-profile-field">
+                  <dt>Cumpleaños</dt>
+                  <dd>{{ profile().birthday }}</dd>
+                </div>
+              }
+              @if (profile().website) {
+                <div class="contact-profile-field">
+                  <dt>Página web</dt>
+                  <dd>{{ profile().website }}</dd>
+                </div>
+              }
+              @if (profile().description) {
+                <div class="contact-profile-field contact-profile-field--wide">
+                  <dt>Descripción</dt>
+                  <dd>{{ profile().description }}</dd>
+                </div>
+              }
+            </dl>
+          } @else {
+            <p class="contact-profile-empty">El contacto no ha publicado datos personales.</p>
+          }
+        </section>
+      }
+
+      @if (activeTab() === 'business') {
+        <section
+          id="contact-profile-panel-business"
+          class="contact-profile-panel"
+          role="tabpanel"
+          aria-labelledby="contact-profile-tab-business"
+        >
+          <p class="contact-profile-section-label">INFORMACIÓN LABORAL PUBLICADA</p>
+          @if (profile().company || profile().jobTitle) {
+            <dl class="contact-profile-fields contact-profile-fields--two">
+              @if (profile().company) {
+                <div class="contact-profile-field">
+                  <dt>Empresa</dt>
+                  <dd>{{ profile().company }}</dd>
+                </div>
+              }
+              @if (profile().jobTitle) {
+                <div class="contact-profile-field">
+                  <dt>Cargo</dt>
+                  <dd>{{ profile().jobTitle }}</dd>
+                </div>
+              }
+            </dl>
+          } @else {
+            <p class="contact-profile-empty">El contacto no ha publicado datos laborales.</p>
+          }
+        </section>
+      }
+
+      @if (activeTab() === 'home') {
+        <section
+          id="contact-profile-panel-home"
+          class="contact-profile-panel"
+          role="tabpanel"
+          aria-labelledby="contact-profile-tab-home"
+        >
+          <p class="contact-profile-section-label">DIRECCIÓN Y TELÉFONOS PUBLICADOS</p>
+          @if (
+            profile().homeAddress ||
+            profile().homeCity ||
+            profile().homeState ||
+            profile().homePostalCode ||
+            profile().homeCountry ||
+            profile().phone ||
+            profile().mobile ||
+            profile().fax ||
+            profile().pager
+          ) {
+            <dl class="contact-profile-fields contact-profile-fields--two">
+              @if (profile().homeAddress) {
+                <div class="contact-profile-field contact-profile-field--wide">
+                  <dt>Dirección</dt>
+                  <dd>{{ profile().homeAddress }}</dd>
+                </div>
+              }
+              @if (profile().homeCity) {
+                <div class="contact-profile-field">
+                  <dt>Ciudad</dt>
+                  <dd>{{ profile().homeCity }}</dd>
+                </div>
+              }
+              @if (profile().homeState) {
+                <div class="contact-profile-field">
+                  <dt>Estado/Provincia</dt>
+                  <dd>{{ profile().homeState }}</dd>
+                </div>
+              }
+              @if (profile().homePostalCode) {
+                <div class="contact-profile-field">
+                  <dt>Código postal</dt>
+                  <dd>{{ profile().homePostalCode }}</dd>
+                </div>
+              }
+              @if (profile().homeCountry) {
+                <div class="contact-profile-field">
+                  <dt>País</dt>
+                  <dd>{{ profile().homeCountry }}</dd>
+                </div>
+              }
+              @if (profile().phone) {
+                <div class="contact-profile-field">
+                  <dt>Teléfono</dt>
+                  <dd>{{ profile().phone }}</dd>
+                </div>
+              }
+              @if (profile().mobile) {
+                <div class="contact-profile-field">
+                  <dt>Celular</dt>
+                  <dd>{{ profile().mobile }}</dd>
+                </div>
+              }
+              @if (profile().fax) {
+                <div class="contact-profile-field">
+                  <dt>Fax</dt>
+                  <dd>{{ profile().fax }}</dd>
+                </div>
+              }
+              @if (profile().pager) {
+                <div class="contact-profile-field">
+                  <dt>Localizador</dt>
+                  <dd>{{ profile().pager }}</dd>
+                </div>
+              }
+            </dl>
+          } @else {
+            <p class="contact-profile-empty">El contacto no ha publicado dirección ni teléfonos.</p>
+          }
+        </section>
+      }
+    </div>
+
+    <footer class="contact-profile-footer">
+      <button type="button" class="secondary" (click)="close()">Cerrar</button>
+    </footer>
+  </section>
+</div>

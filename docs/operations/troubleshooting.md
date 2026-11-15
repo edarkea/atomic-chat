@@ -30,7 +30,7 @@ An `UNAUTHORIZED` result can indicate a stale/destroyed window, an unexpected fr
 
 ## History, media or sticker inconsistencies
 
-Check account and conversation identity first. Preserve the database and media directories, then run the affected isolated tests against temporary data. For schema issues, record the current schema version and follow [the migration guide](../guides/persistence-migrations.md).
+Check account and conversation identity first. Preserve the database and media directories, then inspect the affected technical boundary against temporary data. For schema issues, record the current schema version and verify the forward-only migrator before changing stored data.
 
 ## Update is unavailable
 

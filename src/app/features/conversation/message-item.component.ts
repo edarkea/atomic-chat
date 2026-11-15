@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   ElementRef,
+  HostListener,
   inject,
   input,
   output,
@@ -16,6 +17,7 @@ import {
 } from '../../core/domain';
 import { createOpaqueId } from '../../core/ids';
 import { EXTERNAL_LINK_PORT, ExternalLinkPort } from '../../core/ports';
+import { QUICK_REACTION_EMOJIS as CATALOG_QUICK_REACTION_EMOJIS } from './emoji-catalog';
 import { formatMessageDate, formatMessageDateTime, formatMessageTime } from './message-date-time';
 import { EmojiPickerComponent } from './emoji-picker.component';
 
@@ -24,7 +26,7 @@ export type MessageContentSegment =
   | { readonly kind: 'link'; readonly value: string; readonly href: string };
 
 const LINK_PATTERN = /https?:\/\/[^\s<>"'`]+/giu;
-export const QUICK_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
+export const QUICK_REACTION_EMOJIS = CATALOG_QUICK_REACTION_EMOJIS;
 export type MessageOverlay = 'quick' | 'menu' | 'picker';
 const EMOJI_TOKEN_PATTERN =
   /(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}(?:\uFE0F)?|\p{Extended_Pictographic}\uFE0F)(?:\p{Emoji_Modifier})?)*)/gu;
@@ -125,6 +127,7 @@ export class MessageItemComponent {
   protected readonly actionMenuOpen = computed(() => this.activeOverlay() === 'menu');
   protected readonly quickReactionOpen = computed(() => this.activeOverlay() === 'quick');
   protected readonly overlayPlacement = signal<'above' | 'below'>('above');
+  protected readonly reactionPickerStyle = signal('');
   protected readonly tooltipEmoji = signal<string | undefined>(undefined);
   protected readonly contentSegments = computed(() => messageContentSegments(this.body()));
   protected readonly emojiCount = computed(() => emojiOnlyCount(this.body()));
@@ -203,8 +206,13 @@ export class MessageItemComponent {
     this.hideReactionTooltip();
     this.requestOverlay(undefined);
   }
+  @HostListener('window:resize')
+  protected onViewportResize(): void {
+    if (this.reactionOpen()) this.positionReactionPicker();
+  }
   protected requestOverlay(overlay: MessageOverlay | undefined): void {
     if (overlay && !this.messageId()) return;
+    if (!overlay) this.reactionPickerStyle.set('');
     if (overlay) {
       const element = this.host.nativeElement.querySelector('.message') as HTMLElement | null;
       const bounds = element?.getBoundingClientRect();
@@ -216,8 +224,47 @@ export class MessageItemComponent {
           ? bounds.top - scrollViewport.top
           : bounds?.top || Number.POSITIVE_INFINITY;
       this.overlayPlacement.set(topOffset < 128 ? 'below' : 'above');
+      if (overlay === 'picker') this.positionReactionPicker();
     }
     this.overlayRequested.emit(overlay);
+  }
+  private positionReactionPicker(): void {
+    if (typeof window === 'undefined') return;
+    const element = this.host.nativeElement.querySelector('.message') as HTMLElement | null;
+    const bounds = element?.getBoundingClientRect();
+    if (!bounds) return;
+
+    const margin = 12;
+    const gap = 8;
+    const panelWidth = Math.min(320, Math.max(0, window.innerWidth - margin * 2));
+    const panelHeight = Math.min(420, Math.max(160, window.innerHeight - margin * 2));
+    const canFitAbove = bounds.top - gap - panelHeight >= margin;
+    const canFitBelow = bounds.bottom + gap + panelHeight <= window.innerHeight - margin;
+    let top: number;
+
+    if (this.overlayPlacement() === 'below' && canFitBelow) {
+      top = bounds.bottom + gap;
+    } else if (canFitAbove) {
+      top = bounds.top - gap - panelHeight;
+    } else if (canFitBelow) {
+      top = bounds.bottom + gap;
+    } else {
+      top = margin;
+    }
+
+    const preferredLeft = this.outgoing() ? bounds.right - panelWidth : bounds.left;
+    const maxLeft = Math.max(margin, window.innerWidth - panelWidth - margin);
+    const left = Math.min(Math.max(preferredLeft, margin), maxLeft);
+    const maxHeight = Math.max(160, Math.min(420, window.innerHeight - margin * 2));
+    this.reactionPickerStyle.set(
+      'top: ' +
+        Math.round(top) +
+        'px; left: ' +
+        Math.round(left) +
+        'px; --emoji-picker-max-height: ' +
+        Math.round(maxHeight) +
+        'px;',
+    );
   }
   private readonly host = inject(ElementRef<HTMLElement>);
 }

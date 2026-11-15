@@ -4,7 +4,7 @@ Thank you for improving Atomic Chat. Keep changes focused, preserve the Renderer
 
 ## Before changing code
 
-1. Read [the development workflow](docs/getting-started/development.md) and the relevant architecture/domain documentation.
+1. Read the relevant [architecture](docs/architecture/overview.md) and [domain](docs/domain/overview.md) documentation.
 2. Identify the owner of the behavior and the contracts it crosses.
 3. Inspect related tests and preserve account, conversation and session-generation identity.
 4. Check whether the change requires an architecture, domain, contract or configuration documentation update.
@@ -18,7 +18,7 @@ Thank you for improving Atomic Chat. Keep changes focused, preserve the Renderer
 | Domain rule, invariant, state or identity behavior       | `docs/domain/invariants.md`; update `docs/domain/business-rules.md` when explanatory detail changes. |
 | Environment variable or runtime configuration            | `docs/reference/environment-variables.md` and `.env.example` when applicable.                        |
 | Security or recovery behavior                            | The relevant `docs/security/` or `docs/operations/` page.                                            |
-| User-visible command or validation workflow              | README or the relevant getting-started/guide page.                                                   |
+| User-visible command or validation workflow              | README or the relevant technical reference page.                                                     |
 
 Documentation must describe the current repository. Do not report a test, build, benchmark or manual validation result unless it was executed for the current change.
 

@@ -1,11 +1,31 @@
-<section class="emoji-picker" role="dialog" aria-label="Selector de emojis">
+<section
+  id="emoji-picker-dialog"
+  class="emoji-picker"
+  role="dialog"
+  aria-label="Selector de emojis"
+  (keydown)="onPickerKeydown($event)"
+>
   <div class="emoji-toolbar">
     <input
-      aria-label="Buscar emoji por nombre"
-      placeholder="Buscar emoji..."
+      aria-label="Buscar emoji por nombre, alias o categoría"
+      placeholder="Buscar emoji, alias o categoría..."
       [ngModel]="query()"
       (ngModelChange)="query.set($event)"
     />
+    <label class="emoji-tone-control">
+      <span class="visually-hidden">Tono de piel</span>
+      <select
+        aria-label="Tono de piel"
+        [ngModel]="skinTone()"
+        (ngModelChange)="selectSkinTone($event)"
+      >
+        @for (tone of skinToneOptions; track tone.modifier) {
+          <option [attr.aria-label]="tone.label" [value]="tone.modifier">
+            {{ tone.preview }}
+          </option>
+        }
+      </select>
+    </label>
     <button
       type="button"
       class="close"
@@ -15,18 +35,23 @@
       ×
     </button>
   </div>
-  <div class="emoji-categories" role="tablist" aria-label="Categorías de emojis">
-    @for (item of categories; track item) {
+  <nav class="emoji-categories" aria-label="Categorías de emojis">
+    @for (item of categories; track item; let index = $index) {
       <button
         type="button"
-        role="tab"
-        [attr.aria-selected]="category() === item"
-        (click)="category.set(item)"
+        [attr.aria-label]="'Categoría: ' + item"
+        [attr.aria-current]="category() === item ? 'location' : null"
+        [attr.aria-controls]="item === 'Todos' ? 'emoji-picker-dialog' : categoryId(item)"
+        [attr.title]="item"
+        (keydown)="onCategoryKeydown($event, index)"
+        (click)="selectCategory(item)"
       >
-        {{ item }}
+        <svg class="ac-icon emoji-category-icon" aria-hidden="true" focusable="false">
+          <use [attr.href]="'#' + categoryIcon(item)" />
+        </svg>
       </button>
     }
-  </div>
+  </nav>
   @if (showRecentSection()) {
     <section class="emoji-section emoji-section--recent" aria-labelledby="recent-emojis-label">
       <p id="recent-emojis-label" class="emoji-label">Recientes</p>
@@ -34,8 +59,8 @@
         @for (entry of recentEntries(); track entry.emoji) {
           <button
             type="button"
-            [attr.aria-label]="entry.name"
-            [attr.data-tooltip]="entry.name"
+            [attr.aria-label]="entry.entry.name"
+            [attr.title]="entry.entry.name"
             (click)="chooseRecent(entry.emoji)"
           >
             {{ entry.emoji }}
@@ -44,28 +69,48 @@
       </div>
     </section>
   }
-  <section
-    class="emoji-section emoji-section--all"
-    [class.emoji-section--separated]="showRecentSection()"
-    [attr.aria-labelledby]="showRecentSection() ? 'all-emojis-label' : null"
-    [attr.aria-label]="showRecentSection() ? null : 'Emojis disponibles'"
-  >
-    @if (showRecentSection()) {
-      <p id="all-emojis-label" class="emoji-label">Todos</p>
+  @if (query().trim()) {
+    <p class="visually-hidden" role="status" aria-live="polite">
+      {{ visible().length }} emojis encontrados
+    </p>
+    <section class="emoji-section emoji-section--all" aria-label="Resultados de búsqueda">
+      <div class="emoji-grid" aria-label="Emojis encontrados">
+        @for (entry of visible(); track entry.emoji) {
+          <button
+            type="button"
+            [attr.aria-label]="entry.name"
+            [attr.title]="entry.name"
+            (click)="choose(entry)"
+          >
+            {{ emojiFor(entry) }}
+          </button>
+        }
+      </div>
+    </section>
+  } @else {
+    @for (item of categorySections; track item) {
+      <section
+        class="emoji-section emoji-category-section"
+        [id]="categoryId(item)"
+        [attr.data-emoji-category]="item"
+        [attr.aria-label]="item"
+      >
+        <p class="emoji-label">{{ item }}</p>
+        <div class="emoji-grid" [attr.aria-label]="'Emojis: ' + item">
+          @for (entry of entriesByCategory().get(item) ?? []; track entry.emoji) {
+            <button
+              type="button"
+              [attr.aria-label]="entry.name"
+              [attr.title]="entry.name"
+              (click)="choose(entry)"
+            >
+              {{ emojiFor(entry) }}
+            </button>
+          }
+        </div>
+      </section>
     }
-    <div class="emoji-grid" aria-label="Emojis disponibles">
-      @for (entry of visible(); track entry.emoji) {
-        <button
-          type="button"
-          [attr.aria-label]="entry.name"
-          [attr.data-tooltip]="entry.name"
-          (click)="choose(entry)"
-        >
-          {{ entry.emoji }}
-        </button>
-      }
-    </div>
-  </section>
+  }
   @if (!visible().length) {
     <p class="empty">No hay emojis para esa búsqueda.</p>
   }

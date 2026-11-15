@@ -57,6 +57,20 @@ contextBridge.exposeInMainWorld(
     session: Object.freeze({ getState: (accountId) => invoke('session.getState', accountId) }),
     presence: Object.freeze({ set: (input) => invoke('presence.set', input) }),
     roster: Object.freeze({ list: (accountId) => invoke('roster.list', accountId) }),
+    userProfiles: Object.freeze({
+      get: (input) => invoke('userProfiles.get', input),
+      update: (input) => invoke('userProfiles.update', input),
+      avatar: Object.freeze({
+        update: (input) => invoke('userProfiles.avatar.update', input),
+        clear: (input) => invoke('userProfiles.avatar.clear', input),
+      }),
+      image: Object.freeze({
+        open: (input) => invoke('userProfiles.image.open', input),
+        read: (input) => invoke('userProfiles.image.read', input),
+        close: (input) => invoke('userProfiles.image.close', input),
+        revoke: (input) => invoke('userProfiles.image.revoke', input),
+      }),
+    }),
     messaging: Object.freeze({
       send: (input) => invoke('message.send', input),
       react: (input) => invoke('message.react', input),
@@ -69,6 +83,43 @@ contextBridge.exposeInMainWorld(
       leave: (input) => invoke('muc.leave', input),
       sendMessage: (input) => invoke('muc.sendMessage', input),
       react: (input) => invoke('muc.react', input),
+    }),
+    games: Object.freeze({
+      catalog: (input) => invoke('games.catalog', input),
+      sessions: (input) => invoke('games.sessions', input),
+      snapshot: (input) => invoke('games.snapshot', input),
+      invite: (input) => invoke('games.invite', input),
+      accept: (input) => invoke('games.accept', input),
+      reject: (input) => invoke('games.reject', input),
+      cancel: (input) => invoke('games.cancel', input),
+      start: (input) => invoke('games.start', input),
+      move: (input) => invoke('games.move', input),
+      resign: (input) => invoke('games.resign', input),
+      resync: (input) => invoke('games.resync', input),
+      rematch: (input) => invoke('games.rematch', input),
+      close: (input) => invoke('games.close', input),
+      subscribe: (input, listener) => {
+        if (typeof listener !== 'function') return () => undefined;
+        const handler = (_event, value) => listener(value);
+        ipcRenderer.on('game.event', handler);
+        let active = true;
+        void invoke('games.subscribe', input).then((result) => {
+          if (!result?.ok && active) {
+            active = false;
+            ipcRenderer.removeListener('game.event', handler);
+          }
+        });
+        return () => {
+          if (!active) return;
+          active = false;
+          ipcRenderer.removeListener('game.event', handler);
+          void invoke('games.unsubscribe', {
+            version: 1,
+            requestId: `games-unsubscribe-${Date.now()}`,
+            accountId: input?.accountId,
+          });
+        };
+      },
     }),
     file: Object.freeze({
       send: (input) => invoke('file.send', input),

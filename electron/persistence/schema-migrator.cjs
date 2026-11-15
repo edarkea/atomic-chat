@@ -494,6 +494,75 @@ class SchemaMigrator {
           ON message_reactions(account_id, conversation_id, source, target_key);
         UPDATE schema_meta SET version = 15 WHERE version < 15;
       `);
+      const currentGameSchemaVersion = this.database
+        .prepare('SELECT version FROM schema_meta')
+        .get().version;
+      if (currentGameSchemaVersion < 16)
+        this.database.exec(`
+          CREATE TABLE IF NOT EXISTS game_sessions (
+            account_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            peer_bare_jid TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            game_id TEXT NOT NULL,
+            game_version TEXT NOT NULL,
+            api_version INTEGER NOT NULL CHECK (api_version = 1),
+            local_role TEXT NOT NULL CHECK (local_role IN ('initiator', 'responder')),
+            state TEXT NOT NULL CHECK (state IN ('invited', 'accepted', 'active', 'paused', 'resync-required', 'rejected', 'cancelled', 'expired', 'finished', 'abandoned', 'closed')),
+            revision INTEGER NOT NULL CHECK (revision >= 0),
+            state_hash TEXT NOT NULL,
+            session_generation INTEGER NOT NULL CHECK (session_generation >= 0),
+            last_event_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (account_id, session_id),
+            FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+          );
+          CREATE TABLE IF NOT EXISTS game_events (
+            account_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            actor TEXT NOT NULL CHECK (actor IN ('initiator', 'responder')),
+            actor_seq INTEGER NOT NULL CHECK (actor_seq > 0),
+            expected_revision INTEGER NOT NULL CHECK (expected_revision >= 0),
+            revision INTEGER NOT NULL CHECK (revision > 0),
+            previous_state_hash TEXT NOT NULL,
+            resulting_state_hash TEXT NOT NULL,
+            move_json TEXT NOT NULL CHECK (length(move_json) <= 65536),
+            accepted_at TEXT NOT NULL,
+            PRIMARY KEY (account_id, session_id, event_id),
+            UNIQUE (account_id, session_id, actor, actor_seq),
+            UNIQUE (account_id, session_id, revision),
+            FOREIGN KEY (account_id, session_id) REFERENCES game_sessions(account_id, session_id) ON DELETE CASCADE
+          );
+          CREATE TABLE IF NOT EXISTS game_snapshots (
+            account_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 0),
+            state_hash TEXT NOT NULL,
+            state_json TEXT NOT NULL CHECK (length(state_json) <= 262144),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (account_id, session_id, revision),
+            FOREIGN KEY (account_id, session_id) REFERENCES game_sessions(account_id, session_id) ON DELETE CASCADE
+          );
+          CREATE TABLE IF NOT EXISTS game_results (
+            account_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            result_json TEXT NOT NULL CHECK (length(result_json) <= 65536),
+            recorded_at TEXT NOT NULL,
+            PRIMARY KEY (account_id, session_id),
+            FOREIGN KEY (account_id, session_id) REFERENCES game_sessions(account_id, session_id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idx_game_sessions_account_conversation
+            ON game_sessions(account_id, conversation_id, updated_at);
+          CREATE INDEX IF NOT EXISTS idx_game_sessions_account_state
+            ON game_sessions(account_id, state, updated_at);
+          CREATE INDEX IF NOT EXISTS idx_game_events_account_session_revision
+            ON game_events(account_id, session_id, revision);
+          CREATE INDEX IF NOT EXISTS idx_game_snapshots_account_session_revision
+            ON game_snapshots(account_id, session_id, revision);
+          UPDATE schema_meta SET version = 16 WHERE version < 16;
+        `);
     });
     migrate();
   }

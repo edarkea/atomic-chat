@@ -1,0 +1,267 @@
+:host {
+  display: contents;
+}
+
+.contact-profile-backdrop {
+  align-items: center;
+  background: rgb(0 0 0 / 78%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 24px);
+  position: fixed;
+  z-index: 1000;
+}
+
+.contact-profile-dialog {
+  background: var(--atomic-surface);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-md);
+  box-shadow:
+    0 18px 60px #000b,
+    0 0 0 1px var(--atomic-border-soft);
+  color: var(--atomic-text);
+  display: flex;
+  flex-direction: column;
+  max-height: min(680px, calc(100vh - 48px));
+  max-width: 620px;
+  overflow: hidden;
+  width: min(100%, 620px);
+}
+
+.contact-profile-header,
+.contact-profile-footer {
+  align-items: center;
+  display: flex;
+  gap: var(--atomic-space-3);
+  justify-content: space-between;
+  padding: 18px 20px;
+}
+
+.contact-profile-header {
+  border-bottom: 1px solid var(--atomic-border-soft);
+}
+
+.contact-profile-header > app-user-profile-image {
+  flex: 0 0 auto;
+}
+
+.contact-profile-header .eyebrow,
+.contact-profile-section-label {
+  color: var(--atomic-green);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.contact-profile-header h2 {
+  color: var(--atomic-text);
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 5px 0 4px;
+}
+
+.contact-profile-header p,
+.contact-profile-header small {
+  color: var(--atomic-text-secondary);
+  display: block;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.contact-profile-header small {
+  color: var(--atomic-green-muted);
+  margin-top: 5px;
+}
+
+.contact-profile-header .icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font: 700 16px/1 var(--atomic-font-mono);
+  justify-content: center;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+.contact-profile-header .icon-button:hover,
+.contact-profile-header .icon-button:focus-visible {
+  background: var(--atomic-surface-hover);
+  border-color: var(--atomic-border);
+  color: var(--atomic-green);
+  outline: 2px solid var(--atomic-focus);
+  outline-offset: 1px;
+}
+
+.contact-profile-tabs {
+  align-items: stretch;
+  background: var(--atomic-surface-raised);
+  border-bottom: 1px solid var(--atomic-border-soft);
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 0 20px;
+  scrollbar-color: var(--atomic-border) var(--atomic-surface-raised);
+  scrollbar-width: thin;
+}
+
+.contact-profile-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  font: 600 12px/1.35 var(--atomic-font-ui);
+  min-height: 42px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.contact-profile-tabs button:hover,
+.contact-profile-tabs button:focus-visible,
+.contact-profile-tabs button[aria-selected='true'] {
+  color: var(--atomic-text);
+}
+
+.contact-profile-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--atomic-green);
+}
+
+.contact-profile-tabs button:focus-visible {
+  outline: 2px solid var(--atomic-focus);
+  outline-offset: -2px;
+}
+
+.contact-profile-tabs::-webkit-scrollbar,
+.contact-profile-body::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.contact-profile-tabs::-webkit-scrollbar-track,
+.contact-profile-body::-webkit-scrollbar-track {
+  background: var(--atomic-surface-raised);
+  border-radius: 8px;
+}
+
+.contact-profile-tabs::-webkit-scrollbar-thumb,
+.contact-profile-body::-webkit-scrollbar-thumb {
+  background: var(--atomic-border);
+  border: 2px solid var(--atomic-surface-raised);
+  border-radius: 8px;
+}
+
+.contact-profile-tabs::-webkit-scrollbar-thumb:hover,
+.contact-profile-body::-webkit-scrollbar-thumb:hover {
+  background: var(--atomic-green);
+}
+
+.contact-profile-tabs::-webkit-scrollbar-button,
+.contact-profile-body::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.contact-profile-body {
+  display: grid;
+  min-height: 260px;
+  overflow: auto;
+  padding: 18px 20px;
+  scrollbar-color: var(--atomic-border) var(--atomic-surface-raised);
+  scrollbar-width: thin;
+}
+
+.contact-profile-panel {
+  display: grid;
+  gap: var(--atomic-space-3);
+}
+
+.contact-profile-section-label {
+  border-top: 1px solid var(--atomic-border-soft);
+  font-weight: 700;
+  margin: var(--atomic-space-2) 0 0;
+  padding-top: var(--atomic-space-3);
+}
+
+.contact-profile-fields {
+  display: grid;
+  gap: var(--atomic-space-3);
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+
+.contact-profile-fields--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.contact-profile-field {
+  background: var(--atomic-surface-soft);
+  border: 1px solid var(--atomic-border-soft);
+  border-radius: var(--atomic-radius-sm);
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.contact-profile-field--wide {
+  grid-column: 1 / -1;
+}
+
+.contact-profile-field dt {
+  color: var(--atomic-green-muted);
+  font-size: 11px;
+}
+
+.contact-profile-field dd {
+  color: var(--atomic-text);
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.contact-profile-empty {
+  color: var(--atomic-text-secondary);
+  margin: 0;
+}
+
+.contact-profile-footer {
+  background: var(--atomic-surface-raised);
+  border-top: 1px solid var(--atomic-border-soft);
+  justify-content: flex-end;
+}
+
+.contact-profile-footer button {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text);
+  cursor: pointer;
+  font: 600 12px/1.35 var(--atomic-font-ui);
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+.contact-profile-footer button:hover,
+.contact-profile-footer button:focus-visible {
+  background: var(--atomic-surface-active);
+  border-color: var(--atomic-green);
+  outline: 0;
+}
+
+@media (max-width: 520px) {
+  .contact-profile-header,
+  .contact-profile-body,
+  .contact-profile-footer,
+  .contact-profile-tabs {
+    padding-inline: 14px;
+  }
+
+  .contact-profile-fields--two {
+    grid-template-columns: 1fr;
+  }
+}

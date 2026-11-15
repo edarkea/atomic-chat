@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { describe, expect, it } from 'vitest';
 import { SidebarViewCoordinator } from './sidebar-view.coordinator';
-import type { ConnectionState, Presence, RoomRef, RoomState } from '../../core/domain';
+import type { ConnectionState, Presence, RoomRef, RoomState, UserProfile } from '../../core/domain';
 
 describe('SidebarViewCoordinator', () => {
   const connection = signal<ConnectionState>({
@@ -106,5 +106,63 @@ describe('SidebarViewCoordinator', () => {
     expect(coordinator.model().operator.presenceOpen).toBe(true);
     expect(coordinator.model().operator.presenceStatus).toBe('Disponible');
     expect(presence().status).toBe('');
+  });
+
+  it('publishes cached own and contact image references without changing contact names', () => {
+    const image = {
+      referenceId: 'profile-image-1',
+      mimeType: 'image/png' as const,
+      sizeBytes: '64',
+      width: 64,
+      height: 64,
+      expiresAt: '2026-01-01T01:00:00.000Z',
+    };
+    const ownProfile = signal<UserProfile>({
+      accountId: 'operator@example.invalid',
+      jid: 'operator@example.invalid',
+      source: 'vcard-temp',
+      image,
+      fetchedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const contactProfiles = signal(
+      new Map([
+        [
+          'alice@example.invalid',
+          {
+            accountId: 'operator@example.invalid',
+            jid: 'alice@example.invalid',
+            source: 'vcard-temp' as const,
+            image,
+            fetchedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const coordinator = new SidebarViewCoordinator({
+      connection,
+      accountId: signal('operator@example.invalid'),
+      ownProfile,
+      contactProfiles,
+      presence,
+      search: signal(''),
+      unreadCounts: undefined,
+      nickname: signal('operator'),
+      discovering: signal(false),
+      mucError: signal(null),
+      services,
+      mucStates: emptyRooms,
+      selectedRoomJid: signal(''),
+      activeRoomState: signal(undefined),
+      joinedRooms: emptyRooms,
+      filteredContacts: emptyContacts,
+      workspaceContacts: signal(undefined),
+      workspaceItems: emptyItems,
+      selectedJid: signal('alice@example.invalid'),
+    });
+
+    expect(coordinator.model().operator.profileImage?.referenceId).toBe('profile-image-1');
+    expect(
+      coordinator.model().conversations.profileImages?.get('alice@example.invalid')?.referenceId,
+    ).toBe('profile-image-1');
   });
 });

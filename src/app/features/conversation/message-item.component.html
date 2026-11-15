@@ -239,6 +239,7 @@
         data-overlay-panel="picker"
         role="dialog"
         aria-label="Selector de reacciones"
+        [style]="reactionPickerStyle()"
       >
         <app-emoji-picker
           (emojiSelected)="chooseReaction($event)"

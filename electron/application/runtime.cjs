@@ -1,4 +1,29 @@
 const { createHistoryRepository } = require('./history-repository.cjs');
+const fs = require('node:fs');
+const path = require('node:path');
+const { GameRegistry } = require('../games/game-registry.cjs');
+const { GameSessionManager } = require('../games/game-session-manager.cjs');
+const { GameStorage } = require('../persistence/game-storage.cjs');
+const { limitsFromEnvironment } = require('../games/game-limits.cjs');
+
+function createOfficialGameRegistry(compiledGameRules, RegistryConstructor = GameRegistry) {
+  const registry = new RegistryConstructor();
+  registry.registerOfficial(
+    {
+      gameId: compiledGameRules.TIC_TAC_TOE_GAME_ID,
+      displayName: 'Tic-Tac-Toe',
+      version: compiledGameRules.TIC_TAC_TOE_GAME_VERSION,
+      apiVersion: 1,
+      players: { min: 2, max: 2 },
+      capabilities: ['invites', 'replay', 'resync', 'score'],
+      distribution: 'official',
+      source: 'built-in',
+      enabled: true,
+    },
+    compiledGameRules.ticTacToeRules,
+  );
+  return registry;
+}
 
 function loadMucPolicies(environment = process.env) {
   try {
@@ -23,6 +48,20 @@ function loadMucPolicies(environment = process.env) {
   } catch {
     return [];
   }
+}
+
+/** @param {string} userDataDirectory @returns {string} */
+function resolveProfileDataDirectory(userDataDirectory) {
+  const profileDataDirectory = path.join(userDataDirectory, 'profile-data');
+  const legacyDirectory = path.join(userDataDirectory, 'profile-cache');
+  try {
+    if (!fs.existsSync(profileDataDirectory) && fs.existsSync(legacyDirectory)) {
+      fs.renameSync(legacyDirectory, profileDataDirectory);
+    }
+  } catch {
+    return fs.existsSync(legacyDirectory) ? legacyDirectory : profileDataDirectory;
+  }
+  return profileDataDirectory;
 }
 
 function hasMucOperatorConfiguration(environment = process.env) {
@@ -59,6 +98,10 @@ function createRuntime({
   shell,
   stickerStorageProvider = null,
   stickerStorageConfiguration = null,
+  GameRegistry: GameRegistryConstructor = GameRegistry,
+  GameSessionManager: GameSessionManagerConstructor = GameSessionManager,
+  GameStorage: GameStorageConstructor = GameStorage,
+  compiledGameRules,
   environment = process.env,
 }) {
   const persistence = new PersistenceStore(app.getPath('userData'));
@@ -79,6 +122,18 @@ function createRuntime({
   );
   const reconciliation = startRuntimeReconciliation(media, stickers);
   const secrets = new SecretStore(safeStorage, app.getPath('userData'));
+  const gameRegistry = createOfficialGameRegistry(compiledGameRules);
+  const gameLimits = limitsFromEnvironment(environment);
+  const gameStorage = persistence.database
+    ? new GameStorageConstructor(persistence.database)
+    : null;
+  const gameSessions = gameStorage
+    ? new GameSessionManagerConstructor({
+        registry: gameRegistry,
+        storage: gameStorage,
+        limits: gameLimits,
+      })
+    : null;
   const xmpp = new XmppAdapter(
     app.isPackaged,
     persistence,
@@ -88,6 +143,9 @@ function createRuntime({
     stickerStorageProvider,
     stickerStorageConfiguration,
     hasMucOperatorConfiguration(environment),
+    { manager: gameSessions, registry: gameRegistry, limits: gameLimits },
+    nativeImage,
+    resolveProfileDataDirectory(app.getPath('userData')),
   );
   return {
     persistence,
@@ -99,6 +157,9 @@ function createRuntime({
     stickerMessages,
     secrets,
     xmpp,
+    gameRegistry,
+    gameStorage,
+    gameSessions,
     reconciliation,
   };
 }
@@ -108,4 +169,5 @@ module.exports = {
   hasMucOperatorConfiguration,
   loadMucPolicies,
   startRuntimeReconciliation,
+  createOfficialGameRegistry,
 };

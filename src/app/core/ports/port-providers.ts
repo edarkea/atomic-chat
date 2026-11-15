@@ -17,8 +17,11 @@ import {
   ElectronStickerPreviewPort,
   ElectronStickerMessagePort,
   ElectronUpdatePort,
+  ElectronUserProfilePort,
 } from './electron-application.ports';
 import { ElectronXmppPort } from './electron-xmpp.port';
+import { ElectronGamesPort } from './electron-games.port';
+import { UnavailableGamesPort } from './unavailable-games.port';
 import { InMemoryXmppPort } from './in-memory-xmpp.port';
 import {
   ACCOUNT_PORT,
@@ -38,7 +41,9 @@ import {
   MUC_PORT,
   PREFERENCES_PORT,
   XMPP_PORT,
+  USER_PROFILE_PORT,
   UPDATE_PORT,
+  GAMES_PORT,
 } from './ports';
 import {
   UnavailableAccountPort,
@@ -57,6 +62,7 @@ import {
   UnavailableStickerPreviewPort,
   UnavailableStickerMessagePort,
   UnavailableUpdatePort,
+  UnavailableUserProfilePort,
 } from './unavailable.ports';
 
 export const corePortProviders: Provider[] = [
@@ -71,6 +77,8 @@ export const corePortProviders: Provider[] = [
   ElectronFileTransferPort,
   ElectronFileHistoryPort,
   ElectronUpdatePort,
+  ElectronGamesPort,
+  ElectronUserProfilePort,
   UnavailableAccountPort,
   UnavailableHistoryPort,
   UnavailablePreferencesPort,
@@ -78,6 +86,8 @@ export const corePortProviders: Provider[] = [
   UnavailableFileTransferPort,
   UnavailableFileHistoryPort,
   UnavailableUpdatePort,
+  UnavailableGamesPort,
+  UnavailableUserProfilePort,
   UnavailableMucPort,
   {
     provide: XMPP_PORT,
@@ -90,6 +100,12 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronXmppPort, unavailable: UnavailableMucPort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronXmppPort, UnavailableMucPort],
+  },
+  {
+    provide: USER_PROFILE_PORT,
+    useFactory: (electron: ElectronUserProfilePort, unavailable: UnavailableUserProfilePort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronUserProfilePort, UnavailableUserProfilePort],
   },
   {
     provide: ACCOUNT_PORT,
@@ -187,5 +203,11 @@ export const corePortProviders: Provider[] = [
     useFactory: (electron: ElectronUpdatePort, unavailable: UnavailableUpdatePort) =>
       hasAtomicChatApi() ? electron : unavailable,
     deps: [ElectronUpdatePort, UnavailableUpdatePort],
+  },
+  {
+    provide: GAMES_PORT,
+    useFactory: (electron: ElectronGamesPort, unavailable: UnavailableGamesPort) =>
+      hasAtomicChatApi() ? electron : unavailable,
+    deps: [ElectronGamesPort, UnavailableGamesPort],
   },
 ];

@@ -112,6 +112,16 @@ function createFileDialogs({ dialog, fsp }) {
   }
 
   /** @returns {Promise<string | null>} */
+  async function selectAvatarSource() {
+    const result = await dialog.showOpenDialog({
+      title: 'Seleccionar avatar',
+      properties: ['openFile'],
+      filters: [{ name: 'Imágenes estáticas', extensions: ['png', 'jpg', 'jpeg'] }],
+    });
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+  }
+
+  /** @returns {Promise<string | null>} */
   async function selectDownloadDirectory() {
     const result = await dialog.showOpenDialog({
       title: 'Seleccionar carpeta de descargas',
@@ -141,6 +151,7 @@ function createFileDialogs({ dialog, fsp }) {
     selectFileDestination,
     selectFileSource,
     selectStickerSource,
+    selectAvatarSource,
     selectDownloadDirectory,
     selectDefaultFileDestination,
   };

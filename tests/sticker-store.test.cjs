@@ -38,7 +38,7 @@ test('E8.2-STORE-001 imports PNG with public metadata only on the current schema
   assert.equal(result.sticker.accountId, 'alice@example.test');
   assert.equal(
     value.persistence.database.prepare('SELECT version FROM schema_meta').get().version,
-    15,
+    16,
   );
   assert.equal(
     value.persistence.database.prepare('SELECT COUNT(*) AS count FROM messages').get().count,

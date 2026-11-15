@@ -1,0 +1,329 @@
+<div class="user-profile-backdrop" role="presentation">
+  <section
+    #dialog
+    class="user-profile-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="user-profile-title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="user-profile-header">
+      <div>
+        <span class="eyebrow">DATOS DE PERFIL</span>
+        <h2 id="user-profile-title">Mi perfil</h2>
+        <p>{{ accountId() }}</p>
+      </div>
+      <button type="button" class="icon-button" aria-label="Cerrar Mi perfil" (click)="cancel()">
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+
+    <nav class="user-profile-tabs" role="tablist" aria-label="Secciones del perfil">
+      @for (tab of tabs; track tab.id) {
+        <button
+          [id]="'user-profile-tab-' + tab.id"
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          [attr.aria-controls]="'user-profile-panel-' + tab.id"
+          [tabIndex]="activeTab() === tab.id ? 0 : -1"
+          (click)="selectTab(tab.id)"
+          (keydown)="onTabKeydown($event, tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      }
+    </nav>
+
+    <div class="user-profile-body">
+      @if (loading()) {
+        <p class="profile-status" role="status">Cargando tu perfil…</p>
+      } @else {
+        <p class="profile-help">
+          Estos datos se publican en tu perfil. El nombre personalizado de tus contactos no se
+          modifica.
+        </p>
+
+        @if (activeTab() === 'personal') {
+          <div
+            id="user-profile-panel-personal"
+            class="user-profile-tab-panel"
+            role="tabpanel"
+            aria-labelledby="user-profile-tab-personal"
+          >
+            <label>
+              <span>Nombre visible</span>
+              <input
+                maxlength="160"
+                [ngModel]="draft().displayName"
+                (ngModelChange)="update('displayName', $event)"
+                autocomplete="name"
+              />
+            </label>
+            <div class="user-profile-grid">
+              <label>
+                <span>Nombre</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().givenName"
+                  (ngModelChange)="update('givenName', $event)"
+                  autocomplete="given-name"
+                />
+              </label>
+              <label>
+                <span>Segundo nombre</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().middleName"
+                  (ngModelChange)="update('middleName', $event)"
+                  autocomplete="additional-name"
+                />
+              </label>
+              <label>
+                <span>Apellidos</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().familyName"
+                  (ngModelChange)="update('familyName', $event)"
+                  autocomplete="family-name"
+                />
+              </label>
+            </div>
+            <div class="user-profile-grid user-profile-grid--two">
+              <label>
+                <span>Nickname</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().nickname"
+                  (ngModelChange)="update('nickname', $event)"
+                  autocomplete="nickname"
+                />
+              </label>
+              <label>
+                <span>Correo electrónico</span>
+                <input
+                  type="email"
+                  maxlength="320"
+                  [ngModel]="draft().email"
+                  (ngModelChange)="update('email', $event)"
+                  autocomplete="email"
+                />
+              </label>
+            </div>
+            <div class="user-profile-grid user-profile-grid--two">
+              <label>
+                <span>Cumpleaños</span>
+                <input
+                  type="date"
+                  [ngModel]="draft().birthday"
+                  (ngModelChange)="update('birthday', $event)"
+                  autocomplete="bday"
+                />
+              </label>
+              <label>
+                <span>Página web</span>
+                <input
+                  maxlength="2048"
+                  type="url"
+                  [ngModel]="draft().website"
+                  (ngModelChange)="update('website', $event)"
+                  autocomplete="url"
+                  placeholder="https://ejemplo.com"
+                />
+              </label>
+            </div>
+            <label>
+              <span>Descripción</span>
+              <textarea
+                maxlength="1000"
+                rows="4"
+                [ngModel]="draft().description"
+                (ngModelChange)="update('description', $event)"
+              ></textarea>
+            </label>
+          </div>
+        }
+
+        @if (activeTab() === 'business') {
+          <div
+            id="user-profile-panel-business"
+            class="user-profile-tab-panel"
+            role="tabpanel"
+            aria-labelledby="user-profile-tab-business"
+          >
+            <p class="user-profile-section-label">INFORMACIÓN LABORAL</p>
+            <div class="user-profile-grid user-profile-grid--two">
+              <label>
+                <span>Empresa</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().company"
+                  (ngModelChange)="update('company', $event)"
+                  autocomplete="organization"
+                />
+              </label>
+              <label>
+                <span>Cargo</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().jobTitle"
+                  (ngModelChange)="update('jobTitle', $event)"
+                  autocomplete="organization-title"
+                />
+              </label>
+            </div>
+          </div>
+        }
+
+        @if (activeTab() === 'home') {
+          <div
+            id="user-profile-panel-home"
+            class="user-profile-tab-panel"
+            role="tabpanel"
+            aria-labelledby="user-profile-tab-home"
+          >
+            <p class="user-profile-section-label">DIRECCIÓN Y TELÉFONOS</p>
+            <label>
+              <span>Dirección</span>
+              <input
+                maxlength="160"
+                [ngModel]="draft().homeAddress"
+                (ngModelChange)="update('homeAddress', $event)"
+                autocomplete="street-address"
+              />
+            </label>
+            <div class="user-profile-grid user-profile-grid--two">
+              <label>
+                <span>Ciudad</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().homeCity"
+                  (ngModelChange)="update('homeCity', $event)"
+                  autocomplete="address-level2"
+                />
+              </label>
+              <label>
+                <span>Estado/Provincia</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().homeState"
+                  (ngModelChange)="update('homeState', $event)"
+                  autocomplete="address-level1"
+                />
+              </label>
+              <label>
+                <span>Código postal</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().homePostalCode"
+                  (ngModelChange)="update('homePostalCode', $event)"
+                  autocomplete="postal-code"
+                />
+              </label>
+              <label>
+                <span>País</span>
+                <input
+                  maxlength="160"
+                  [ngModel]="draft().homeCountry"
+                  (ngModelChange)="update('homeCountry', $event)"
+                  autocomplete="country-name"
+                />
+              </label>
+            </div>
+            <div class="user-profile-grid user-profile-grid--two">
+              <label>
+                <span>Teléfono</span>
+                <input
+                  maxlength="64"
+                  type="tel"
+                  [ngModel]="draft().phone"
+                  (ngModelChange)="update('phone', $event)"
+                  autocomplete="tel"
+                />
+              </label>
+              <label>
+                <span>Celular</span>
+                <input
+                  maxlength="64"
+                  type="tel"
+                  [ngModel]="draft().mobile"
+                  (ngModelChange)="update('mobile', $event)"
+                  autocomplete="tel"
+                />
+              </label>
+              <label>
+                <span>Fax</span>
+                <input
+                  maxlength="64"
+                  type="tel"
+                  [ngModel]="draft().fax"
+                  (ngModelChange)="update('fax', $event)"
+                />
+              </label>
+              <label>
+                <span>Localizador</span>
+                <input
+                  maxlength="64"
+                  type="tel"
+                  [ngModel]="draft().pager"
+                  (ngModelChange)="update('pager', $event)"
+                />
+              </label>
+            </div>
+          </div>
+        }
+
+        @if (activeTab() === 'avatar') {
+          <div
+            id="user-profile-panel-avatar"
+            class="user-profile-tab-panel user-profile-avatar-panel"
+            role="tabpanel"
+            aria-labelledby="user-profile-tab-avatar"
+          >
+            <p class="user-profile-section-label">FOTO DE PERFIL</p>
+            <app-user-profile-image
+              [accountId]="accountId()"
+              [image]="profile()?.image"
+              [alt]="'Avatar de ' + accountId()"
+              size="large"
+            />
+            <p class="profile-help">
+              La foto se publica en tu perfil como imagen PNG o JPEG. Atomic Chat la guarda de forma
+              segura para mostrarla en tus conversaciones.
+            </p>
+            <div class="user-profile-avatar-actions">
+              <button
+                type="button"
+                class="secondary"
+                [disabled]="loading() || saving()"
+                (click)="requestAvatar()"
+              >
+                Cambiar foto
+              </button>
+              <button
+                type="button"
+                class="secondary"
+                [disabled]="loading() || saving() || !profile()?.image"
+                (click)="clearAvatar()"
+              >
+                Quitar foto
+              </button>
+            </div>
+          </div>
+        }
+      }
+      @if (error(); as message) {
+        <p class="user-profile-error" role="alert">{{ message }}</p>
+      }
+    </div>
+
+    <footer class="user-profile-footer">
+      <button type="button" class="secondary" [disabled]="saving()" (click)="cancel()">
+        Cancelar
+      </button>
+      <button type="button" class="primary" [disabled]="loading() || saving()" (click)="save()">
+        {{ saving() ? 'Guardando…' : 'Guardar perfil' }}
+      </button>
+    </footer>
+  </section>
+</div>

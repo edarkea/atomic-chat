@@ -214,6 +214,26 @@ describe('domain event validation', () => {
       expect(withAccount.payload.accountId).toBe('b@example.invalid');
   });
 
+  it('validates profile avatar hash changes without accepting untrusted hash data', () => {
+    const event = validateDomainEvent(
+      envelope('profile.avatarChanged', {
+        accountId: 'a@example.invalid',
+        jid: 'b@example.invalid',
+        avatarHash: 'a'.repeat(40),
+      }),
+    );
+    expect(event?.type).toBe('profile.avatarChanged');
+    expect(
+      validateDomainEvent(
+        envelope('profile.avatarChanged', {
+          accountId: 'a@example.invalid',
+          jid: 'b@example.invalid',
+          avatarHash: 'https://external.invalid/avatar.png',
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
   it('rejects null, arrays, unknown types and missing required fields', () => {
     expect(validateDomainEvent(null)).toBeUndefined();
     expect(validateDomainEvent([])).toBeUndefined();

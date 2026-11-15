@@ -86,11 +86,23 @@ import {
   RoomState,
   TimelinePage,
   TimelinePageInput,
+  UserProfile,
+  UserProfileImageChunk,
+  UserProfileImageCloseRequest,
+  UserProfileImageOpenRequest,
+  UserProfileImageReadRequest,
+  UserProfileImageRevokeRequest,
+  UserProfileImageStreamRef,
+  UserProfileRequest,
+  UserProfileAvatarUpdateRequest,
+  UserProfileAvatarClearRequest,
+  UserProfileUpdateRequest,
   UpdateRequest,
   UpdateStatus,
   XmppConnectionProfile,
 } from '../domain';
 import type { TypedDomainEvent } from '../domain/domain-event';
+import type { GamesPort } from './games.port';
 
 export interface XmppPort {
   connect(input: ConnectInput): Promise<Result<ConnectionState>>;
@@ -102,6 +114,17 @@ export interface XmppPort {
   sendReaction(input: MessageReactionInput): Promise<Result<void>>;
   sendChatState?(input: ChatStateInput): Promise<Result<void>>;
   subscribe(listener: (event: TypedDomainEvent) => void): () => void;
+}
+
+export interface UserProfilePort {
+  get(input: UserProfileRequest): Promise<Result<UserProfile>>;
+  update(input: UserProfileUpdateRequest): Promise<Result<UserProfile>>;
+  updateAvatar(input: UserProfileAvatarUpdateRequest): Promise<Result<UserProfile | null>>;
+  clearAvatar(input: UserProfileAvatarClearRequest): Promise<Result<UserProfile>>;
+  openImage(input: UserProfileImageOpenRequest): Promise<Result<UserProfileImageStreamRef>>;
+  readImage(input: UserProfileImageReadRequest): Promise<Result<UserProfileImageChunk>>;
+  closeImage(input: UserProfileImageCloseRequest): Promise<Result<void>>;
+  revokeImage(input: UserProfileImageRevokeRequest): Promise<Result<void>>;
 }
 
 export interface MucPort {
@@ -274,6 +297,7 @@ export interface StickerStorageProviderPort {
 }
 
 export const XMPP_PORT = new InjectionToken<XmppPort>('AtomicChat XmppPort');
+export const USER_PROFILE_PORT = new InjectionToken<UserProfilePort>('AtomicChat UserProfilePort');
 export const MUC_PORT = new InjectionToken<MucPort>('AtomicChat MucPort');
 export const ACCOUNT_PORT = new InjectionToken<AccountPort>('AtomicChat AccountPort');
 export const HISTORY_PORT = new InjectionToken<HistoryPort>('AtomicChat HistoryPort');
@@ -301,3 +325,4 @@ export const STICKER_PREVIEW_PORT = new InjectionToken<StickerPreviewPort>(
 export const STICKER_MESSAGE_PORT = new InjectionToken<StickerMessagePort>(
   'AtomicChat StickerMessagePort',
 );
+export const GAMES_PORT = new InjectionToken<GamesPort>('AtomicChat GamesPort');

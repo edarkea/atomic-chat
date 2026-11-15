@@ -173,6 +173,7 @@ export class MucViewComponent implements OnDestroy {
     this.activeOverlay.set(undefined);
   }
   protected onMessagesScroll(): void {
+    this.activeOverlay.set(undefined);
     const element = this.mucMessages?.nativeElement;
     if (!element) return;
     this.updateScrollToLatest(element);

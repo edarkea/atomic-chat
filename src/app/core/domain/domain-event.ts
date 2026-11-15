@@ -6,6 +6,7 @@ import type { FileOffer, FileTransfer } from './domain-files';
 import type { Message, ReactionRejected, ReactionState } from './domain-messaging';
 import type { MucNotice, RoomMessage, RoomParticipant, RoomRef, RoomState } from './domain-muc';
 import type { StickerCapability, StickerMessageRef } from './domain-stickers';
+import type { GameDomainEventPayload } from './domain-games';
 
 export interface ChatStateEvent {
   accountId: string;
@@ -26,9 +27,16 @@ export interface RosterChangedPayload {
   contacts: ReadonlyArray<Contact>;
 }
 
+export interface ProfileAvatarChangedPayload {
+  accountId: string;
+  jid: string;
+  avatarHash?: string;
+}
+
 export interface DomainEventPayloadMap {
   'connection.stateChanged': ConnectionState;
   'presence.changed': Presence & { accountId?: string };
+  'profile.avatarChanged': ProfileAvatarChangedPayload;
   'roster.changed': RosterChangedPayload;
   'message.stateChanged': Message;
   'message.received': Message;
@@ -46,6 +54,16 @@ export interface DomainEventPayloadMap {
   'sticker.messageReceived': StickerMessageRef;
   'sticker.stateChanged': StickerMessageRef;
   'sticker.capabilityChanged': StickerCapability;
+  'game.sessionChanged': GameDomainEventPayload;
+  'game.invitationReceived': GameDomainEventPayload;
+  'game.invitationUpdated': GameDomainEventPayload;
+  'game.moveAccepted': GameDomainEventPayload;
+  'game.moveConfirmed': GameDomainEventPayload;
+  'game.stateSynchronized': GameDomainEventPayload;
+  'game.syncRequired': GameDomainEventPayload;
+  'game.remoteError': GameDomainEventPayload;
+  'game.transportError': GameDomainEventPayload;
+  'game.eventDuplicate': GameDomainEventPayload;
 }
 
 export type DomainEventType = keyof DomainEventPayloadMap;

@@ -1,0 +1,19 @@
+<div
+  class="user-profile-image"
+  [class.user-profile-image--compact]="size() === 'compact'"
+  [class.user-profile-image--small]="size() === 'small'"
+  [class.user-profile-image--loading]="loading()"
+  [attr.aria-busy]="loading()"
+>
+  @if (objectUrl(); as source) {
+    <img [src]="source" [alt]="alt()" />
+  } @else {
+    <span aria-hidden="true">◯</span>
+    @if (failed()) {
+      <small [title]="failureMessage() || 'No disponible'">
+        {{ failureMessage() || 'No disponible' }}
+      </small>
+      <button type="button" class="user-profile-image-retry" (click)="retry()">Reintentar</button>
+    }
+  }
+</div>

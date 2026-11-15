@@ -8,11 +8,15 @@ import {
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Contact, RoomRef, RoomState } from '../../core/domain';
+import { Contact, RoomRef, RoomState, UserProfileImageRef } from '../../core/domain';
+import { bareJid } from '../../core/identity';
+import { UserProfileImageComponent } from '../session/user-profile-image.component';
 
 export interface NewMessageDialogModel {
+  readonly accountId: string;
   readonly search: string;
   readonly contacts: ReadonlyArray<Contact>;
+  readonly profileImages: ReadonlyMap<string, UserProfileImageRef>;
   readonly joinedRooms: ReadonlyArray<RoomState>;
   readonly services: ReadonlyArray<RoomRef>;
   readonly nickname: string;
@@ -23,7 +27,7 @@ export interface NewMessageDialogModel {
 
 @Component({
   selector: 'app-new-message-dialog',
-  imports: [FormsModule],
+  imports: [FormsModule, UserProfileImageComponent],
   templateUrl: './new-message-dialog.component.html',
   styleUrls: ['./new-message-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,6 +58,10 @@ export class NewMessageDialogComponent {
 
   protected contactName(contact: Contact): string {
     return contact.name?.trim() || contact.jid;
+  }
+
+  protected contactImage(contact: Contact): UserProfileImageRef | undefined {
+    return this.model().profileImages.get(bareJid(contact.jid).toLowerCase());
   }
 
   focusSearch(): void {

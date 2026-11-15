@@ -1,0 +1,86 @@
+<div
+  id="contact-profile-summary-dialog"
+  class="contact-profile-summary-backdrop"
+  role="presentation"
+  (click)="onBackdropClick($event)"
+>
+  <section
+    #dialog
+    class="contact-profile-summary-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="contact-profile-summary-title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="contact-profile-summary-header">
+      <div class="contact-profile-summary-heading">
+        <app-user-profile-image
+          class="contact-profile-summary-avatar"
+          [accountId]="profile().accountId"
+          [image]="profile().image"
+          [alt]="'Avatar de ' + title()"
+          size="small"
+        />
+        <div>
+          <span class="eyebrow">VISTA RÁPIDA DEL CONTACTO</span>
+          <h2 id="contact-profile-summary-title">Perfil de {{ title() }}</h2>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Cerrar perfil del contacto"
+        (click)="close()"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+
+    <div class="contact-profile-summary-body">
+      @if (rosterName() && rosterName() !== profile().displayName) {
+        <p class="contact-profile-summary-note">
+          Nombre personalizado: <strong>{{ rosterName() }}</strong>
+        </p>
+      }
+
+      <dl class="contact-profile-summary-fields">
+        <div>
+          <dt>Dirección</dt>
+          <dd>{{ profile().jid }}</dd>
+        </div>
+        <div>
+          <dt>Correo</dt>
+          <dd>{{ profile().email || 'No publicado' }}</dd>
+        </div>
+        <div>
+          <dt>Teléfono</dt>
+          <dd>{{ profile().phone || 'No publicado' }}</dd>
+        </div>
+        <div>
+          <dt>Celular</dt>
+          <dd>{{ profile().mobile || 'No publicado' }}</dd>
+        </div>
+        <div>
+          <dt>Empresa</dt>
+          <dd>{{ profile().company || 'No publicada' }}</dd>
+        </div>
+        <div>
+          <dt>Cargo</dt>
+          <dd>{{ profile().jobTitle || 'No publicado' }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <footer class="contact-profile-summary-footer">
+      <button
+        type="button"
+        class="primary"
+        aria-label="Ver perfil completo"
+        (click)="viewProfile()"
+      >
+        Ver perfil completo
+      </button>
+      <button type="button" class="secondary" (click)="close()">Cerrar</button>
+    </footer>
+  </section>
+</div>

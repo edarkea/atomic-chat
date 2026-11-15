@@ -3,7 +3,7 @@
     <use href="#ac-search" /></svg
   ><input
     #contactSearch
-    placeholder="Buscar usuario o JID..."
+    placeholder="Buscar usuario o dirección..."
     aria-label="Buscar conversaciones"
     [ngModel]="model().search"
     (ngModelChange)="searchChange.emit($event)"
@@ -77,10 +77,21 @@
           type="button"
           (click)="selectContact.emit(item.contact)"
         >
-          <span class="avatar" aria-hidden="true"
-            ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
-              <use href="#ac-contact" /></svg></span
-          ><span class="contact-copy"
+          @if (contactImage(item.contact); as image) {
+            <app-user-profile-image
+              class="conversation-contact-image"
+              [accountId]="model().accountId || ''"
+              [image]="image"
+              [alt]="'Avatar de ' + contactName(item.contact)"
+              size="small"
+            />
+          } @else {
+            <span class="avatar" aria-hidden="true"
+              ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+                <use href="#ac-contact" /></svg
+            ></span>
+          }
+          <span class="contact-copy"
             ><strong
               ><i
                 class="contact-presence"
@@ -124,10 +135,21 @@
         [attr.title]="contactTooltip(contact)"
         (click)="selectContact.emit(contact)"
       >
-        <span class="avatar" aria-hidden="true"
-          ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
-            <use href="#ac-contact" /></svg></span
-        ><span class="contact-copy"
+        @if (contactImage(contact); as image) {
+          <app-user-profile-image
+            class="conversation-contact-image"
+            [accountId]="model().accountId || ''"
+            [image]="image"
+            [alt]="'Avatar de ' + contactName(contact)"
+            size="small"
+          />
+        } @else {
+          <span class="avatar" aria-hidden="true"
+            ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+              <use href="#ac-contact" /></svg
+          ></span>
+        }
+        <span class="contact-copy"
           ><strong
             ><span class="contact-name">{{ contactName(contact) }}</span></strong
           ></span
@@ -139,8 +161,8 @@
 <div class="sidebar-actions">
   <button
     type="button"
-    aria-label="Actualizar roster"
-    title="Actualizar roster"
+    aria-label="Actualizar contactos"
+    title="Actualizar contactos"
     (click)="refreshRoster.emit()"
   >
     <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">

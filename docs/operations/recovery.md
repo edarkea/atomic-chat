@@ -46,4 +46,4 @@ Never include secret files, passwords, certificate PEM values or full private pa
 
 SQLite history and media are separate from secret recovery. Before any manual file operation, close Atomic Chat and preserve a copy of the user data directory using the operating system's approved backup mechanism. Do not run migration experiments against the active user database.
 
-Schema changes must follow [the persistence migration guide](../guides/persistence-migrations.md). The application migrator is forward-only and currently ends at schema version 15; historical data must be verified before a release.
+Schema changes must preserve the forward-only application migrator, which currently ends at schema version 15; historical data must be verified before a release.

@@ -31,6 +31,59 @@ Feature component
 
 The request retains its contract version and identifiers where required. A feature must not skip its facade or coordinator to invoke an arbitrary IPC channel.
 
+## On-demand XEP-0054 profile flow
+
+```text
+Direct conversation selection
+  → ChatFacade / UserProfileCoordinator
+  → UserProfilePort
+  → window.atomicChat.userProfiles.get
+  → userProfiles IPC handler + sender/account validation
+  → XmppAdapter user-profile service
+  → existing vCard IQ helper in xmpp-display-name.cjs
+  → bounded UserProfile Result<T>
+  → coordinator checks account/session generation
+  → conversation header fallback: roster alias → vCard display name → JID
+```
+
+Profile reads are not roster synchronization. A vCard photo is validated and retained in Main behind a short-lived opaque reference; optional stream reads use bounded ArrayBuffer chunks and are cleared on session or window cleanup.
+
+After a successful XEP-0054 read, Main stores the bounded profile fields and validated local PNG/JPEG bytes in `userData/profile-data`. Entries are account/JID scoped, content-addressed and quota limited; they remain across application sessions. After the roster is published at login, the facade restores stored contact profiles with a four-operation local-read limit; a `stored` read never sends another vCard IQ. The store is also consulted before a remote profile read, but its bytes remain Main-only and are rewrapped in a new sender-scoped image reference for every response. The Renderer shares one bounded object-URL cache per account/reference and coalesces concurrent stream reads, so the same avatar is not transferred repeatedly while it is visible. Avatar components defer stream reads until they enter the viewport (with a small preload margin), and account changes revoke cached URLs and pending image operations. XEP-0153 photo hashes invalidate a changed entry and emit `profile.avatarChanged`; the active coordinator then performs one fresh read. The roster alias remains independent from stored vCard fields.
+
+## Own profile update flow
+
+```text
+Profile editor in the session UI
+  → ChatFacade
+  → UserProfilePort.update
+  → window.atomicChat.userProfiles.update
+  → userProfiles IPC handler + sender/account/JID validation
+  → XmppAdapter user-profile service
+  → existing vCard IQ helpers in xmpp-display-name.cjs
+  → bounded text-only IQ set for the authenticated account
+  → refreshed UserProfile Result<T>
+```
+
+The editor updates only the authenticated account. Contact profiles are displayed on demand and remain read-only. Roster aliases are never overwritten by remote `FN` or `NICKNAME` values.
+
+## Own avatar publication flow
+
+```text
+Avatar tab in the own-profile editor
+  → ChatFacade.updateOwnUserAvatar / clearOwnUserAvatar
+  → UserProfilePort
+  → native Main-process image picker (update only)
+  → userProfiles.avatar IPC handler + sender/account validation
+  → XmppAdapter user-profile service
+  → existing vCard IQ helpers in xmpp-display-name.cjs
+  → XEP-0054 PHOTO/TYPE/BINVAL or PHOTO removal
+  → UserProfile image reference + guarded ArrayBuffer stream
+```
+
+The picker result remains in Main. Main validates size, dimensions and MIME type, while the Renderer receives only the refreshed `UserProfile` and an expiring opaque image reference.
+
+XEP-0153 presence hashes are used only as cache invalidation metadata. The implementation does not publish or subscribe to XEP-0084 PEP metadata/data.
+
 ## Incoming XMPP event
 
 ```text

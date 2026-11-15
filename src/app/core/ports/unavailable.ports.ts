@@ -65,6 +65,17 @@ import {
   TimelinePageInput,
   UpdateRequest,
   UpdateStatus,
+  UserProfile,
+  UserProfileImageChunk,
+  UserProfileImageCloseRequest,
+  UserProfileImageOpenRequest,
+  UserProfileImageReadRequest,
+  UserProfileImageRevokeRequest,
+  UserProfileImageStreamRef,
+  UserProfileRequest,
+  UserProfileAvatarUpdateRequest,
+  UserProfileAvatarClearRequest,
+  UserProfileUpdateRequest,
   RoomRef,
   RoomState,
   RoomSendReceipt,
@@ -94,6 +105,7 @@ import {
   StickerPreviewPort,
   StickerMessagePort,
   UpdatePort,
+  UserProfilePort,
 } from './ports';
 
 const unsupported = <T>(requestId: string): Result<T> => ({
@@ -448,5 +460,33 @@ export class UnavailableMucPort implements MucPort {
   }
   subscribe(_listener: (event: TypedDomainEvent) => void): () => void {
     return () => undefined;
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class UnavailableUserProfilePort implements UserProfilePort {
+  get(input: UserProfileRequest): Promise<Result<UserProfile>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  update(input: UserProfileUpdateRequest): Promise<Result<UserProfile>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  updateAvatar(input: UserProfileAvatarUpdateRequest): Promise<Result<UserProfile | null>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  clearAvatar(input: UserProfileAvatarClearRequest): Promise<Result<UserProfile>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  openImage(input: UserProfileImageOpenRequest): Promise<Result<UserProfileImageStreamRef>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  readImage(input: UserProfileImageReadRequest): Promise<Result<UserProfileImageChunk>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  closeImage(input: UserProfileImageCloseRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
+  }
+  revokeImage(input: UserProfileImageRevokeRequest): Promise<Result<void>> {
+    return Promise.resolve(unsupported(input.requestId));
   }
 }

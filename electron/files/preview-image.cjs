@@ -16,15 +16,16 @@ function previewError(code, message) {
   return error;
 }
 
+/** @param {number | undefined} width @param {number | undefined} height */
 function assertDimensions(width, height) {
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
-    width < 1 ||
-    height < 1 ||
-    width > MAX_PREVIEW_DIMENSION ||
-    height > MAX_PREVIEW_DIMENSION ||
-    width * height > MAX_PREVIEW_PIXELS
+    (width || 0) < 1 ||
+    (height || 0) < 1 ||
+    (width || 0) > MAX_PREVIEW_DIMENSION ||
+    (height || 0) > MAX_PREVIEW_DIMENSION ||
+    (width || 0) * (height || 0) > MAX_PREVIEW_PIXELS
   )
     throw previewError(
       'MEDIA_DIMENSIONS_INVALID',
@@ -32,6 +33,7 @@ function assertDimensions(width, height) {
     );
 }
 
+/** @param {Buffer} buffer */
 function crc32(buffer) {
   let crc = 0xffffffff;
   for (const byte of buffer) {
@@ -41,6 +43,7 @@ function crc32(buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+/** @param {Buffer} buffer */
 function inspectPng(buffer) {
   if (buffer.length < 33) throw previewError('MEDIA_DECODE_FAILED', 'PNG truncado');
   let offset = 8;
@@ -71,6 +74,7 @@ function inspectPng(buffer) {
   return { mimeType: 'image/png', width, height };
 }
 
+/** @param {number} marker */
 function isJpegSof(marker) {
   return (
     (marker >= 0xc0 && marker <= 0xc3) ||
@@ -80,6 +84,7 @@ function isJpegSof(marker) {
   );
 }
 
+/** @param {Buffer} buffer */
 function inspectJpeg(buffer) {
   if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8)
     throw previewError('MEDIA_TYPE_UNSUPPORTED', 'formato de imagen no permitido');
@@ -90,7 +95,7 @@ function inspectJpeg(buffer) {
       continue;
     }
     while (offset < buffer.length && buffer[offset] === 0xff) offset += 1;
-    const marker = buffer[offset++];
+    const marker = buffer[offset++] ?? 0;
     if (marker === 0xd9 || marker === 0xda) break;
     if (marker >= 0xd0 && marker <= 0xd7) continue;
     if (offset + 2 > buffer.length) break;
@@ -109,6 +114,7 @@ function inspectJpeg(buffer) {
   throw previewError('MEDIA_DECODE_FAILED', 'JPEG sin dimensiones');
 }
 
+/** @param {Buffer} buffer @param {{createFromBuffer: (data: Buffer) => {isEmpty: () => boolean, getSize: () => {width: number, height: number}}} | undefined} decoder */
 function inspectStaticImage(buffer, decoder) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 4)
     throw previewError('MEDIA_DECODE_FAILED', 'archivo de imagen vacío o truncado');

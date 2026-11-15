@@ -159,6 +159,45 @@ describe('message links', () => {
     viewport.remove();
   });
 
+  it('anchors the full reaction picker to the viewport near the message', async () => {
+    await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
+    const fixture: ComponentFixture<MessageItemComponent> =
+      TestBed.createComponent(MessageItemComponent);
+    fixture.componentRef.setInput('sender', 'contact@example.test');
+    fixture.componentRef.setInput('body', 'Mensaje con reacciones');
+    fixture.componentRef.setInput('outgoing', false);
+    fixture.componentRef.setInput('messageId', 'wire-picker');
+    fixture.detectChanges();
+
+    const viewport = document.createElement('div');
+    viewport.className = 'chat-content';
+    const article = fixture.nativeElement.querySelector('article') as HTMLElement;
+    Object.defineProperty(article, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 600, bottom: 660, left: 40, right: 300 }),
+    });
+    viewport.append(fixture.nativeElement);
+    document.body.append(viewport);
+
+    (fixture.nativeElement.querySelector('.message-action--reaction') as HTMLButtonElement).click();
+    fixture.componentRef.setInput('activeOverlay', 'quick');
+    fixture.detectChanges();
+    (
+      fixture.nativeElement.querySelector(
+        'button[aria-label="Abrir selector completo de emojis"]',
+      ) as HTMLButtonElement
+    ).click();
+    fixture.componentRef.setInput('activeOverlay', 'picker');
+    fixture.detectChanges();
+
+    const picker = fixture.nativeElement.querySelector('.message-reaction-picker') as HTMLElement;
+    expect(picker.getAttribute('style')).toContain('top:');
+    expect(picker.getAttribute('style')).toContain('left:');
+    expect(picker.getAttribute('style')).toContain('--emoji-picker-max-height:');
+
+    viewport.remove();
+  });
+
   it('keeps a persisted quote visible when its original is outside the loaded timeline', async () => {
     await TestBed.configureTestingModule({ imports: [MessageItemComponent] }).compileComponents();
     const fixture: ComponentFixture<MessageItemComponent> =

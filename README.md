@@ -43,6 +43,9 @@ Atomic Chat es un cliente de mensajería XMPP para escritorio, desarrollado con 
 - Theme Studio, the Atomic theme and persisted custom themes.
 - Preferences, connection profiles and guarded credential handling through Electron Main and operating-system secure storage.
 - Local sticker library and sticker-pack organization.
+- Official Tic Tac Toe and Reversi games in direct conversations, with account-scoped
+  sessions, confirmed snapshots and conservative pause/resync behavior. External games
+  and package installation are not enabled.
 
 ### Available with explicit limitations
 
@@ -103,7 +106,7 @@ npm run lint
 npm run format:check:all
 ```
 
-`npm run electron` launches the desktop application using the local `.env`. Angular tests, lint and formatting are intentionally separate from the historical P0, Openfire integration and load suites. See the [testing guide](docs/getting-started/testing.md) for the complete command map.
+`npm run electron` launches the desktop application using the local `.env`. Angular tests, lint and formatting are intentionally separate from the historical P0, Openfire integration and load suites. The technical commands are listed in `package.json` and the maintained references under `docs/`.
 
 ## Documentation, limitations and roadmap
 

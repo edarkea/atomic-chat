@@ -31,7 +31,7 @@ describe('ConversationViewComponent profile search target', () => {
     expect(fixture.nativeElement.querySelector('.typing-indicator')).toBeNull();
   });
 
-  it('uses the complete selected-user profile as the search target', async () => {
+  it('keeps the profile card static and exposes search and games as header actions', async () => {
     await TestBed.configureTestingModule({
       imports: [ConversationViewComponent],
     }).compileComponents();
@@ -46,14 +46,192 @@ describe('ConversationViewComponent profile search target', () => {
     fixture.componentRef.setInput('initialTimelineReady', true);
     fixture.detectChanges();
 
-    const profile = fixture.nativeElement.querySelector(
-      '.conversation-profile',
-    ) as HTMLButtonElement;
-    expect(profile.disabled).toBe(false);
-    profile.click();
+    const profile = fixture.nativeElement.querySelector('.conversation-profile') as HTMLElement;
+    expect(profile.tagName).toBe('DIV');
+    expect(fixture.nativeElement.querySelector('.conversation-close')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="Buscar en conversación"]'),
+    ).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[aria-label="Entretenimiento"]')).toBeTruthy();
+
+    (
+      fixture.nativeElement.querySelector(
+        '[aria-label="Buscar en conversación"]',
+      ) as HTMLButtonElement
+    ).click();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('app-message-search')).toBeTruthy();
+  });
+
+  it('preserves a custom roster name over the remote vCard display name', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationViewComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'contact@example.invalid');
+    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
+    fixture.componentRef.setInput('activeContact', {
+      jid: 'contact@example.invalid',
+      name: 'Alias del roster',
+      groups: [],
+    });
+    fixture.componentRef.setInput('activeProfile', {
+      accountId: 'operator@example.invalid',
+      jid: 'contact@example.invalid',
+      source: 'vcard-temp',
+      displayName: 'Nombre del vCard',
+      givenName: 'Nombre',
+      middleName: 'Medio',
+      familyName: 'vCard',
+      company: 'Atomic Chat',
+      jobTitle: 'Product Engineer',
+      homeAddress: 'Atomic Street 42',
+      homeCity: 'Quito',
+      homeState: 'Pichincha',
+      homePostalCode: '170101',
+      homeCountry: 'Ecuador',
+      image: {
+        referenceId: 'profile-image-1',
+        mimeType: 'image/png',
+        sizeBytes: 64,
+        width: 64,
+        height: 64,
+        expiresAt: '2026-01-01T01:00:00.000Z',
+      },
+      phone: '+593 2 000 0000',
+      mobile: '+593 99 000 0000',
+      fax: '+593 2 000 0001',
+      pager: 'atomic-42',
+      birthday: '1990-11-15',
+      description: 'Perfil de Atomic Chat',
+      website: 'https://atomic.example.invalid/profile',
+      fetchedAt: '2026-11-14T00:00:00.000Z',
+    });
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.componentRef.setInput('initialTimelineReady', true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.conversation-profile strong').textContent).toBe(
+      'Alias del roster',
+    );
+    expect(fixture.nativeElement.querySelector('app-user-profile-image')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.header-avatar')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.contact-profile-summary')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[aria-label="Ver contacto"]')).toBeTruthy();
+  });
+
+  it('shows the published email and connection status in the conversation header', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationViewComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'barbara@example.invalid');
+    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
+    fixture.componentRef.setInput('activeContact', {
+      jid: 'barbara@example.invalid',
+      name: 'Barbara',
+      groups: [],
+      presence: {
+        jid: 'barbara@example.invalid',
+        availability: 'available',
+        updatedAt: '2026-11-15T00:00:00.000Z',
+      },
+    });
+    fixture.componentRef.setInput('activeProfile', {
+      accountId: 'operator@example.invalid',
+      jid: 'barbara@example.invalid',
+      source: 'vcard-temp',
+      email: 'barbara@example.com',
+      fetchedAt: '2026-11-15T00:00:00.000Z',
+    });
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.componentRef.setInput('initialTimelineReady', true);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.conversation-profile-copy small').textContent,
+    ).toBe('barbara@example.com · En línea');
+  });
+
+  it('opens the complete read-only contact profile from the conversation header', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationViewComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'contact@example.invalid');
+    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
+    fixture.componentRef.setInput('activeContact', {
+      jid: 'contact@example.invalid',
+      name: 'Alias del roster',
+      groups: [],
+    });
+    fixture.componentRef.setInput('activeProfile', {
+      accountId: 'operator@example.invalid',
+      jid: 'contact@example.invalid',
+      source: 'vcard-temp',
+      displayName: 'Nombre publicado',
+      givenName: 'Nombre',
+      familyName: 'Contacto',
+      company: 'Atomic Chat',
+      jobTitle: 'Product Engineer',
+      homeAddress: 'Atomic Street 42',
+      phone: '+593 2 000 0000',
+      fetchedAt: '2026-11-14T00:00:00.000Z',
+    });
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.componentRef.setInput('initialTimelineReady', true);
+    fixture.detectChanges();
+
+    (
+      fixture.nativeElement.querySelector('[aria-label="Ver contacto"]') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+
+    const summaryDialog = fixture.nativeElement.querySelector(
+      '.contact-profile-summary-dialog',
+    ) as HTMLElement;
+    expect(summaryDialog).toBeTruthy();
+    expect(summaryDialog.textContent).toContain('Nombre personalizado');
+    expect(summaryDialog.textContent).toContain('Nombre personalizado: Alias del roster');
+    expect(fixture.nativeElement.querySelector('.contact-profile-dialog')).toBeNull();
+
+    (
+      summaryDialog.querySelector('[aria-label="Ver perfil completo"]') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+
+    const dialog = fixture.nativeElement.querySelector('.contact-profile-dialog') as HTMLElement;
+    expect(dialog).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.contact-profile-summary-dialog')).toBeNull();
+    expect(dialog.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    expect(dialog.textContent).toContain('Nombre publicado');
+
+    (
+      dialog.querySelector('[aria-controls="contact-profile-panel-business"]') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(dialog.textContent).toContain('Atomic Chat');
+    expect(dialog.textContent).toContain('Product Engineer');
+
+    (
+      dialog.querySelector('[aria-controls="contact-profile-panel-home"]') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    expect(dialog.textContent).toContain('Atomic Street 42');
+    expect(dialog.textContent).toContain('+593 2 000 0000');
   });
 
   it('keeps direct reaction actor labels bound to the conversation context', async () => {

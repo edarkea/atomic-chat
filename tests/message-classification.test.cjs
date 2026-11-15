@@ -37,7 +37,7 @@ test('persists message classification through history pagination on the current 
     store.upsertAccount(account('receiver@example.invalid'));
     store.saveMessage(message('receiver@example.invalid', 'direct-1'));
     store.saveMessage(message('receiver@example.invalid', 'broadcast-1', 'broadcast'));
-    assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 15);
+    assert.equal(store.database.prepare('SELECT version FROM schema_meta').get().version, 16);
     assert.equal(
       store.database
         .prepare("SELECT name FROM pragma_table_info('messages') WHERE name = 'classification'")

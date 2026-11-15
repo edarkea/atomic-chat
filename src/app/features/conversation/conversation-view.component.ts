@@ -14,10 +14,16 @@ import {
 } from '@angular/core';
 import {
   Contact,
+  GameId,
+  GameSessionDto,
+  GameSnapshotDto,
+  GameVersion,
   Message,
   MessageSearchHit,
+  OfficialGameCatalog,
   ReactionActor,
   ReactionState,
+  UserProfile,
 } from '../../core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
@@ -30,6 +36,10 @@ import {
 import { StickerMessageCardComponent } from '../stickers/sticker-message-card.component';
 import { MessageSearchComponent } from './message-search.component';
 import { ScrollToLatestButtonComponent } from './scroll-to-latest-button.component';
+import { GamesPanelComponent } from '../games/games-panel.component';
+import { ContactProfileDialogComponent } from './contact-profile-dialog.component';
+import { ContactProfileSummaryDialogComponent } from './contact-profile-summary-dialog.component';
+import { UserProfileImageComponent } from '../session/user-profile-image.component';
 import { formatMessageDay } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 import { ConversationMessageCoordinator } from './conversation-message.coordinator';
@@ -50,6 +60,10 @@ export type { ConversationTimelineItem, OlderMessagesRequest } from './conversat
     ScrollToLatestButtonComponent,
     StickerMessageCardComponent,
     MessageSearchComponent,
+    GamesPanelComponent,
+    ContactProfileDialogComponent,
+    ContactProfileSummaryDialogComponent,
+    UserProfileImageComponent,
   ],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
@@ -57,11 +71,18 @@ export type { ConversationTimelineItem, OlderMessagesRequest } from './conversat
 })
 export class ConversationViewComponent {
   readonly activeContact = input<Contact>();
+  readonly activeProfile = input<UserProfile | null>(null);
   readonly selectedJid = input.required<string>();
   readonly accountId = input.required<string>();
   readonly timeline = input.required<ReadonlyArray<ConversationTimelineItem>>();
   readonly initialTimelineReady = input.required<boolean>();
   readonly error = input<string | null>(null);
+  readonly gamesOpen = input(false);
+  readonly gameCatalog = input<OfficialGameCatalog>([]);
+  readonly gameCurrentSession = input<GameSessionDto>();
+  readonly gameCurrentSnapshot = input<GameSnapshotDto>();
+  readonly gamePending = input<ReadonlySet<string>>(new Set());
+  readonly gameError = input<string | null>(null);
   readonly draft = input.required<string>();
   readonly historyLoading = input.required<boolean>();
   readonly hasOlderMessages = input.required<boolean>();
@@ -82,6 +103,16 @@ export class ConversationViewComponent {
   }>();
 
   readonly closeRequested = output<void>();
+  readonly gamesToggleRequested = output<void>();
+  readonly gameInviteRequested = output<{ gameId: GameId; gameVersion: GameVersion }>();
+  readonly gameAcceptRequested = output<GameSessionDto>();
+  readonly gameRejectRequested = output<GameSessionDto>();
+  readonly gameCancelRequested = output<GameSessionDto>();
+  readonly gameMoveRequested = output<{ session: GameSessionDto; move: unknown }>();
+  readonly gameResignRequested = output<GameSessionDto>();
+  readonly gameResyncRequested = output<GameSessionDto>();
+  readonly gameRematchRequested = output<GameSessionDto>();
+  readonly gameCloseRequested = output<GameSessionDto>();
   readonly filesDropped = output<ReadonlyArray<File>>();
   readonly filesPasted = output<ReadonlyArray<File>>();
   readonly dropRejected = output<string>();
@@ -114,6 +145,8 @@ export class ConversationViewComponent {
     readonly emojis: ReadonlyArray<string>;
   }>();
   protected readonly searchOpen = signal(false);
+  protected readonly contactProfileSummaryOpen = signal(false);
+  protected readonly contactProfileDetailsOpen = signal(false);
   protected readonly activeOverlay = signal<
     { readonly messageId: string; readonly overlay: MessageOverlay } | undefined
   >(undefined);
@@ -126,7 +159,8 @@ export class ConversationViewComponent {
   private readonly visibleMessageKey = computed(() => {
     const items = this.timeline();
     const last = items[items.length - 1];
-    return `${this.accountId()}|${bareJid(this.selectedJid())}|${items.length}|${last?.id || ''}|${last?.sortAt || ''}`;
+    const game = this.gameCurrentSession();
+    return `${this.accountId()}|${bareJid(this.selectedJid())}|${items.length}|${last?.id || ''}|${last?.sortAt || ''}|game:${game?.sessionId || ''}:${game?.state || ''}:${game?.revision ?? ''}`;
   });
   private readonly scroll = new ConversationScrollCoordinator({
     container: () => this.chatContent?.nativeElement,
@@ -168,6 +202,11 @@ export class ConversationViewComponent {
 
   constructor() {
     effect(() => {
+      this.selectedJid();
+      this.contactProfileSummaryOpen.set(false);
+      this.contactProfileDetailsOpen.set(false);
+    });
+    effect(() => {
       this.visibleMessageKey();
       this.initialTimelineReady();
       if (this.scroll.observeTimeline()) this.activeOverlay.set(undefined);
@@ -178,15 +217,46 @@ export class ConversationViewComponent {
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
   }
-  protected profileTooltip(): string {
-    const name =
-      this.activeContact()?.name?.trim() || this.selectedJid() || 'Selecciona un contacto';
-    const jid = this.selectedJid();
-    return jid && jid !== name ? `${name}\n${jid}` : name;
+  protected conversationSubtitle(): string {
+    if (!this.selectedJid()) return 'Sin destinatario';
+    const email = this.activeProfile()?.email?.trim();
+    const status = this.remotePresenceLabel();
+    return email ? `${email} · ${status}` : status;
+  }
+  private remotePresenceLabel(): string {
+    const presence = this.activeContact()?.presence;
+    if (!presence || presence.availability === 'unknown') return 'Desconectado';
+    if (presence.availability === 'unavailable') return 'No disponible';
+    if (presence.availability === 'away') return 'Ausente';
+    if (presence.availability === 'extended-away') return 'Ausencia extendida';
+    if (presence.availability === 'dnd') return 'No molestar';
+    return (
+      (
+        {
+          chat: 'Libre para chatear',
+          away: 'Ausente',
+          xa: 'Ausencia extendida',
+          dnd: 'No molestar',
+        } as Record<string, string>
+      )[presence.mode || ''] || 'En línea'
+    );
   }
   protected toggleSearch(): void {
     if (!this.isSelected()) return;
     this.searchOpen.update((open) => !open);
+  }
+  protected openContactProfile(): void {
+    if (this.activeProfile()) this.contactProfileSummaryOpen.set(true);
+  }
+  protected closeContactProfile(): void {
+    this.contactProfileSummaryOpen.set(false);
+  }
+  protected openContactProfileDetails(): void {
+    this.contactProfileSummaryOpen.set(false);
+    if (this.activeProfile()) this.contactProfileDetailsOpen.set(true);
+  }
+  protected closeContactProfileDetails(): void {
+    this.contactProfileDetailsOpen.set(false);
   }
   protected dayLabel(sortAt: string): string {
     return formatMessageDay(sortAt);
@@ -299,6 +369,7 @@ export class ConversationViewComponent {
     readonly hasOlderMessages: boolean;
     readonly hasNewerMessages: boolean;
   }): void {
+    this.activeOverlay.set(undefined);
     this.scroll.onChatScroll(state);
   }
 

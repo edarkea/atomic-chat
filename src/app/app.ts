@@ -23,6 +23,7 @@ import {
   MessageSearchHit,
   Preferences,
   RoomMessage,
+  UserProfileUpdateInput,
 } from './core/domain';
 import { BroadcastFacade } from './core/facades/broadcast.facade';
 import { BroadcastCoordinator } from './core/coordinators/broadcast.coordinator';
@@ -54,6 +55,10 @@ import { WorkspaceConversationViewCoordinator } from './features/navigation/work
 import { SidebarViewCoordinator } from './features/navigation/sidebar-view.coordinator';
 import { bareJid } from './core/identity';
 import { VersionUpdateComponent } from './features/session/version-update.component';
+import { UserProfileDialogComponent } from './features/session/user-profile-dialog.component';
+import { UserProfileImageCache } from './features/session/user-profile-image-cache.service';
+import { GameFacade } from './features/games/game.facade';
+import type { GameId, GameSessionDto, GameVersion } from './core/domain';
 
 import {
   STICKER_SENDING_DISABLED_MESSAGE,
@@ -77,6 +82,7 @@ export {
     PreferencesDialogComponent,
     BroadcastDialogComponent,
     SidebarComponent,
+    UserProfileDialogComponent,
   ],
   templateUrl: './app.html',
   styleUrls: ['./app.scss'],
@@ -84,6 +90,7 @@ export {
 })
 export class App {
   protected readonly chat = inject(ChatFacade);
+  protected readonly activeUserProfile = computed(() => this.chat.userProfile?.() ?? null);
   private readonly session = inject(AppSessionCoordinator);
   protected readonly muc = inject(MucFacade);
   private readonly workspace = inject(WorkspaceCoordinator);
@@ -92,8 +99,11 @@ export class App {
   private readonly windowFocus = inject(WindowFocusStore);
   protected readonly files = inject(FileFacade);
   protected readonly stickerMessages = inject(StickerMessageFacade);
+  protected readonly games = inject(GameFacade);
   protected readonly updates = inject(UpdateFacade);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly profileImageCache = inject(UserProfileImageCache);
+  private profileImageAccount = '';
   private readonly stickerSendingDisabled = true;
   protected readonly theme = inject(ThemeService);
   private readonly preferencesCoordinator = new PreferencesCoordinator({
@@ -126,6 +136,8 @@ export class App {
   private readonly sidebarViewCoordinator = new SidebarViewCoordinator({
     connection: this.chat.connection,
     accountId: this.chat.accountId,
+    ownProfile: this.chat.ownUserProfile,
+    contactProfiles: this.chat.contactProfiles,
     presence: this.chat.presence,
     search: this.workspace.search,
     unreadCounts: this.chat.unreadCounts,
@@ -168,9 +180,11 @@ export class App {
   protected readonly search = this.workspace.search;
   protected readonly messageSearchQuery = signal('');
   protected readonly messageSearchScope = signal<'all' | 'conversation'>('conversation');
+  protected readonly gamesOpen = signal(false);
   protected readonly messageSearchConversationNames = this.workspace.messageSearchConversationNames;
   private messageSearchTimer: ReturnType<typeof setTimeout> | undefined;
   private messageSearchNavigationGeneration = 0;
+  private gamesContext = '';
   private destroyed = false;
   private uiTaskGeneration = 0;
   private newMessageFocusFrame: number | undefined;
@@ -179,6 +193,8 @@ export class App {
   protected readonly newMessageJoiningRoom = this.newMessageCoordinator.joiningRoom;
   protected readonly newMessageLocalError = this.newMessageCoordinator.localError;
   protected readonly preferencesOpen = this.preferencesCoordinator.open;
+  protected readonly profileEditorOpen = signal(false);
+  protected readonly profileEditorSaving = signal(false);
   protected readonly broadcastOpen = this.broadcastCoordinator.open;
   protected readonly broadcastBody = this.broadcastCoordinator.body;
   protected readonly broadcastMode = this.broadcastCoordinator.mode;
@@ -270,6 +286,7 @@ export class App {
       this.broadcastCoordinator.destroy();
       this.preferencesCoordinator.destroy();
       this.newMessageCoordinator.destroy();
+      if (this.profileImageAccount) this.profileImageCache.clearAccount(this.profileImageAccount);
     });
     void this.session.tryAutoLogin();
     effect(() => {
@@ -285,6 +302,33 @@ export class App {
       );
     });
     effect(() => {
+      const selection = this.activeSelection();
+      if (selection.kind === 'direct' && this.chat.isConnected()) {
+        if (typeof this.chat.loadUserProfile === 'function')
+          void this.chat.loadUserProfile(selection.jid);
+      } else if (typeof this.chat.clearUserProfile === 'function') this.chat.clearUserProfile();
+    });
+    effect(() => {
+      const ownProfile =
+        typeof this.chat.ownUserProfile === 'function' ? this.chat.ownUserProfile() : null;
+      const ownProfileLoading =
+        typeof this.chat.ownUserProfileLoading === 'function'
+          ? this.chat.ownUserProfileLoading()
+          : false;
+      const ownProfileError =
+        typeof this.chat.ownUserProfileError === 'function'
+          ? this.chat.ownUserProfileError()
+          : null;
+      if (
+        this.chat.isConnected() &&
+        !ownProfile &&
+        !ownProfileLoading &&
+        !ownProfileError &&
+        typeof this.chat.loadOwnUserProfile === 'function'
+      )
+        void this.chat.loadOwnUserProfile();
+    });
+    effect(() => {
       if (!this.windowFocus.isFocused()) return;
       const selection = this.activeConversation.current();
       if (!selection) return;
@@ -296,12 +340,33 @@ export class App {
       if (this.chat.isConnected() && account) void this.files.setAccount(account);
     });
     effect(() => {
+      const account = this.chat.accountId().trim();
+      const connected = this.chat.isConnected();
+      if (this.profileImageAccount && (!connected || account !== this.profileImageAccount))
+        this.profileImageCache.clearAccount(this.profileImageAccount);
+      this.profileImageAccount = connected && account ? account : '';
+    });
+    effect(() => {
       this.conversationVisibility.setAccount(this.chat.accountId());
     });
     effect(() => {
       if (this.chat.preferencesLoaded?.() && !this.chat.preferences().hideClosedConversations)
         this.conversationVisibility.clearAll();
     });
+    effect(() => {
+      const selection = this.activeSelection();
+      const accountId = this.chat.accountId();
+      const context =
+        selection.kind === 'direct' && accountId ? `${accountId}|${selection.jid}` : '';
+      if (context !== this.gamesContext) {
+        this.gamesContext = context;
+        this.gamesOpen.set(false);
+      }
+      if (selection.kind === 'direct' && accountId && selection.jid)
+        this.games.openConversation(accountId, selection.jid);
+      else this.games.closeConversation();
+    });
+    this.destroyRef.onDestroy(() => this.games.destroy());
   }
 
   protected setLoginAccount(accountId: string): void {
@@ -378,6 +443,38 @@ export class App {
     await this.chat.setPresence(option.mode, status);
     this.presenceOpen.set(false);
   }
+  protected inviteGame(input: { gameId: GameId; gameVersion: GameVersion }): void {
+    this.gamesOpen.set(false);
+    void this.games.invite(input.gameId, input.gameVersion);
+  }
+  protected toggleGames(): void {
+    if (!this.selectedJid()) return;
+    this.gamesOpen.update((open) => !open);
+  }
+  protected acceptGame(session: GameSessionDto): void {
+    void this.games.accept(session);
+  }
+  protected rejectGame(session: GameSessionDto): void {
+    void this.games.reject(session);
+  }
+  protected cancelGame(session: GameSessionDto): void {
+    void this.games.cancel(session);
+  }
+  protected moveGame(input: { session: GameSessionDto; move: unknown }): void {
+    void this.games.move(input.session, input.move);
+  }
+  protected resignGame(session: GameSessionDto): void {
+    void this.games.resign(session);
+  }
+  protected resyncGame(session: GameSessionDto): void {
+    void this.games.resync(session);
+  }
+  protected rematchGame(session: GameSessionDto): void {
+    void this.games.rematch(session);
+  }
+  protected closeGame(session: GameSessionDto): void {
+    void this.games.close(session);
+  }
   protected async connect(): Promise<void> {
     this.resetConversationSelection();
     await this.session.connect();
@@ -423,7 +520,7 @@ export class App {
       this.refreshMessageSearchForSelection();
       void this.scrollAfterConversationLoad(jid);
     } else if (jidInput.includes('@')) {
-      this.newMessageLocalError.set('Introduce un JID XMPP completo y válido.');
+      this.newMessageLocalError.set('Introduce una dirección de contacto completa y válida.');
     }
   }
   protected selectJoinedRoom(roomJid: string): void {
@@ -765,6 +862,48 @@ export class App {
   protected openPreferences(): void {
     this.preferencesCoordinator.openDialog();
   }
+
+  protected openOwnProfile(): void {
+    if (!this.chat.isConnected()) return;
+    this.profileEditorOpen.set(true);
+    void this.chat.loadOwnUserProfile();
+  }
+
+  protected async saveOwnProfile(input: UserProfileUpdateInput): Promise<void> {
+    this.profileEditorSaving.set(true);
+    try {
+      const result = await this.chat.updateOwnUserProfile(input);
+      if (result.ok) this.closeOwnProfile();
+    } finally {
+      this.profileEditorSaving.set(false);
+    }
+  }
+
+  protected async updateOwnAvatar(): Promise<void> {
+    if (this.profileEditorSaving()) return;
+    this.profileEditorSaving.set(true);
+    try {
+      await this.chat.updateOwnUserAvatar();
+    } finally {
+      this.profileEditorSaving.set(false);
+    }
+  }
+
+  protected async clearOwnAvatar(): Promise<void> {
+    if (this.profileEditorSaving()) return;
+    this.profileEditorSaving.set(true);
+    try {
+      await this.chat.clearOwnUserAvatar();
+    } finally {
+      this.profileEditorSaving.set(false);
+    }
+  }
+
+  protected closeOwnProfile(): void {
+    if (this.profileEditorSaving()) return;
+    this.profileEditorOpen.set(false);
+    this.scheduleUiMicrotask(() => this.sidebar?.focusProfileEditTrigger());
+  }
   protected checkForUpdates(): void {
     this.preferencesCoordinator.checkForUpdates();
   }
@@ -863,6 +1002,7 @@ export class App {
         this.certificateRequest() ||
         this.presenceOpen() ||
         this.preferencesOpen() ||
+        this.profileEditorOpen() ||
         this.broadcastOpen()
       )
         return;
@@ -884,6 +1024,11 @@ export class App {
     if (this.preferencesOpen()) {
       event.preventDefault();
       this.closePreferences();
+      return;
+    }
+    if (this.profileEditorOpen()) {
+      event.preventDefault();
+      this.closeOwnProfile();
       return;
     }
     if (this.broadcastOpen()) {

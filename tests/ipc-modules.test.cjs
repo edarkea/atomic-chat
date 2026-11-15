@@ -23,6 +23,7 @@ const {
 } = require('../electron/ipc/ipc-sticker-message-handlers.cjs');
 const { registerUpdateHandlers } = require('../electron/ipc/ipc-update-handlers.cjs');
 const { registerExternalLinkHandlers } = require('../electron/ipc/ipc-external-link-handlers.cjs');
+const { registerGameHandlers } = require('../electron/ipc/ipc-game-handlers.cjs');
 
 const channels = [
   'contract.version',
@@ -104,6 +105,29 @@ const channels = [
   'updates.download',
   'updates.install',
   'externalLinks.open',
+  'games.catalog',
+  'games.sessions',
+  'games.snapshot',
+  'games.invite',
+  'games.accept',
+  'games.reject',
+  'games.cancel',
+  'games.start',
+  'games.resign',
+  'games.close',
+  'games.move',
+  'games.resync',
+  'games.rematch',
+  'games.subscribe',
+  'games.unsubscribe',
+  'userProfiles.get',
+  'userProfiles.update',
+  'userProfiles.avatar.update',
+  'userProfiles.avatar.clear',
+  'userProfiles.image.open',
+  'userProfiles.image.read',
+  'userProfiles.image.close',
+  'userProfiles.image.revoke',
 ];
 
 function createHarness() {
@@ -363,6 +387,26 @@ test('each domain registrar owns only its assigned channels', () => {
       ['updates.getStatus', 'updates.check', 'updates.download', 'updates.install'],
     ],
     [registerExternalLinkHandlers, ['externalLinks.open']],
+    [
+      registerGameHandlers,
+      [
+        'games.catalog',
+        'games.sessions',
+        'games.snapshot',
+        'games.invite',
+        'games.accept',
+        'games.reject',
+        'games.cancel',
+        'games.start',
+        'games.resign',
+        'games.close',
+        'games.move',
+        'games.resync',
+        'games.rematch',
+        'games.subscribe',
+        'games.unsubscribe',
+      ],
+    ],
   ];
   for (const [registrar, expected] of groups) {
     const registered = new Map();

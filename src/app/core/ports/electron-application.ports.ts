@@ -66,6 +66,17 @@ import {
   TimelinePageInput,
   UpdateRequest,
   UpdateStatus,
+  UserProfile,
+  UserProfileImageChunk,
+  UserProfileImageCloseRequest,
+  UserProfileImageOpenRequest,
+  UserProfileImageReadRequest,
+  UserProfileImageRevokeRequest,
+  UserProfileImageStreamRef,
+  UserProfileRequest,
+  UserProfileAvatarUpdateRequest,
+  UserProfileAvatarClearRequest,
+  UserProfileUpdateRequest,
   XmppConnectionProfile,
   ExternalLinkOpenInput,
 } from '../domain';
@@ -90,6 +101,7 @@ import {
   StickerPreviewPort,
   StickerMessagePort,
   UpdatePort,
+  UserProfilePort,
 } from './ports';
 
 const unavailable = <T>(requestId: string): Result<T> => ({
@@ -272,6 +284,57 @@ export class ElectronCertificatePort implements CertificatePort {
   decide(input: CertificateTrustDecisionInput): Promise<Result<void>> {
     const api = getAtomicChatApi();
     return api ? api.certificate.decide(input) : Promise.resolve(unavailable(input.requestId));
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ElectronUserProfilePort implements UserProfilePort {
+  get(input: UserProfileRequest): Promise<Result<UserProfile>> {
+    const api = getAtomicChatApi();
+    return api ? api.userProfiles.get(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  update(input: UserProfileUpdateRequest): Promise<Result<UserProfile>> {
+    const api = getAtomicChatApi();
+    return api ? api.userProfiles.update(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  updateAvatar(input: UserProfileAvatarUpdateRequest): Promise<Result<UserProfile | null>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.userProfiles.avatar.update(input)
+      : Promise.resolve(unavailable(input.requestId));
+  }
+
+  clearAvatar(input: UserProfileAvatarClearRequest): Promise<Result<UserProfile>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.userProfiles.avatar.clear(input)
+      : Promise.resolve(unavailable(input.requestId));
+  }
+
+  openImage(input: UserProfileImageOpenRequest): Promise<Result<UserProfileImageStreamRef>> {
+    const api = getAtomicChatApi();
+    return api ? api.userProfiles.image.open(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  readImage(input: UserProfileImageReadRequest): Promise<Result<UserProfileImageChunk>> {
+    const api = getAtomicChatApi();
+    return api ? api.userProfiles.image.read(input) : Promise.resolve(unavailable(input.requestId));
+  }
+
+  closeImage(input: UserProfileImageCloseRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.userProfiles.image.close(input)
+      : Promise.resolve(unavailable(input.requestId));
+  }
+
+  revokeImage(input: UserProfileImageRevokeRequest): Promise<Result<void>> {
+    const api = getAtomicChatApi();
+    return api
+      ? api.userProfiles.image.revoke(input)
+      : Promise.resolve(unavailable(input.requestId));
   }
 }
 

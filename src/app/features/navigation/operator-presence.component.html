@@ -1,8 +1,31 @@
 <div class="operator-card" [attr.title]="operatorTooltip()">
-  <span class="avatar operator-avatar" aria-hidden="true"
-    ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
-      <use href="#ac-contact" /></svg
-  ></span>
+  <div class="operator-avatar-wrap">
+    @if (model().profileImage; as image) {
+      <app-user-profile-image
+        class="operator-profile-image"
+        [accountId]="model().accountId"
+        [image]="image"
+        [alt]="'Avatar de ' + displayName()"
+        size="compact"
+      />
+    } @else {
+      <span class="avatar operator-avatar" aria-hidden="true"
+        ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+          <use href="#ac-contact" /></svg
+      ></span>
+    }
+    <button
+      #profileEditTrigger
+      type="button"
+      class="profile-edit-trigger"
+      aria-label="Editar mi perfil"
+      title="Editar mi perfil"
+      [disabled]="model().connectionLabel.toLocaleLowerCase().includes('desconect')"
+      (click)="editProfile()"
+    >
+      <span aria-hidden="true">✎</span>
+    </button>
+  </div>
   <div>
     <strong>{{ displayName() }}</strong
     ><small>{{ model().connectionLabel }} · {{ model().presenceLabel }}</small>
