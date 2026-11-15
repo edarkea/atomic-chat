@@ -7,14 +7,14 @@ import {
 describe('sticker send error presentation', () => {
   it('preserves safe, specific messages for typed transport errors', () => {
     expect(stickerSendErrorMessage({ code: 'UNSUPPORTED', message: 'secret-url-token' })).toContain(
-      'XEP-0363',
+      'archivos multimedia',
     );
     expect(
       stickerSendErrorMessage({ code: 'MEDIA_SIZE_EXCEEDED', message: 'secret-url-token' }),
     ).toContain('tamaño');
     expect(
       stickerSendErrorMessage({ code: 'TRANSPORT_FAILED', message: 'secret-url-token' }),
-    ).toContain('HTTP Upload');
+    ).toContain('archivo multimedia');
     expect(stickerSendErrorMessage({ code: 'TIMEOUT', message: 'secret-url-token' })).toContain(
       'tiempo',
     );

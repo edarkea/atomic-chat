@@ -19,6 +19,8 @@ export interface SidebarModel {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SidebarComponent {
+  @ViewChild(OperatorPresenceComponent)
+  private readonly operatorPresence?: OperatorPresenceComponent;
   @ViewChild(ConversationListComponent)
   private readonly conversationList?: ConversationListComponent;
   readonly model = input.required<SidebarModel>();
@@ -26,6 +28,7 @@ export class SidebarComponent {
   readonly presenceClose = output<void>();
   readonly presenceSelected = output<OperatorPresenceModel['presenceOptions'][number]>();
   readonly presenceStatusChange = output<string>();
+  readonly profileEdit = output<void>();
   readonly nicknameChange = output<string>();
   readonly discoverRooms = output<void>();
   readonly selectRoom = output<string>();
@@ -54,5 +57,9 @@ export class SidebarComponent {
 
   focusContactSearch(): void {
     this.conversationList?.focusContactSearch();
+  }
+
+  focusProfileEditTrigger(): void {
+    this.operatorPresence?.focusProfileEditTrigger();
   }
 }

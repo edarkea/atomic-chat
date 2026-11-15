@@ -106,7 +106,7 @@ npm run lint
 npm run format:check:all
 ```
 
-`npm run electron` launches the desktop application using the local `.env`. Angular tests, lint and formatting are intentionally separate from the historical P0, Openfire integration and load suites. See the [testing guide](docs/getting-started/testing.md) for the complete command map.
+`npm run electron` launches the desktop application using the local `.env`. Angular tests, lint and formatting are intentionally separate from the historical P0, Openfire integration and load suites. The technical commands are listed in `package.json` and the maintained references under `docs/`.
 
 ## Documentation, limitations and roadmap
 

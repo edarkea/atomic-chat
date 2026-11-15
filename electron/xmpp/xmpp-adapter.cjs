@@ -6,6 +6,8 @@ const { createMucService } = require('./xmpp-muc.cjs');
 const { createFileService } = require('./xmpp-file.cjs');
 const { createXmppStickerService } = require('./xmpp-stickers.cjs');
 const { createXmppGames } = require('./xmpp-games.cjs');
+const { createXmppUserProfileService } = require('./xmpp-user-profile.cjs');
+const { XmppProfileStore } = require('./xmpp-profile-store.cjs');
 const xmppClient = require('@xmpp/client');
 const { REACTIONS_NS, REPLY_NS, FALLBACK_NS, SID_NS } = require('./xmpp-message-features.cjs');
 
@@ -25,6 +27,7 @@ const { REACTIONS_NS, REPLY_NS, FALLBACK_NS, SID_NS } = require('./xmpp-message-
  * @typedef {{fingerprintSha256: string, subject: string, issuer: string, validFrom: string, validTo: string, subjectAltNames: string[], chain: Array<{fingerprintSha256: string, subject: string, issuer: string}>, publicKeyBits?: number, signatureAlgorithm?: string, pem: string}} CertificateInfo
  * @typedef {{accountId: string, requestId: string, endpoint: XmppEndpoint}} TlsRequest
  * @typedef {{type: string, payload: {state: string, offer: {transferId: string}, endReason?: string}}} TransferEvent
+ * @typedef {{displayName?: string | null, givenName?: string | null, familyName?: string | null, nickname?: string | null, email?: string | null}} UserProfileUpdateInput
  * @typedef {{onEvent: (listener: (event: TransferEvent) => void) => void, start: (input: unknown) => Promise<unknown>, cancelBySender: (transferId: string) => Promise<unknown>, fail: (transferId: string, reason: string) => Promise<unknown>, open: (transferId: string) => Promise<unknown>, append: (transferId: string, bytes: Uint8Array) => Promise<unknown>, complete: (transferId: string) => Promise<unknown>, cancelAccount: (accountId: string) => Promise<unknown>, add: (input: unknown) => FileRecord}} FileTransferEvents
  * @typedef {{accountId: string, service: string, endpoint?: unknown}} MucPolicy
  * @typedef {{providerId: string, ownsReference?: (value: unknown) => boolean, getCapabilities: (input: {accountId: string}) => Promise<{providerId: string, storageOrigins: string[], maxFileSize?: number}>, uploadSticker: (input: unknown) => Promise<{assetId: string, remoteUrl: string}>, resolveSticker: (input: unknown) => Promise<{availability: string, remoteUrl: string, providerId: string, storageOrigin: string}>}} StickerStorageProvider
@@ -69,6 +72,8 @@ class XmppAdapter {
    * @param {{alternativeAvailable?: boolean} | null} [stickerStorageConfiguration]
    * @param {boolean} [requireMucPolicy]
    * @param {{manager?: object, registry?: object} | null} [gameRuntime]
+   * @param {{createFromBuffer: (data: Buffer) => {isEmpty: () => boolean, getSize: () => {width: number, height: number}}} | null} [nativeImage]
+   * @param {string | null} [profileDataDirectory]
    */
   constructor(
     packaged = false,
@@ -80,6 +85,8 @@ class XmppAdapter {
     stickerStorageConfiguration = null,
     requireMucPolicy = false,
     gameRuntime = null,
+    nativeImage = null,
+    profileDataDirectory = null,
   ) {
     this.packaged = packaged;
     this.requireMucPolicy = requireMucPolicy;
@@ -117,6 +124,16 @@ class XmppAdapter {
     this.transport = createXmppTransport(this);
     this.sessionService = createXmppSession(this);
     this.rosterMessaging = createRosterMessaging(this);
+    this.userProfileService = createXmppUserProfileService(this, {
+      nativeImage: nativeImage || undefined,
+      ...(profileDataDirectory
+        ? {
+            profileStore: new XmppProfileStore(profileDataDirectory, {
+              nativeImage: nativeImage || undefined,
+            }),
+          }
+        : {}),
+    });
     this.carbons = createXmppCarbons(this);
     this.mucService = createMucService(this);
     this.fileService = createFileService(this);
@@ -164,6 +181,7 @@ class XmppAdapter {
   /** @param {string} accountId */
   disconnect(accountId) {
     this.games.handleConnectionEvent(accountId, 'offline');
+    this.userProfileService.clearAccount(accountId);
     return this.sessionService.disconnect(accountId);
   }
   /** @param {string} accountId @param {string} status @param {boolean} retryable @param {string} [reason] */
@@ -174,6 +192,7 @@ class XmppAdapter {
   handleSessionEvent(accountId, session, event, reason) {
     if (event === 'offline' || event === 'error')
       this.games.handleConnectionEvent(accountId, event);
+    if (event === 'offline' || event === 'error') this.userProfileService.clearAccount(accountId);
     const handled = this.sessionService.handleSessionEvent(
       accountId,
       /** @type {XmppSession} */ (session),
@@ -344,6 +363,64 @@ class XmppAdapter {
   /** @param {string} accountId @param {ChatStateInput} input */
   sendChatState(accountId, input) {
     return this.rosterMessaging.sendChatState(accountId, input);
+  }
+  /** @param {number} senderId @param {string} accountId @param {string} jid @param {'remote' | 'stored'} [mode] */
+  getUserProfile(senderId, accountId, jid, mode = 'remote') {
+    return this.userProfileService.get(senderId, accountId, jid, mode);
+  }
+
+  /** @param {number} senderId @param {string} accountId @param {UserProfileUpdateInput} input */
+  updateUserProfile(senderId, accountId, input) {
+    return this.userProfileService.update(senderId, accountId, input);
+  }
+
+  /** @param {number} senderId @param {string} accountId @param {string} filePath */
+  updateUserProfileAvatar(senderId, accountId, filePath) {
+    return this.userProfileService.updateAvatar(senderId, accountId, filePath);
+  }
+
+  /** @param {number} senderId @param {string} accountId */
+  clearUserProfileAvatar(senderId, accountId) {
+    return this.userProfileService.clearAvatar(senderId, accountId);
+  }
+  /** @param {number} senderId @param {{accountId: string, referenceId: string}} input */
+  openUserProfileImage(senderId, input) {
+    return this.userProfileService.openImage(senderId, input);
+  }
+  /** @param {number} senderId @param {{accountId: string, referenceId: string, streamId: string, sequence: number}} input */
+  readUserProfileImage(senderId, input) {
+    return this.userProfileService.readImage(senderId, input);
+  }
+  /** @param {number} senderId @param {{accountId: string, referenceId: string, streamId: string}} input */
+  closeUserProfileImage(senderId, input) {
+    return this.userProfileService.closeImage(senderId, input);
+  }
+  /** @param {number} senderId @param {{accountId: string, referenceId: string}} input */
+  revokeUserProfileImage(senderId, input) {
+    return this.userProfileService.revokeImage(senderId, input);
+  }
+  /** @param {number} senderId */
+  clearUserProfileSender(senderId) {
+    this.userProfileService.clearSender(senderId);
+  }
+
+  /** @param {string} accountId @param {string} jid @param {string | undefined} avatarHash */
+  handleProfileAvatarHash(accountId, jid, avatarHash) {
+    return this.userProfileService
+      .handleAvatarHashChanged(accountId, jid, avatarHash)
+      .then((changed) => {
+        if (changed)
+          this.emit({
+            type: 'profile.avatarChanged',
+            payload: {
+              accountId,
+              jid,
+              ...(avatarHash ? { avatarHash } : {}),
+            },
+          });
+        return changed;
+      })
+      .catch(() => false);
   }
 
   /** @param {{accountId: string}} input */

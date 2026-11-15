@@ -29,4 +29,4 @@ These alternatives risk data loss, expose sensitive material or hide evidence ne
 - Secret recovery has an explicit user-visible outcome: recover from a valid backup or reset persistent credentials.
 - Database backup and restore remain operational responsibilities; secret recovery is not a general SQLite restore mechanism.
 
-See [Change persistence safely](../../guides/persistence-migrations.md) and [Recovery procedures](../../operations/recovery.md).
+See [Recovery procedures](../../operations/recovery.md) for operational handling of persisted data.

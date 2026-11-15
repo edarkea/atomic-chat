@@ -1,5 +1,12 @@
 import { computed, signal, type Signal } from '@angular/core';
-import type { ConnectionState, Presence, RoomRef, RoomState } from '../../core/domain';
+import type {
+  ConnectionState,
+  Presence,
+  RoomRef,
+  RoomState,
+  UserProfile,
+  UserProfileImageRef,
+} from '../../core/domain';
 import type { MucNavigationModel } from './muc-navigation.component';
 import type { ConversationListModel } from './conversation-list.component';
 import type { OperatorPresenceModel } from './operator-presence.component';
@@ -11,6 +18,8 @@ import type { WorkspaceConversationItem } from './conversation-list.component';
 export interface SidebarViewInputs {
   readonly connection: Signal<ConnectionState>;
   readonly accountId: Signal<string>;
+  readonly ownProfile?: Signal<UserProfile | null>;
+  readonly contactProfiles?: Signal<ReadonlyMap<string, UserProfile>>;
   readonly presence: Signal<Presence>;
   readonly search: Signal<string>;
   readonly unreadCounts: Signal<ReadonlyMap<string, number>> | undefined;
@@ -66,6 +75,15 @@ export class SidebarViewCoordinator {
 
   readonly presenceLabel = computed(() => this.selectedPresenceOption().label);
   readonly presenceDot = computed(() => this.selectedPresenceOption().dot);
+  private readonly profileImages = computed<ReadonlyMap<string, UserProfileImageRef>>(() => {
+    const images = new Map<string, UserProfileImageRef>();
+    const ownImage = this.inputs.ownProfile?.()?.image;
+    if (ownImage) images.set(this.inputs.accountId().toLowerCase(), ownImage);
+    for (const [jid, profile] of this.inputs.contactProfiles?.() ?? new Map()) {
+      if (profile.image) images.set(jid, profile.image);
+    }
+    return images;
+  });
   private readonly filteredServices = computed(() => {
     const term = this.inputs.search().trim().toLowerCase();
     return this.inputs
@@ -96,6 +114,7 @@ export class SidebarViewCoordinator {
       filteredContacts: this.inputs.filteredContacts(),
       workspaceContacts: this.inputs.workspaceContacts(),
       workspaceItems: this.inputs.workspaceItems(),
+      profileImages: this.profileImages(),
       muc,
       unreadCounts: this.inputs.unreadCounts?.() ?? new Map(),
       selectedJid: this.inputs.selectedJid(),
@@ -111,6 +130,7 @@ export class SidebarViewCoordinator {
       presenceOptions: this.presenceOptions,
       presenceOptionId: this.selectedPresenceOption().id,
       presenceStatus: this.presenceStatus(),
+      profileImage: this.inputs.ownProfile?.()?.image,
     };
     return { operator, muc, conversations };
   });

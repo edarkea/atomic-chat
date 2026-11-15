@@ -23,6 +23,7 @@ import {
   OfficialGameCatalog,
   ReactionActor,
   ReactionState,
+  UserProfile,
 } from '../../core/domain';
 import { FileTransferCardComponent } from './file-transfer-card.component';
 import { MessageComposerComponent } from './message-composer.component';
@@ -36,6 +37,9 @@ import { StickerMessageCardComponent } from '../stickers/sticker-message-card.co
 import { MessageSearchComponent } from './message-search.component';
 import { ScrollToLatestButtonComponent } from './scroll-to-latest-button.component';
 import { GamesPanelComponent } from '../games/games-panel.component';
+import { ContactProfileDialogComponent } from './contact-profile-dialog.component';
+import { ContactProfileSummaryDialogComponent } from './contact-profile-summary-dialog.component';
+import { UserProfileImageComponent } from '../session/user-profile-image.component';
 import { formatMessageDay } from './message-date-time';
 import { groupMessagesForDisplay, MessageGroupingMetadata } from './message-grouping';
 import { ConversationMessageCoordinator } from './conversation-message.coordinator';
@@ -57,6 +61,9 @@ export type { ConversationTimelineItem, OlderMessagesRequest } from './conversat
     StickerMessageCardComponent,
     MessageSearchComponent,
     GamesPanelComponent,
+    ContactProfileDialogComponent,
+    ContactProfileSummaryDialogComponent,
+    UserProfileImageComponent,
   ],
   templateUrl: './conversation-view.component.html',
   styleUrls: ['./conversation-view.component.scss'],
@@ -64,6 +71,7 @@ export type { ConversationTimelineItem, OlderMessagesRequest } from './conversat
 })
 export class ConversationViewComponent {
   readonly activeContact = input<Contact>();
+  readonly activeProfile = input<UserProfile | null>(null);
   readonly selectedJid = input.required<string>();
   readonly accountId = input.required<string>();
   readonly timeline = input.required<ReadonlyArray<ConversationTimelineItem>>();
@@ -137,6 +145,8 @@ export class ConversationViewComponent {
     readonly emojis: ReadonlyArray<string>;
   }>();
   protected readonly searchOpen = signal(false);
+  protected readonly contactProfileSummaryOpen = signal(false);
+  protected readonly contactProfileDetailsOpen = signal(false);
   protected readonly activeOverlay = signal<
     { readonly messageId: string; readonly overlay: MessageOverlay } | undefined
   >(undefined);
@@ -192,6 +202,11 @@ export class ConversationViewComponent {
 
   constructor() {
     effect(() => {
+      this.selectedJid();
+      this.contactProfileSummaryOpen.set(false);
+      this.contactProfileDetailsOpen.set(false);
+    });
+    effect(() => {
       this.visibleMessageKey();
       this.initialTimelineReady();
       if (this.scroll.observeTimeline()) this.activeOverlay.set(undefined);
@@ -205,6 +220,19 @@ export class ConversationViewComponent {
   protected toggleSearch(): void {
     if (!this.isSelected()) return;
     this.searchOpen.update((open) => !open);
+  }
+  protected openContactProfile(): void {
+    if (this.activeProfile()) this.contactProfileSummaryOpen.set(true);
+  }
+  protected closeContactProfile(): void {
+    this.contactProfileSummaryOpen.set(false);
+  }
+  protected openContactProfileDetails(): void {
+    this.contactProfileSummaryOpen.set(false);
+    if (this.activeProfile()) this.contactProfileDetailsOpen.set(true);
+  }
+  protected closeContactProfileDetails(): void {
+    this.contactProfileDetailsOpen.set(false);
   }
   protected dayLabel(sortAt: string): string {
     return formatMessageDay(sortAt);

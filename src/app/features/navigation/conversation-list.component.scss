@@ -101,6 +101,9 @@
   text-align: left;
   width: 100%;
 }
+.conversation-contact-image {
+  flex: 0 0 42px;
+}
 .conversation-item:hover,
 .conversation-item.active {
   background: var(--atomic-surface-active);

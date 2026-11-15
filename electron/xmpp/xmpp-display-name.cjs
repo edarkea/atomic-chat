@@ -11,24 +11,57 @@ const xml =
     xmppClient.xml
   );
 
+/** @param {unknown} value @param {number} [maxLength] @returns {string | undefined} */
+function profileText(value, maxLength = 160) {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, maxLength);
+  return normalized || undefined;
+}
+
 /** @param {XmlNode | undefined} card @returns {string | undefined} */
 function profileDisplayName(card) {
   const name = card?.getChild('N');
   const candidates = [
     card?.getChildText('FN'),
-    [name?.getChildText('GIVEN'), name?.getChildText('FAMILY')].filter(Boolean).join(' '),
+    [name?.getChildText('GIVEN'), name?.getChildText('MIDDLE'), name?.getChildText('FAMILY')]
+      .filter(Boolean)
+      .join(' '),
     card?.getChildText('NICKNAME'),
   ];
   return candidates
     .filter((value) => typeof value === 'string')
-    .map((value) =>
-      value
-        .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-        .replace(/\s+/gu, ' ')
-        .trim(),
-    )
+    .map((value) => profileText(value))
     .find((value) => value && !value.includes('@'))
     ?.slice(0, 160);
+}
+
+/**
+ * Requests a vCard-temp card through the session's existing IQ caller.
+ * @param {DisplayNameSession} session
+ * @param {string | undefined} [to]
+ * @param {number} [timeoutMs]
+ * @returns {Promise<XmlNode>}
+ */
+function requestVCard(session, to, timeoutMs = 5000) {
+  return session.iqCaller.request(
+    xml('iq', { type: 'get', ...(to ? { to } : {}) }, xml('vCard', { xmlns: 'vcard-temp' })),
+    timeoutMs,
+  );
+}
+
+/**
+ * Publishes a vCard through the session's existing IQ caller.
+ * @param {DisplayNameSession} session
+ * @param {XmlNode} card
+ * @param {number} [timeoutMs]
+ * @returns {Promise<XmlNode>}
+ */
+function updateVCard(session, card, timeoutMs = 5000) {
+  return session.iqCaller.request(xml('iq', { type: 'set' }, card), timeoutMs);
 }
 
 /**
@@ -39,10 +72,7 @@ function profileDisplayName(card) {
  */
 async function loadDisplayName(adapter, accountId, session) {
   try {
-    const response = await session.iqCaller.request(
-      xml('iq', { type: 'get' }, xml('vCard', { xmlns: 'vcard-temp' })),
-      5000,
-    );
+    const response = await requestVCard(session);
     const displayName = profileDisplayName(response.getChild('vCard', 'vcard-temp'));
     const current = adapter.states.get(accountId);
     if (
@@ -59,4 +89,4 @@ async function loadDisplayName(adapter, accountId, session) {
   }
 }
 
-module.exports = { loadDisplayName, profileDisplayName };
+module.exports = { loadDisplayName, profileDisplayName, profileText, requestVCard, updateVCard };

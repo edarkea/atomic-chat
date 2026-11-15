@@ -13,6 +13,22 @@ test('uses full name, structured name or nickname without showing a JID', () => 
   );
   assert.equal(
     profileDisplayName(
+      xml(
+        'vCard',
+        {},
+        xml(
+          'N',
+          {},
+          xml('GIVEN', {}, 'Juan'),
+          xml('MIDDLE', {}, 'Carlos'),
+          xml('FAMILY', {}, 'Munoz'),
+        ),
+      ),
+    ),
+    'Juan Carlos Munoz',
+  );
+  assert.equal(
+    profileDisplayName(
       xml('vCard', {}, xml('FN', {}, 'juan@test.invalid'), xml('NICKNAME', {}, 'Juan')),
     ),
     'Juan',

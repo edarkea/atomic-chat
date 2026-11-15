@@ -30,6 +30,8 @@
     "electron/xmpp/xmpp-session-cleanup.cjs",
     "electron/security/security-policy.cjs",
     "electron/xmpp/xmpp-display-name.cjs",
+    "electron/xmpp/xmpp-profile-cache.cjs",
+    "electron/xmpp/xmpp-user-profile.cjs",
     "electron/xmpp/xmpp-session.cjs",
     "electron/xmpp/xmpp-message-features.cjs",
     "electron/xmpp/xmpp-carbons.cjs",
@@ -38,6 +40,7 @@
     "electron/xmpp/xmpp-stickers.cjs",
     "electron/xmpp/xmpp-file.cjs",
     "electron/xmpp/xmpp-adapter.cjs",
+    "electron/ipc/ipc-user-profile-handlers.cjs",
     "tests/fixtures/cal11-invalid-direction.cjs"
   ]
 }

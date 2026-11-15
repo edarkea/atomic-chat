@@ -29,6 +29,7 @@ import type {
   DomainEventFor,
   DomainEventType,
   MucParticipantChangedPayload,
+  ProfileAvatarChangedPayload,
   RosterChangedPayload,
   TypedDomainEvent,
 } from './domain-event';
@@ -249,6 +250,7 @@ const certificateVerificationErrorCodes: readonly CertificateVerificationErrorCo
 const domainEventTypes: readonly DomainEventType[] = [
   'connection.stateChanged',
   'presence.changed',
+  'profile.avatarChanged',
   'roster.changed',
   'message.stateChanged',
   'message.received',
@@ -317,6 +319,15 @@ function isPresence(value: unknown): value is Presence & { accountId?: string } 
     isOptionalString(value.status) &&
     isString(value.updatedAt) &&
     isOptionalString(value.accountId)
+  );
+}
+
+function isProfileAvatarChanged(value: unknown): value is ProfileAvatarChangedPayload {
+  return (
+    isRecord(value) &&
+    isString(value.accountId) &&
+    isString(value.jid) &&
+    (value['avatarHash'] === undefined || /^[a-f0-9]{40}$/u.test(String(value['avatarHash'])))
   );
 }
 
@@ -853,6 +864,10 @@ export function validateDomainEvent(value: unknown): TypedDomainEvent | undefine
         : undefined;
     case 'presence.changed':
       return isPresence(value.payload) ? typedEvent(value, value.type, value.payload) : undefined;
+    case 'profile.avatarChanged':
+      return isProfileAvatarChanged(value.payload)
+        ? typedEvent(value, value.type, value.payload)
+        : undefined;
     case 'roster.changed':
       return isRosterChanged(value.payload)
         ? typedEvent(value, value.type, value.payload)

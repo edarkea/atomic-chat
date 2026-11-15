@@ -31,4 +31,4 @@ These options spread process-boundary knowledge through the UI and reduce the co
   data and never move rule authority into Renderer.
 - There is some adapter boilerplate, accepted as the cost of least privilege and testability.
 
-The implementation procedure is described in [Add an IPC capability](../../guides/add-ipc-capability.md).
+IPC capabilities remain versioned, sender-scoped and explicitly registered across Main, Preload and Renderer contracts.

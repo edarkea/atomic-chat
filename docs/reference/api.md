@@ -21,25 +21,26 @@ The page receives a frozen, capability-oriented API. It does not receive `ipcRen
 
 ## Capability groups
 
-| Group                       | Scope                                                                     |
-| --------------------------- | ------------------------------------------------------------------------- |
-| `account`                   | Secrets, connect/disconnect and secret-storage recovery/reset actions.    |
-| `connectionProfiles`        | List, save and delete connection profiles.                                |
-| `certificate`               | Apply an explicit certificate trust decision.                             |
-| `session`                   | Read connection state.                                                    |
-| `presence` and `roster`     | Set presence and list contacts.                                           |
-| `messaging` and `chatState` | Send messages, reactions and typing state.                                |
-| `muc`                       | Discover, join, leave, send room messages and reactions.                  |
-| `history`                   | List/search/page messages, timelines and conversation summaries.          |
-| `media` and `fileHistory`   | List media and open/reveal persisted files.                               |
-| `file` and `preview`        | Transfer actions and guarded image preview streams.                       |
-| `stickers`                  | Sticker library, message, pack, draft and preview operations.             |
-| `preferences`               | Read/update/reset preferences and select a download directory.            |
-| `attention` and `broadcast` | Window attention and controlled broadcasts.                               |
-| `updates`                   | Read, check, download and install packaged updates.                       |
-| `externalLinks`             | Open an approved external link through Main.                              |
-| `games`                     | Official game catalog, direct sessions, actions and filtered game events. |
-| `subscribe`                 | Receive validated `domain.event` messages and unsubscribe.                |
+| Group                       | Scope                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `account`                   | Secrets, connect/disconnect and secret-storage recovery/reset actions.                                       |
+| `connectionProfiles`        | List, save and delete connection profiles.                                                                   |
+| `certificate`               | Apply an explicit certificate trust decision.                                                                |
+| `session`                   | Read connection state.                                                                                       |
+| `presence` and `roster`     | Set presence and list contacts.                                                                              |
+| `userProfiles`              | Read own/contact XEP-0054 profiles on demand, update the own text profile and consume guarded photo streams. |
+| `messaging` and `chatState` | Send messages, reactions and typing state.                                                                   |
+| `muc`                       | Discover, join, leave, send room messages and reactions.                                                     |
+| `history`                   | List/search/page messages, timelines and conversation summaries.                                             |
+| `media` and `fileHistory`   | List media and open/reveal persisted files.                                                                  |
+| `file` and `preview`        | Transfer actions and guarded image preview streams.                                                          |
+| `stickers`                  | Sticker library, message, pack, draft and preview operations.                                                |
+| `preferences`               | Read/update/reset preferences and select a download directory.                                               |
+| `attention` and `broadcast` | Window attention and controlled broadcasts.                                                                  |
+| `updates`                   | Read, check, download and install packaged updates.                                                          |
+| `externalLinks`             | Open an approved external link through Main.                                                                 |
+| `games`                     | Official game catalog, direct sessions, actions and filtered game events.                                    |
+| `subscribe`                 | Receive validated `domain.event` messages and unsubscribe.                                                   |
 
 Exact methods and payloads are defined in:
 
@@ -48,6 +49,18 @@ Exact methods and payloads are defined in:
 - `src/app/core/domain/`;
 - `electron/preload.cjs`;
 - `electron/ipc/`.
+
+### `window.atomicChat.userProfiles`
+
+`userProfiles.get` accepts `{ version, requestId, accountId, jid }` with a bare account and bare target JID. It returns a `UserProfile` from `vcard-temp`. `userProfiles.update` accepts `{ version, requestId, accountId, profile }` and can update only the authenticated account's bounded textual fields (`displayName`, `givenName`, `middleName`, `familyName`, `company`, `jobTitle`, home address fields, `phone`, `mobile`, `fax`, `pager`, `birthday`, `description`, `website`, `nickname` and `email`). Contact profiles remain read-only. The roster's `Contact.name` remains separate and takes precedence in the UI.
+
+The optional `image` value contains only an opaque `referenceId`, validated PNG/JPEG metadata and an expiry. `image.open`, `image.read`, `image.close` and `image.revoke` are sender/account-scoped stream operations. They never return Base64 or an external URL. Main determines the MIME from validated image bytes, tolerating stale or aliased `PHOTO/TYPE` metadata from the XMPP server. It enforces the five-second profile timeout, bounded photo size, bounded concurrent requests, stream sequencing and session-generation freshness. The Renderer defers image streams until the avatar is near the viewport, coalesces concurrent reads for the same account/reference, and keeps a bounded object-URL cache until the reference expires or its memory budget requires eviction. Account changes clear the matching Renderer cache and pending reads.
+
+`userProfiles.avatar.update` opens a native Main-process image picker and publishes the selected validated PNG/JPEG as `PHOTO/TYPE/BINVAL` in the authenticated account's XEP-0054 vCard. The renderer sends no file path, image bytes, Base64 or external URL. `userProfiles.avatar.clear` removes only `PHOTO` while preserving the rest of the vCard. Both operations are serialized with text updates per account and enforce the 512 KiB size limit, bounded dimensions, timeout, account/session validation and typed media errors. A cancelled picker returns `{ ok: true, value: null }` for `avatar.update`.
+
+The update operations read the current own vCard before publishing so unrelated server fields remain intact. Profile reads are stored only in Electron Main under the app's private `userData/profile-data` directory with bounded 128-entry/32 MiB quotas and validated PNG/JPEG bytes. Stored data has no time-based expiry; a XEP-0153 avatar-hash change invalidates the matching entry. On session startup, the Renderer asks for `mode: 'stored'` for roster contacts with a four-operation local-read limit; this mode never sends a vCard IQ. A store hit still produces a new expiring opaque image reference; profile data never crosses the Preload boundary.
+
+Presence `<x xmlns="vcard-temp:x:update"><photo>SHA-1</photo></x>` notifications invalidate a cached profile only when the advertised hash changes. The typed `profile.avatarChanged` domain event then refreshes an already visible own/contact profile on demand. Empty `<photo/>` invalidates the cached avatar. XEP-0084 is not implemented. Updates reject stale sessions, invalid account/JID identity, oversized values and unsupported fields with typed errors.
 
 ### `window.atomicChat.games`
 

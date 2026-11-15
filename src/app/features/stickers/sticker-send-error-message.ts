@@ -6,10 +6,10 @@ export const STICKER_SENDING_DISABLED_MESSAGE =
 const STICKER_SEND_ERROR_MESSAGES: Readonly<Partial<Record<AppErrorCode, string>>> = {
   INVALID_INPUT: 'La solicitud del sticker no es válida.',
   UNAUTHORIZED: 'La ventana o la cuenta ya no están autorizadas para enviar este sticker.',
-  NOT_CONNECTED: 'La cuenta ya no está conectada al servidor XMPP.',
+  NOT_CONNECTED: 'La cuenta ya no está conectada.',
   TIMEOUT: 'El envío del sticker excedió el tiempo de espera.',
-  UNSUPPORTED: 'El servidor no ofrece XEP-0363/HTTP Upload; requiere configuración del servidor.',
-  TRANSPORT_FAILED: 'Falló HTTP Upload o el transporte XMPP durante el envío.',
+  UNSUPPORTED: 'El servidor no permite enviar archivos multimedia.',
+  TRANSPORT_FAILED: 'No fue posible enviar el archivo multimedia.',
   MEDIA_PREVIEW_UNAVAILABLE: 'La fuente local del sticker ya no está disponible.',
   MEDIA_TYPE_UNSUPPORTED: 'El sticker debe ser una imagen PNG o JPEG estática.',
   MEDIA_SIZE_EXCEEDED: 'El sticker supera el tamaño máximo permitido por el servidor.',

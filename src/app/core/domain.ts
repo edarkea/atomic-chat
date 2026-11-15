@@ -5,6 +5,7 @@ export type * from './domain/domain-event';
 export type * from './domain/domain-games';
 export type * from './domain/domain-files';
 export type * from './domain/domain-media';
+export type * from './domain/domain-profile';
 export type * from './domain/domain-messaging';
 export type * from './domain/domain-muc';
 export type * from './domain/domain-primitives';

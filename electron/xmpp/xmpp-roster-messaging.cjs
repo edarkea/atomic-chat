@@ -16,6 +16,7 @@ const {
 
 const BROADCAST_NAMESPACE = 'urn:atomic-chat:message:broadcast:1';
 const JIVE_PROPERTIES_NAMESPACE = 'http://www.jivesoftware.com/xmlns/xmpp/properties';
+const VCARD_UPDATE_NAMESPACE = 'vcard-temp:x:update';
 
 /**
  * @typedef {{[key: string]: string | undefined}} XmlAttributes
@@ -23,10 +24,10 @@ const JIVE_PROPERTIES_NAMESPACE = 'http://www.jivesoftware.com/xmlns/xmpp/proper
  * @typedef {{iqCaller: {request: (stanza: XmlNode, timeoutMs?: number) => Promise<XmlNode>}, send: (stanza: XmlNode) => Promise<unknown>}} RosterSession
  * @typedef {{jid: string, name?: string, groups: string[], subscription: 'none' | 'to' | 'from' | 'both', ask?: 'subscribe', source: string}} RosterContact
  * @typedef {{messageId?: string, originId?: string, stanzaIds: Array<{id: string, by: string}>, authorJid: string, quote?: string}} MessageReference
- * @typedef {{jid: string, resource: string, type?: string, mode?: string, status?: string, priority: number}} PresenceRecord
+ * @typedef {{jid: string, resource: string, type?: string, mode?: string, status?: string, priority: number, hasAvatarUpdate: boolean, avatarHash?: string}} PresenceRecord
  * @typedef {{mode?: string, status?: string, availability?: string}} PresenceInput
  * @typedef {{active: boolean, generation: number | undefined, state: {status: string, selfOccupantJid?: string}, room: {jid: string}}} MucRoomRecord
- * @typedef {{states: Map<string, {status: string}>, sessions: Map<string, RosterSession>, sessionGenerations: Map<string, number | undefined>, rosters: Map<string, Map<string, RosterContact>>, remoteResources: Map<string, Map<string, {mode?: string, status?: string, priority: number}>>, pendingPresences: Map<string, Map<string, PresenceRecord>>, initialPresencePublished: Set<string>, publishedPresences: Map<string, unknown>, mucRooms: Map<string, Map<string, MucRoomRecord>>, require: (accountId: string) => RosterSession, bareJid: (jid: string) => string, emit: (event: unknown) => void, trackReaction: (clientMessageId: string, context: unknown) => void, rejectReaction: (clientMessageId: string, reason: string) => void, applyReaction: (input: unknown) => void}} RosterAdapter
+ * @typedef {{states: Map<string, {status: string}>, sessions: Map<string, RosterSession>, sessionGenerations: Map<string, number | undefined>, rosters: Map<string, Map<string, RosterContact>>, remoteResources: Map<string, Map<string, {mode?: string, status?: string, priority: number}>>, pendingPresences: Map<string, Map<string, PresenceRecord>>, initialPresencePublished: Set<string>, publishedPresences: Map<string, unknown>, mucRooms: Map<string, Map<string, MucRoomRecord>>, require: (accountId: string) => RosterSession, bareJid: (jid: string) => string, emit: (event: unknown) => void, handleProfileAvatarHash?: (accountId: string, jid: string, avatarHash?: string) => Promise<boolean>, trackReaction: (clientMessageId: string, context: unknown) => void, rejectReaction: (clientMessageId: string, reason: string) => void, applyReaction: (input: unknown) => void}} RosterAdapter
  * @typedef {{body: {kind: 'text', text: string}, to: string, clientMessageId: string, replyTo?: MessageReference, broadcast?: boolean, mode?: string}} MessageInput
  * @typedef {{target: {originId?: string, stanzaIds?: Array<{id?: string}>, messageId?: string}, to: string, clientMessageId: string, targetMessageId?: string, emojis: string[]}} ReactionInput
  * @typedef {{to: string, state: 'active' | 'composing' | 'paused' | 'inactive' | 'gone'}} ChatStateInput
@@ -93,6 +94,12 @@ function createRosterMessaging(adapter) {
   /** @param {XmlNode} stanza @param {string} accountId @returns {PresenceRecord} */
   const presenceRecord = (stanza, accountId) => {
     const from = String(stanza.attrs?.['from'] || accountId);
+    const avatarUpdate = stanza.getChild('x', VCARD_UPDATE_NAMESPACE);
+    const photo = avatarUpdate?.getChild('photo');
+    const rawAvatarHash = photo?.getText?.()?.trim().toLowerCase();
+    const hasAvatarUpdate = Boolean(
+      photo && (!rawAvatarHash || /^[a-f0-9]{40}$/u.test(rawAvatarHash)),
+    );
     return {
       jid: adapter.bareJid(from).toLowerCase(),
       resource: from.split('/')[1] || '_bare',
@@ -100,13 +107,21 @@ function createRosterMessaging(adapter) {
       mode: stanza.getChildText('show') || undefined,
       status: stanza.getChildText('status') || undefined,
       priority: Number.parseInt(stanza.getChildText('priority') || '0', 10) || 0,
+      hasAvatarUpdate,
+      ...(rawAvatarHash && /^[a-f0-9]{40}$/u.test(rawAvatarHash)
+        ? { avatarHash: rawAvatarHash }
+        : {}),
     };
   };
   /** @param {string} accountId @param {PresenceRecord} record @returns {boolean} */
   const applyPresence = (accountId, record) => {
+    if (record.hasAvatarUpdate && record.jid === accountId.toLowerCase())
+      void adapter.handleProfileAvatarHash?.(accountId, record.jid, record.avatarHash);
     const roster = adapter.rosters.get(accountId);
     const contact = roster?.get(record.jid);
     if (!contact || !['to', 'both'].includes(contact.subscription)) return true;
+    if (record.hasAvatarUpdate)
+      void adapter.handleProfileAvatarHash?.(accountId, record.jid, record.avatarHash);
     const resources = adapter.remoteResources.get(accountId) || new Map();
     const resourceKey = `${record.jid}/${record.resource}`;
     if (record.type === 'unavailable') resources.delete(resourceKey);

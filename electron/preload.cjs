@@ -57,6 +57,20 @@ contextBridge.exposeInMainWorld(
     session: Object.freeze({ getState: (accountId) => invoke('session.getState', accountId) }),
     presence: Object.freeze({ set: (input) => invoke('presence.set', input) }),
     roster: Object.freeze({ list: (accountId) => invoke('roster.list', accountId) }),
+    userProfiles: Object.freeze({
+      get: (input) => invoke('userProfiles.get', input),
+      update: (input) => invoke('userProfiles.update', input),
+      avatar: Object.freeze({
+        update: (input) => invoke('userProfiles.avatar.update', input),
+        clear: (input) => invoke('userProfiles.avatar.clear', input),
+      }),
+      image: Object.freeze({
+        open: (input) => invoke('userProfiles.image.open', input),
+        read: (input) => invoke('userProfiles.image.read', input),
+        close: (input) => invoke('userProfiles.image.close', input),
+        revoke: (input) => invoke('userProfiles.image.revoke', input),
+      }),
+    }),
     messaging: Object.freeze({
       send: (input) => invoke('message.send', input),
       react: (input) => invoke('message.react', input),

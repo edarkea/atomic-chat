@@ -94,6 +94,17 @@ import {
   StickerSendRequest,
   UpdateRequest,
   UpdateStatus,
+  UserProfile,
+  UserProfileImageChunk,
+  UserProfileImageCloseRequest,
+  UserProfileImageOpenRequest,
+  UserProfileImageReadRequest,
+  UserProfileImageRevokeRequest,
+  UserProfileImageStreamRef,
+  UserProfileRequest,
+  UserProfileAvatarUpdateRequest,
+  UserProfileAvatarClearRequest,
+  UserProfileUpdateRequest,
 } from '../domain';
 
 export interface AtomicChatApi {
@@ -172,6 +183,20 @@ export interface AtomicChatApi {
   session: { getState(accountId: string): Promise<Result<ConnectionState>> };
   presence: { set(input: PresenceInput): Promise<Result<Presence>> };
   roster: { list(accountId: string): Promise<Result<Contact[]>> };
+  userProfiles: {
+    get(input: UserProfileRequest): Promise<Result<UserProfile>>;
+    update(input: UserProfileUpdateRequest): Promise<Result<UserProfile>>;
+    avatar: {
+      update(input: UserProfileAvatarUpdateRequest): Promise<Result<UserProfile | null>>;
+      clear(input: UserProfileAvatarClearRequest): Promise<Result<UserProfile>>;
+    };
+    image: {
+      open(input: UserProfileImageOpenRequest): Promise<Result<UserProfileImageStreamRef>>;
+      read(input: UserProfileImageReadRequest): Promise<Result<UserProfileImageChunk>>;
+      close(input: UserProfileImageCloseRequest): Promise<Result<void>>;
+      revoke(input: UserProfileImageRevokeRequest): Promise<Result<void>>;
+    };
+  };
   messaging: {
     send(input: MessageSendInput): Promise<Result<Message>>;
     react(input: MessageReactionInput): Promise<Result<void>>;

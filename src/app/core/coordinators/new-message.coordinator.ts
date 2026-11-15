@@ -1,14 +1,17 @@
 import { computed, signal, type Signal } from '@angular/core';
-import type { Contact, RoomRef, RoomState } from '../domain';
+import type { Contact, RoomRef, RoomState, UserProfileImageRef } from '../domain';
 
 export interface NewMessageCoordinatorChat {
   readonly accountId: Signal<string>;
   readonly contacts: Signal<ReadonlyArray<Contact>>;
+  readonly contactProfiles?: Signal<ReadonlyMap<string, { readonly image?: UserProfileImageRef }>>;
 }
 
 export interface NewMessageDialogViewModel {
+  readonly accountId: string;
   readonly search: string;
   readonly contacts: ReadonlyArray<Contact>;
+  readonly profileImages: ReadonlyMap<string, UserProfileImageRef>;
   readonly joinedRooms: ReadonlyArray<RoomState>;
   readonly services: ReadonlyArray<RoomRef>;
   readonly nickname: string;
@@ -40,8 +43,14 @@ export class NewMessageCoordinator {
   readonly localError = signal<string | null>(null);
   readonly discovering = signal(false);
   readonly dialogModel = computed<NewMessageDialogViewModel>(() => ({
+    accountId: this.dependencies.chat.accountId(),
     search: this.search(),
     contacts: this.contacts(),
+    profileImages: new Map(
+      [...(this.dependencies.chat.contactProfiles?.() ?? new Map()).entries()].flatMap(
+        ([jid, profile]) => (profile.image ? [[jid, profile.image] as const] : []),
+      ),
+    ),
     joinedRooms: this.dependencies.joinedRooms(),
     services: this.services(),
     nickname: this.nickname(),

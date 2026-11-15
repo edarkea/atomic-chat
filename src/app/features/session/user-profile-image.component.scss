@@ -1,0 +1,74 @@
+:host {
+  display: inline-flex;
+}
+
+.user-profile-image {
+  align-items: center;
+  background: var(--atomic-bg);
+  border: 1px solid var(--atomic-border);
+  border-radius: 50%;
+  color: var(--atomic-green);
+  display: inline-flex;
+  flex-direction: column;
+  height: 128px;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  width: 128px;
+}
+
+.user-profile-image--small {
+  height: 42px;
+  width: 42px;
+}
+
+.user-profile-image--compact {
+  height: 36px;
+  width: 36px;
+}
+
+.user-profile-image img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.user-profile-image > span {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.user-profile-image--small > span {
+  font-size: 20px;
+}
+
+.user-profile-image--compact > span {
+  font-size: 18px;
+}
+
+.user-profile-image small {
+  color: var(--atomic-text-muted);
+  font-size: 9px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-profile-image-retry {
+  background: transparent;
+  border: 0;
+  color: var(--atomic-green);
+  cursor: pointer;
+  font: 600 9px/1.2 var(--atomic-font-ui);
+  padding: 2px 4px;
+}
+
+.user-profile-image-retry:hover,
+.user-profile-image-retry:focus-visible {
+  text-decoration: underline;
+}
+
+.user-profile-image--loading {
+  opacity: 0.68;
+}

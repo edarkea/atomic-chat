@@ -250,6 +250,7 @@
         (presenceClose)="presenceOpen.set(false)"
         (presenceSelected)="choosePresence($event)"
         (presenceStatusChange)="presenceStatus.set($event)"
+        (profileEdit)="openOwnProfile()"
         (nicknameChange)="mucNickname.set($event)"
         (discoverRooms)="discoverRooms()"
         (selectRoom)="selectRoomFromCatalog($event)"
@@ -290,6 +291,7 @@
         } @else if (activeSelection().kind !== 'none') {
           <app-conversation-view
             [activeContact]="activeContact()"
+            [activeProfile]="activeUserProfile()"
             [selectedJid]="selectedJid()"
             [accountId]="chat.accountId()"
             [gamesOpen]="gamesOpen()"
@@ -439,6 +441,19 @@
       </section>
     </div>
   }
+}
+@if (profileEditorOpen()) {
+  <app-user-profile-dialog
+    [accountId]="chat.accountId()"
+    [profile]="chat.ownUserProfile()"
+    [loading]="chat.ownUserProfileLoading()"
+    [saving]="profileEditorSaving()"
+    [error]="chat.ownUserProfileError()"
+    (saveRequested)="saveOwnProfile($event)"
+    (avatarRequested)="updateOwnAvatar()"
+    (avatarClearRequested)="clearOwnAvatar()"
+    (cancelled)="closeOwnProfile()"
+  />
 }
 @if (broadcastOpen()) {
   @defer (on immediate) {

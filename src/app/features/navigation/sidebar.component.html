@@ -5,6 +5,7 @@
     (presenceClose)="presenceClose.emit()"
     (presenceSelected)="presenceSelected.emit($event)"
     (presenceStatusChange)="presenceStatusChange.emit($event)"
+    (profileEdit)="profileEdit.emit()"
   />
   <app-conversation-list
     [model]="model().conversations"

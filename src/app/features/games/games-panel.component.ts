@@ -92,6 +92,12 @@ export class GamesPanelComponent {
     if (!state.winner) return 'PARTIDA FINALIZADA';
     return state.winner === session.localRole ? 'GANASTE' : 'PERDISTE';
   });
+  protected readonly visibleSession = computed(() => {
+    const session = this.currentSession();
+    return session && session.state !== 'cancelled' && session.state !== 'expired'
+      ? session
+      : undefined;
+  });
 
   protected readonly currentGameName = computed(() => {
     const session = this.currentSession();

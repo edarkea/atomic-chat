@@ -7,18 +7,46 @@
 >
   <header class="chat-header">
     <div class="conversation-profile">
-      <span class="avatar header-avatar" aria-hidden="true"
-        ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
-          <use href="#ac-contact" /></svg
-      ></span>
+      @if (activeProfile()?.image; as image) {
+        <app-user-profile-image
+          class="conversation-header-image"
+          [accountId]="accountId()"
+          [image]="image"
+          [alt]="'Avatar de ' + (activeContact()?.name || selectedJid())"
+          size="compact"
+        />
+      } @else {
+        <span class="avatar header-avatar" aria-hidden="true"
+          ><svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+            <use href="#ac-contact" /></svg
+        ></span>
+      }
       <span class="conversation-profile-copy">
         <strong>{{
-          activeContact()?.name?.trim() || selectedJid() || 'Selecciona un contacto'
+          activeContact()?.name?.trim() ||
+            activeProfile()?.displayName?.trim() ||
+            selectedJid() ||
+            'Selecciona un contacto'
         }}</strong>
-        <small>{{ selectedJid() ? selectedJid() : 'Sin destinatario' }}</small>
+        <small>{{ selectedJid() ? 'Conversación activa' : 'Sin destinatario' }}</small>
       </span>
     </div>
     <div class="conversation-actions" aria-label="Acciones de conversación">
+      @if (activeProfile()) {
+        <button
+          class="conversation-action"
+          type="button"
+          aria-label="Ver contacto"
+          title="Ver contacto"
+          [attr.aria-expanded]="contactProfileSummaryOpen() || contactProfileDetailsOpen()"
+          aria-controls="contact-profile-summary-dialog"
+          (click)="openContactProfile()"
+        >
+          <svg class="ac-icon ac-icon--20" aria-hidden="true" focusable="false">
+            <use href="#ac-contact" />
+          </svg>
+        </button>
+      }
       <button
         class="conversation-action"
         type="button"
@@ -227,5 +255,24 @@
   />
   @if (dropActive()) {
     <div class="drop-overlay" aria-hidden="true">Suelta aquí tus archivos</div>
+  }
+  @if (contactProfileSummaryOpen()) {
+    @if (activeProfile(); as profile) {
+      <app-contact-profile-summary-dialog
+        [contact]="activeContact()"
+        [profile]="profile"
+        (viewProfileRequested)="openContactProfileDetails()"
+        (cancelled)="closeContactProfile()"
+      />
+    }
+  }
+  @if (contactProfileDetailsOpen()) {
+    @if (activeProfile(); as profile) {
+      <app-contact-profile-dialog
+        [contact]="activeContact()"
+        [profile]="profile"
+        (cancelled)="closeContactProfileDetails()"
+      />
+    }
   }
 </div>

@@ -1,0 +1,197 @@
+:host {
+  display: contents;
+}
+
+.contact-profile-summary-backdrop {
+  align-items: center;
+  background: rgb(0 0 0 / 78%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 24px);
+  position: fixed;
+  z-index: 1000;
+}
+
+.contact-profile-summary-dialog {
+  background: var(--atomic-surface);
+  border: 1px solid var(--atomic-border);
+  border-radius: var(--atomic-radius-md);
+  box-shadow:
+    0 18px 60px #000b,
+    0 0 0 1px var(--atomic-border-soft);
+  color: var(--atomic-text);
+  display: flex;
+  flex-direction: column;
+  max-width: 440px;
+  overflow: hidden;
+  width: min(100%, 440px);
+}
+
+.contact-profile-summary-header,
+.contact-profile-summary-footer {
+  align-items: center;
+  display: flex;
+  gap: var(--atomic-space-3);
+  justify-content: space-between;
+  padding: 18px 20px;
+}
+
+.contact-profile-summary-header {
+  border-bottom: 1px solid var(--atomic-border-soft);
+}
+
+.contact-profile-summary-heading {
+  align-items: center;
+  display: flex;
+  gap: var(--atomic-space-3);
+  min-width: 0;
+}
+
+.contact-profile-summary-avatar {
+  align-items: center;
+  border: 1px solid var(--atomic-green);
+  border-radius: 50%;
+  color: var(--atomic-green);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.contact-profile-summary-header .eyebrow {
+  color: var(--atomic-green);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.contact-profile-summary-header h2 {
+  color: var(--atomic-text);
+  font-size: 19px;
+  line-height: 1.2;
+  margin: 5px 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.contact-profile-summary-header p {
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.contact-profile-summary-header .icon-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--atomic-radius-sm);
+  color: var(--atomic-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font: 700 16px/1 var(--atomic-font-mono);
+  justify-content: center;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+.contact-profile-summary-header .icon-button:hover,
+.contact-profile-summary-header .icon-button:focus-visible {
+  background: var(--atomic-surface-hover);
+  border-color: var(--atomic-border);
+  color: var(--atomic-green);
+  outline: 2px solid var(--atomic-focus);
+  outline-offset: 1px;
+}
+
+.contact-profile-summary-body {
+  display: grid;
+  gap: var(--atomic-space-3);
+  padding: 18px 20px;
+}
+
+.contact-profile-summary-note {
+  background: var(--atomic-surface-soft);
+  border-left: 2px solid var(--atomic-green);
+  color: var(--atomic-text-secondary);
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.contact-profile-summary-note strong {
+  color: var(--atomic-text);
+}
+
+.contact-profile-summary-fields {
+  display: grid;
+  gap: 8px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.contact-profile-summary-fields div {
+  border-bottom: 1px solid var(--atomic-border-soft);
+  min-width: 0;
+  padding: 7px 0;
+}
+
+.contact-profile-summary-fields dt {
+  color: var(--atomic-green-muted);
+  font-size: 11px;
+}
+
+.contact-profile-summary-fields dd {
+  color: var(--atomic-text);
+  font-size: 12px;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.contact-profile-summary-footer {
+  background: var(--atomic-surface-raised);
+  border-top: 1px solid var(--atomic-border-soft);
+  justify-content: flex-end;
+}
+
+.contact-profile-summary-footer button {
+  border-radius: var(--atomic-radius-sm);
+  cursor: pointer;
+  font: 600 12px/1.35 var(--atomic-font-ui);
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+.contact-profile-summary-footer .primary {
+  background: var(--atomic-green);
+  border: 1px solid var(--atomic-green);
+  color: var(--atomic-bg);
+}
+
+.contact-profile-summary-footer .secondary {
+  background: var(--atomic-surface-hover);
+  border: 1px solid var(--atomic-border);
+  color: var(--atomic-text);
+}
+
+.contact-profile-summary-footer .primary:hover,
+.contact-profile-summary-footer .primary:focus-visible,
+.contact-profile-summary-footer .secondary:hover,
+.contact-profile-summary-footer .secondary:focus-visible {
+  background: var(--atomic-surface-active);
+  border-color: var(--atomic-green);
+  color: var(--atomic-text);
+  outline: 0;
+}
+
+@media (max-width: 520px) {
+  .contact-profile-summary-header,
+  .contact-profile-summary-body,
+  .contact-profile-summary-footer {
+    padding-inline: 14px;
+  }
+
+  .contact-profile-summary-fields {
+    grid-template-columns: 1fr;
+  }
+}

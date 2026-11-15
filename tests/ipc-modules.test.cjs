@@ -120,6 +120,14 @@ const channels = [
   'games.rematch',
   'games.subscribe',
   'games.unsubscribe',
+  'userProfiles.get',
+  'userProfiles.update',
+  'userProfiles.avatar.update',
+  'userProfiles.avatar.clear',
+  'userProfiles.image.open',
+  'userProfiles.image.read',
+  'userProfiles.image.close',
+  'userProfiles.image.revoke',
 ];
 
 function createHarness() {

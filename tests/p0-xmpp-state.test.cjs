@@ -71,6 +71,42 @@ test('remote presence parses show/status only for authorized roster contacts', (
   assert.equal(events[0].status, 'Al teléfono');
 });
 
+test('XEP-0153 presence hashes invalidate a profile once per changed value', async () => {
+  const adapter = new XmppAdapter();
+  const changes = [];
+  adapter.rosters.set(
+    'a@example.invalid',
+    new Map([['b@example.invalid', { jid: 'b@example.invalid', subscription: 'both' }]]),
+  );
+  adapter.remoteResources.set('a@example.invalid', new Map());
+  adapter.onEvent((event) => {
+    if (event.type === 'profile.avatarChanged') changes.push(event.payload);
+  });
+  const presence = (hash) =>
+    xml(
+      'presence',
+      { from: 'b@example.invalid/phone' },
+      xml('x', { xmlns: 'vcard-temp:x:update' }, xml('photo', {}, hash)),
+    );
+  adapter.handleStanza('a@example.invalid', presence('a'.repeat(40)));
+  await new Promise((resolve) => setImmediate(resolve));
+  adapter.handleStanza(
+    'a@example.invalid',
+    xml(
+      'presence',
+      { from: 'b@example.invalid/phone' },
+      xml('x', { xmlns: 'vcard-temp:x:update' }, xml('photo', {}, 'not-a-sha1')),
+    ),
+  );
+  adapter.handleStanza('a@example.invalid', presence('a'.repeat(40)));
+  adapter.handleStanza('a@example.invalid', presence('b'.repeat(40)));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    changes.map((change) => change.avatarHash),
+    ['a'.repeat(40), 'b'.repeat(40)],
+  );
+});
+
 test('remote presence remains available while one of two resources disconnects', () => {
   const adapter = new XmppAdapter();
   const events = [];

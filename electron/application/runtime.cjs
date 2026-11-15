@@ -1,4 +1,6 @@
 const { createHistoryRepository } = require('./history-repository.cjs');
+const fs = require('node:fs');
+const path = require('node:path');
 const { GameRegistry } = require('../games/game-registry.cjs');
 const { GameSessionManager } = require('../games/game-session-manager.cjs');
 const { GameStorage } = require('../persistence/game-storage.cjs');
@@ -46,6 +48,20 @@ function loadMucPolicies(environment = process.env) {
   } catch {
     return [];
   }
+}
+
+/** @param {string} userDataDirectory @returns {string} */
+function resolveProfileDataDirectory(userDataDirectory) {
+  const profileDataDirectory = path.join(userDataDirectory, 'profile-data');
+  const legacyDirectory = path.join(userDataDirectory, 'profile-cache');
+  try {
+    if (!fs.existsSync(profileDataDirectory) && fs.existsSync(legacyDirectory)) {
+      fs.renameSync(legacyDirectory, profileDataDirectory);
+    }
+  } catch {
+    return fs.existsSync(legacyDirectory) ? legacyDirectory : profileDataDirectory;
+  }
+  return profileDataDirectory;
 }
 
 function hasMucOperatorConfiguration(environment = process.env) {
@@ -128,6 +144,8 @@ function createRuntime({
     stickerStorageConfiguration,
     hasMucOperatorConfiguration(environment),
     { manager: gameSessions, registry: gameRegistry, limits: gameLimits },
+    nativeImage,
+    resolveProfileDataDirectory(app.getPath('userData')),
   );
   return {
     persistence,

@@ -22,6 +22,7 @@ test('global IPC use-case registry is unique, ordered and executable', () => {
       'updates',
       'external-links',
       'games',
+      'user-profiles',
     ],
   );
   assert.equal(new Set(IPC_USE_CASES.map((useCase) => useCase.name)).size, IPC_USE_CASES.length);

@@ -8,6 +8,12 @@ This is the concise maintenance checklist for business rules. When a change modi
 - A conversation key preserves account, kind (`direct` or `muc`) and bare JID.
 - Room identity and occupant identity remain separate.
 - Older session generations cannot mutate current account or conversation state.
+- `XmppConnectionProfile` stores connection configuration only; it is never used as a `UserProfile`.
+- XEP-0054 profile reads are on demand and bare-JID scoped; only the authenticated account's bounded text fields may be updated, while contact profiles remain read-only.
+- A custom roster name remains authoritative for conversation display and is never replaced by `UserProfile` data.
+- Own avatar publication is account-scoped, serialized with other profile writes and limited to validated PNG/JPEG `PHOTO` data; contact profiles remain read-only.
+- Profile images cross the Main/Renderer boundary only as expiring opaque references and bounded streams, never as Base64 or arbitrary external URLs.
+- Validated profile fields and avatar bytes may be stored only in Main's private, bounded profile data store; a changed XEP-0153 photo hash invalidates the account/JID entry before a refresh.
 
 ## Messaging and history
 
@@ -28,6 +34,7 @@ This is the concise maintenance checklist for business rules. When a change modi
 - Transfer, media, preview and sticker operations remain account-scoped.
 - Terminal transfers release resources and retain explicit end reasons.
 - Preview access is guarded, expiring and revocable.
+- Profile photo references are opaque, bounded, expiring and account/window scoped; profile DTOs contain no Base64 or arbitrary external URL.
 - Sticker assets use declared SHA-256 metadata and sticker-pack writes use revisions.
 
 ## Boundary and persistence contracts

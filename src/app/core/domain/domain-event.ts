@@ -27,9 +27,16 @@ export interface RosterChangedPayload {
   contacts: ReadonlyArray<Contact>;
 }
 
+export interface ProfileAvatarChangedPayload {
+  accountId: string;
+  jid: string;
+  avatarHash?: string;
+}
+
 export interface DomainEventPayloadMap {
   'connection.stateChanged': ConnectionState;
   'presence.changed': Presence & { accountId?: string };
+  'profile.avatarChanged': ProfileAvatarChangedPayload;
   'roster.changed': RosterChangedPayload;
   'message.stateChanged': Message;
   'message.received': Message;

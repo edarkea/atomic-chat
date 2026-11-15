@@ -11,6 +11,8 @@ import {
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import type { UserProfileImageRef } from '../../core/domain';
+import { UserProfileImageComponent } from '../session/user-profile-image.component';
 import { PresenceOption } from './sidebar.models';
 
 export interface OperatorPresenceModel {
@@ -23,11 +25,12 @@ export interface OperatorPresenceModel {
   readonly presenceOptions: ReadonlyArray<PresenceOption>;
   readonly presenceOptionId: string;
   readonly presenceStatus: string;
+  readonly profileImage?: UserProfileImageRef;
 }
 
 @Component({
   selector: 'app-operator-presence',
-  imports: [FormsModule],
+  imports: [FormsModule, UserProfileImageComponent],
   templateUrl: './operator-presence.component.html',
   styleUrls: ['./operator-presence.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -35,6 +38,8 @@ export interface OperatorPresenceModel {
 export class OperatorPresenceComponent {
   private readonly host = inject(ElementRef<HTMLElement>);
   @ViewChild('presenceTrigger') private readonly presenceTrigger?: ElementRef<HTMLButtonElement>;
+  @ViewChild('profileEditTrigger')
+  private readonly profileEditTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('presenceMenu') private readonly presenceMenu?: ElementRef<HTMLElement>;
   readonly model = input.required<OperatorPresenceModel>();
   protected readonly displayName = computed(() => {
@@ -58,6 +63,7 @@ export class OperatorPresenceComponent {
   readonly presenceClose = output<void>();
   readonly presenceSelected = output<PresenceOption>();
   readonly presenceStatusChange = output<string>();
+  readonly profileEdit = output<void>();
   private presenceWasOpen = false;
 
   constructor() {
@@ -74,6 +80,15 @@ export class OperatorPresenceComponent {
 
   protected selectPresence(option: PresenceOption): void {
     this.presenceSelected.emit(option);
+  }
+
+  protected editProfile(): void {
+    if (this.model().connectionLabel.toLocaleLowerCase().includes('desconect')) return;
+    this.profileEdit.emit();
+  }
+
+  focusProfileEditTrigger(): void {
+    this.profileEditTrigger?.nativeElement.focus();
   }
   protected optionTabIndex(option: PresenceOption): number {
     return this.model().presenceOptionId === option.id ? 0 : -1;

@@ -90,6 +90,7 @@ function startMainApplication() {
     selectFileDestination,
     selectFileSource,
     selectStickerSource,
+    selectAvatarSource,
     selectDownloadDirectory,
     selectDefaultFileDestination,
   } = createFileDialogs({ dialog, fsp });
@@ -249,6 +250,7 @@ function startMainApplication() {
       onDestroyed: (senderId) => {
         historySecurity.destroySender(senderId);
         gameEventPublisher.clearSender(senderId);
+        runtime?.xmpp.clearUserProfileSender?.(senderId);
         localFileActions.clearSender(senderId);
         previewGrants.clearSender(senderId);
         stickerGrants.clearSender(senderId);
@@ -323,6 +325,7 @@ function startMainApplication() {
     historySecurity,
     selectFileSource,
     selectStickerSource,
+    selectAvatarSource,
     selectDownloadDirectory,
     defaultDownloadDirectory,
     applicationAttention,

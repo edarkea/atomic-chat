@@ -102,6 +102,18 @@ describe('GamesPanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Rechazar');
   });
 
+  it('does not render unavailable cancelled or expired invitations', () => {
+    for (const state of ['cancelled', 'expired'] as const) {
+      fixture.componentRef.setInput('currentSession', { ...sessionBase, state });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.games-match')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain(
+        'La invitación ya no está disponible.',
+      );
+    }
+  });
+
   it('renders confirmed Reversi metadata with accessible grid navigation and mandatory pass', () => {
     fixture.componentRef.setInput('catalog', []);
     fixture.componentRef.setInput('currentSession', sessionBase);

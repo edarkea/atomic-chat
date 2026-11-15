@@ -28,7 +28,7 @@
     <p class="games-panel__error" role="alert">{{ error() }}</p>
   }
 
-  @if (!menuOnly() && currentSession(); as session) {
+  @if (!menuOnly() && visibleSession(); as session) {
     <article
       class="games-match"
       [class.games-match--outgoing]="session.localRole === 'initiator'"
@@ -51,8 +51,6 @@
           <p class="games-message">Te han invitado a jugar {{ currentGameName() }}.</p>
         } @else if (session.state === 'rejected') {
           <p class="games-message">La invitación fue rechazada.</p>
-        } @else if (session.state === 'cancelled' || session.state === 'expired') {
-          <p class="games-message">La invitación ya no está disponible.</p>
         } @else if (session.state === 'closed') {
           <p class="games-message">El juego ha finalizado.</p>
         }

@@ -54,4 +54,57 @@ describe('OperatorPresenceComponent name tooltip', () => {
     expect(closed).toHaveBeenCalledOnce();
     outside.remove();
   });
+
+  it('keeps the profile edit trigger attached to the avatar and disables it offline', async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperatorPresenceComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(OperatorPresenceComponent);
+    fixture.componentRef.setInput('model', {
+      accountId: 'juan@example.invalid',
+      connectionLabel: 'Desconectado',
+      presenceLabel: 'Fuera de línea',
+      presenceDot: 'offline',
+      presenceOpen: false,
+      presenceOptions: [],
+      presenceOptionId: '',
+      presenceStatus: '',
+    });
+    fixture.detectChanges();
+
+    const avatarWrap = fixture.nativeElement.querySelector('.operator-avatar-wrap');
+    const editTrigger = avatarWrap.querySelector('.profile-edit-trigger') as HTMLButtonElement;
+    expect(avatarWrap.querySelector('.operator-avatar')).toBeTruthy();
+    expect(editTrigger.disabled).toBe(true);
+    expect(editTrigger.getAttribute('aria-label')).toBe('Editar mi perfil');
+  });
+
+  it('renders the safe profile image reference when the own profile has an avatar', async () => {
+    await TestBed.configureTestingModule({
+      imports: [OperatorPresenceComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(OperatorPresenceComponent);
+    fixture.componentRef.setInput('model', {
+      accountId: 'juan@example.invalid',
+      connectionLabel: 'Conectado',
+      presenceLabel: 'En línea',
+      presenceDot: 'online',
+      presenceOpen: false,
+      presenceOptions: [],
+      presenceOptionId: 'online',
+      presenceStatus: '',
+      profileImage: {
+        referenceId: 'profile-image-1',
+        mimeType: 'image/png',
+        sizeBytes: 64,
+        width: 64,
+        height: 64,
+        expiresAt: '2026-01-01T01:00:00.000Z',
+      },
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-user-profile-image')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.operator-avatar')).toBeNull();
+  });
 });
