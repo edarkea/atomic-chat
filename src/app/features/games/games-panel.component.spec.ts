@@ -195,9 +195,7 @@ describe('GamesPanelComponent', () => {
     fixture.componentRef.setInput('currentSession', { ...session, state: 'closed' });
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('JUEGO FINALIZADO');
-    expect(fixture.nativeElement.querySelector('.games-close')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.games-rematch')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.ttt-board')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.games-match')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('JUEGO FINALIZADO');
   });
 });

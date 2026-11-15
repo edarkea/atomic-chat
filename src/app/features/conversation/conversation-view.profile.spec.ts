@@ -125,6 +125,43 @@ describe('ConversationViewComponent profile search target', () => {
     expect(fixture.nativeElement.querySelector('[aria-label="Ver contacto"]')).toBeTruthy();
   });
 
+  it('shows the published email and connection status in the conversation header', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationViewComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConversationViewComponent);
+    fixture.componentRef.setInput('selectedJid', 'barbara@example.invalid');
+    fixture.componentRef.setInput('accountId', 'operator@example.invalid');
+    fixture.componentRef.setInput('activeContact', {
+      jid: 'barbara@example.invalid',
+      name: 'Barbara',
+      groups: [],
+      presence: {
+        jid: 'barbara@example.invalid',
+        availability: 'available',
+        updatedAt: '2026-11-15T00:00:00.000Z',
+      },
+    });
+    fixture.componentRef.setInput('activeProfile', {
+      accountId: 'operator@example.invalid',
+      jid: 'barbara@example.invalid',
+      source: 'vcard-temp',
+      email: 'barbara@example.com',
+      fetchedAt: '2026-11-15T00:00:00.000Z',
+    });
+    fixture.componentRef.setInput('timeline', []);
+    fixture.componentRef.setInput('draft', '');
+    fixture.componentRef.setInput('historyLoading', false);
+    fixture.componentRef.setInput('hasOlderMessages', false);
+    fixture.componentRef.setInput('hasNewerMessages', false);
+    fixture.componentRef.setInput('initialTimelineReady', true);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.conversation-profile-copy small').textContent,
+    ).toBe('barbara@example.com · En línea');
+  });
+
   it('opens the complete read-only contact profile from the conversation header', async () => {
     await TestBed.configureTestingModule({
       imports: [ConversationViewComponent],

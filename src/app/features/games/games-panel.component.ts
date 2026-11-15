@@ -94,7 +94,7 @@ export class GamesPanelComponent {
   });
   protected readonly visibleSession = computed(() => {
     const session = this.currentSession();
-    return session && session.state !== 'cancelled' && session.state !== 'expired'
+    return session && !['cancelled', 'expired', 'closed'].includes(session.state)
       ? session
       : undefined;
   });

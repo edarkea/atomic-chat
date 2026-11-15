@@ -217,6 +217,30 @@ export class ConversationViewComponent {
   protected isSelected(): boolean {
     return Boolean(this.selectedJid());
   }
+  protected conversationSubtitle(): string {
+    if (!this.selectedJid()) return 'Sin destinatario';
+    const email = this.activeProfile()?.email?.trim();
+    const status = this.remotePresenceLabel();
+    return email ? `${email} · ${status}` : status;
+  }
+  private remotePresenceLabel(): string {
+    const presence = this.activeContact()?.presence;
+    if (!presence || presence.availability === 'unknown') return 'Desconectado';
+    if (presence.availability === 'unavailable') return 'No disponible';
+    if (presence.availability === 'away') return 'Ausente';
+    if (presence.availability === 'extended-away') return 'Ausencia extendida';
+    if (presence.availability === 'dnd') return 'No molestar';
+    return (
+      (
+        {
+          chat: 'Libre para chatear',
+          away: 'Ausente',
+          xa: 'Ausencia extendida',
+          dnd: 'No molestar',
+        } as Record<string, string>
+      )[presence.mode || ''] || 'En línea'
+    );
+  }
   protected toggleSearch(): void {
     if (!this.isSelected()) return;
     this.searchOpen.update((open) => !open);
