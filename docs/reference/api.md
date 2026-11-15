@@ -58,10 +58,11 @@ envelopes authorized for the sender's account and optional direct conversation/s
 filter. There is no generic invoke/send method and no access to XMPP, Node.js, SQLite,
 rules or secrets.
 
-`games.snapshot` may include `legalMoves` and `passAllowed` for Reversi. These are
-Main-derived presentation metadata for the confirmed snapshot; the Renderer must not
-reimplement or treat them as authority. Authoritative move validation remains in
-`GameSessionManager` and the registered official rules.
+`games.snapshot` may include `legalMoves` and the retained `passAllowed` metadata for
+technical or legacy Reversi snapshots. The current production catalog publishes only
+Tic-Tac-Toe. These are Main-derived presentation metadata for the confirmed snapshot;
+the Renderer must not reimplement or treat them as authority. Authoritative move
+validation remains in `GameSessionManager` and the registered official rules.
 
 ## Contract change checklist
 

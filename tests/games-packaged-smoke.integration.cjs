@@ -179,7 +179,7 @@ async function main() {
     assert.equal(result.catalog.ok, true);
     assert.deepEqual(
       result.catalog.value.map((entry) => entry.gameId),
-      ['com.atomicchat.tic-tac-toe', 'com.atomicchat.reversi'],
+      ['com.atomicchat.tic-tac-toe'],
     );
     assert.equal(result.sessions.ok, true);
     assert.deepEqual(result.sessions.value, []);

@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const compiled = require('../electron/generated/games');
+const { createOfficialGameRegistry } = require('../electron/application/runtime.cjs');
 const { GameRegistry } = require('../electron/games/game-registry.cjs');
 const { GameSessionManager } = require('../electron/games/game-session-manager.cjs');
 const { GameStorage } = require('../electron/persistence/game-storage.cjs');
@@ -39,6 +40,20 @@ function createDatabase() {
     .run();
   return { database, directory };
 }
+
+test('production catalog exposes Tic-Tac-Toe only', () => {
+  const registry = createOfficialGameRegistry(compiled);
+
+  assert.deepEqual(
+    registry.catalog().map((item) => item.gameId),
+    [compiled.TIC_TAC_TOE_GAME_ID],
+  );
+  assert.equal(registry.getDescriptor(compiled.REVERSI_GAME_ID), undefined);
+  assert.equal(
+    registry.getRules(compiled.REVERSI_GAME_ID, compiled.REVERSI_GAME_VERSION),
+    undefined,
+  );
+});
 
 function createManager(database, ids = ['session-1']) {
   const registry = new GameRegistry();

@@ -41,7 +41,7 @@
 Es un registro de metadatos, no un service locator universal.
 
 - Registrar `gameId`, nombre, versión del juego, versión de API, distribución, capacidades, límites y entrypoints.
-- Contiene Tic Tac Toe y Reversi como entradas compiladas; Cara o Cruz no forma parte del catálogo Main.
+- Contiene Tic-Tac-Toe como entrada compilada publicada; Reversi permanece en las reglas puras, pero está desactivado en el registro de producción. Cara o Cruz no forma parte del catálogo Main.
 - No exponer paths, módulos Node, credenciales ni objetos de ejecución al Renderer.
 - Rechazar IDs duplicados y versiones incompatibles.
 
@@ -131,7 +131,7 @@ Adaptador explícito sobre la sesión XMPP actual.
 
 Host de reglas y presentación:
 
-- **Oficial:** reglas puras estáticas y confiables, sin APIs privilegiadas, conectadas al manager mediante el contrato común. La implementación actual incluye Tic-Tac-Toe y Reversi.
+- **Oficial:** reglas puras estáticas y confiables, sin APIs privilegiadas, conectadas al manager mediante el contrato común. El catálogo de producción publica actualmente solo Tic-Tac-Toe; Reversi queda reservado como implementación técnica desactivada.
 - **Externo:** runtime no confiable dentro de una `WebContentsView`/ventana renderer sandboxada. Un iframe con `sandbox="allow-scripts"` comparte el renderer y tiene una frontera más débil.
 - El runtime externo solo recibe comandos de UI, snapshots acotados y resultados de host; no recibe `atomicChat`, `ipcRenderer`, Node, XMPP, SQLite, rutas ni secretos.
 - Un watchdog limita tiempo de carga, frecuencia de mensajes, tamaño de estado, timers y memoria observable. Si se excede, el host destruye el contexto y marca la partida como `plugin-fault`.

@@ -115,8 +115,10 @@ type RuleResult<T> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: GameRuleError };
 ```
 
-Las implementaciones ejecutables actuales son `ticTacToeRules` y `reversiRules`.
-Sus estados usan los roles canónicos `initiator`/`responder`, no una perspectiva local.
+La implementación ejecutable publicada actualmente es `ticTacToeRules`.
+`reversiRules` permanece disponible como regla pura técnica, pero no está registrada
+en producción ni se ofrece en el catálogo. Sus estados, al igual que los de Tic-Tac-Toe,
+usan los roles canónicos `initiator`/`responder`, no una perspectiva local.
 No reciben `accountId` real, secretos, sockets, filesystem, IPC, reloj global ni
 aleatoriedad implícita. Cara o Cruz expone utilidades puras de commit-reveal, no un
 runtime.

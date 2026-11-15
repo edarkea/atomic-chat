@@ -20,20 +20,6 @@ function createOfficialGameRegistry(compiledGameRules, RegistryConstructor = Gam
     },
     compiledGameRules.ticTacToeRules,
   );
-  registry.registerOfficial(
-    {
-      gameId: compiledGameRules.REVERSI_GAME_ID,
-      displayName: 'Reversi',
-      version: compiledGameRules.REVERSI_GAME_VERSION,
-      apiVersion: 1,
-      players: { min: 2, max: 2 },
-      capabilities: ['invites', 'replay', 'resync', 'score'],
-      distribution: 'official',
-      source: 'built-in',
-      enabled: true,
-    },
-    compiledGameRules.reversiRules,
-  );
   return registry;
 }
 

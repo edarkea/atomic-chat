@@ -29,8 +29,10 @@ directas.
 
 ## Alcance actual
 
-Tic-Tac-Toe y Reversi están integrados como juegos oficiales de dos participantes. El
-Renderer presenta DTO y snapshots confirmados; Main conserva la autoridad sobre
-identidad, reglas, persistencia, transporte, límites y ciclo de vida. Los juegos
-externos y la instalación de paquetes permanecen descritos como interfaces técnicas,
-pero no forman parte del catálogo oficial actual.
+Tic-Tac-Toe es el único juego oficial publicado actualmente para conversaciones de dos
+participantes. Reversi conserva sus reglas puras y fixtures técnicos, pero está
+desactivado en el registro de producción y no aparece en `games.catalog`. El Renderer
+presenta DTO y snapshots confirmados; Main conserva la autoridad sobre identidad,
+reglas, persistencia, transporte, límites y ciclo de vida. Los juegos externos y la
+instalación de paquetes permanecen descritos como interfaces técnicas, pero no forman
+parte del catálogo oficial actual.

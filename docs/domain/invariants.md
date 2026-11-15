@@ -41,8 +41,8 @@ This is the concise maintenance checklist for business rules. When a change modi
 
 - A game snapshot shown by Renderer is confirmed by Main and scoped by account,
   conversation and session; Renderer never decides legal moves or winners.
-- Reversi pass is accepted only when Main-derived `passAllowed` is true; a legal move
-  takes precedence over pass.
+- The disabled Reversi rule accepts pass only when Main-derived `passAllowed` is true;
+  a legal move takes precedence over pass.
 - Terminal sessions do not accept moves; a rematch creates a new session and is allowed
   only from `finished` or `abandoned`.
 - A finished session may be explicitly closed by either participant; that `closed` state
