@@ -48,6 +48,7 @@ test('release workflow derives the tag from package version and requires protect
   const stagingScript = read('scripts/prepare-release-staging.cjs');
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
+  assert.equal(packageJson.scripts.prebuild, 'npm run build:games:commonjs');
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /^\s+(push|pull_request):/m);
   assert.match(workflow, /github\.actor == 'edarkea'/);

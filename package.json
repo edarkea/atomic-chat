@@ -1,6 +1,6 @@
 {
   "name": "atomic-chat",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "A retro-futuristic desktop XMPP messaging client built with Angular, TypeScript and Electron.",
   "author": {
     "name": "Edinson Ayui",
@@ -29,8 +29,9 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "prebuild": "npm run build:games:commonjs",
     "build:games:commonjs": "tsc -p tsconfig.games-main.json",
-    "build:electron": "npm run build:games:commonjs && npm run build",
+    "build:electron": "npm run build",
     "games:interop:simulated": "node tools/games-interoperability-harness.cjs --level simulated",
     "games:interop:electron": "node tools/games-interoperability-harness.cjs --level electron-local",
     "games:test:isolation": "node --test tests/games-packaged-isolation.test.cjs",
